@@ -1,3 +1,27 @@
+/*
+MIT License
+
+Copyright (c) 2024 YuYuKunKun
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+ */
+
 package chanlun
 
 import std.unittest.testmacro.*
@@ -5,9 +29,9 @@ import std.binary.*
 import std.math.{abs}
 import std.math.MathExtension
 import std.collection
-import std.collection.{HashSet, ArrayList, enumerate, HashMap, any}
+import std.collection.{HashSet, ArrayList, enumerate, HashMap, any, contains}
 import std.time.*
-import std.math
+import std.math.*
 import std.fs.*
 import net.http.*
 import std.log.*
@@ -26,6 +50,14 @@ public func dp(s: String): Unit {
 
 public func str<T>(obj: T): String where T <: ToString {
     obj.toString()
+}
+
+public func sum(array: Array<Float64>): Float64 {
+    var result = 0.0f64
+    for (i in array) {
+        result += i
+    }
+    return result
 }
 
 extend DateTime {
@@ -52,11 +84,6 @@ extend<T> ArrayList<T> where T <: ToString {
         let obj = this.get(i)
         this.remove(i)
         return obj.getOrThrow()
-    }
-
-    public func appendObj(element: T): Unit {
-        println("${element}")
-        this.append(element)
     }
 
     public func index(obj: NewBar): Int64 {
@@ -123,6 +150,35 @@ extend<T> ArrayList<T> where T <: ToString {
         }
         throw ChanException("元素不在列表中")
     }
+}
+
+public func colored(text: String, color!: Option<String> = Option<String>.None,
+    on_color!: Option<String> = Option<String>.None, attrs!: Option<String> = Option<String>.None): String {
+    let COLORS = HashMap<String, Byte>(
+        [('black', 30), ('grey', 30), ('red', 31), ('green', 32), ('yellow', 33), ('blue', 34), ('magenta', 35),
+        ('cyan', 36), ('light_grey', 37), ('dark_grey', 90), ('light_red', 91), ('light_green', 92),
+        ('light_yellow', 93), ('light_blue', 94), ('light_magenta', 95), ('light_cyan', 96), ('white', 97)])
+    let HIGHLIGHTS = HashMap<String, Byte>(
+        [('on_black', 40), ('on_grey', 40), ('on_red', 41), ('on_green', 42), ('on_yellow', 43), ('on_blue', 44),
+        ('on_magenta', 45), ('on_cyan', 46), ('on_light_grey', 47), ('on_dark_grey', 100), ('on_light_red', 101),
+        ('on_light_green', 102), ('on_light_yellow', 103), ('on_light_blue', 104), ('on_light_magenta', 105),
+        ('on_light_cyan', 106), ('on_white', 107)])
+    let ATTRIBUTES = HashMap<String, Byte>(
+        [('bold', 1), ('dark', 2), ('underline', 4), ('blink', 5), ('reverse', 7), ('concealed', 8)])
+    let RESET = "\033[0m"
+    var result = text
+    if (let Some(code) <- color) {
+        result = "\033[${COLORS[code]}m${result}"
+    }
+    if (let Some(code) <- on_color) {
+        result = "\033[${HIGHLIGHTS[code]}m${result}"
+    }
+    if (let Some(code) <- attrs) {
+        result = "\033[${ATTRIBUTES[code]}m${result}"
+    }
+
+    result += RESET
+    return result
 }
 
 class ChanException <: Exception {
@@ -241,13 +297,152 @@ public enum Direction <: ToString & Equatable<Direction> {
     }
 }
 
-public enum BSPoint <: ToString & Equatable<BSPoint> {
-    BUY(String) | SELL(String)
+public enum BSPoint <: ToString & Equatable<BSPoint> & Hashable {
+    BUY(String, String, DateTime, Float64, Bool, Int64, Int64) | SELL(String, String, DateTime, Float64, Bool, Int64,
+        Int64)
+    // info: String, type: String, dt:DateTime, price: Float, valid: Bool, creation_offset:Int64 首次创建偏移, fix_offset:Int64 失效偏移
+
+    public static func calc_zs_third_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+        let relation = double_relation(zs, third)
+        let tp: String = if (third is Bi) {
+            "Bi"
+        } else if (third is Duan) {
+            "Duan"
+        } else {
+            "Unknow"
+        }
+        if (relation == Direction.JumpDown) {
+            return BSPoint.SELL("Third", "${tp}", third.end.mid.dt, third.end.mid.speck, true,
+                observer.news[observer.news.size - 1].index - third.end.mid.index, 0)
+        } else if (relation == Direction.JumpUp) {
+            return BSPoint.BUY("Third", "${tp}", third.end.mid.dt, third.end.mid.speck, true,
+                observer.news[observer.news.size - 1].index - third.end.mid.index, 0)
+        }
+        return None
+    }
+
+    public static func calc_zs_second_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+        return None
+    }
+
+    public static func calc_zs_first_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+        return None
+    }
 
     public func toString(): String {
         match (this) {
-            case BUY(s) => "BUY(${s})"
-            case SELL(s) => "SELL(${s})"
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => "BUY(${info}, ${tp}, ${dt}, ${price}, ${valid}, ${creation_offset})"
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => "SELL(${info}, ${tp}, ${dt}, ${price}, ${valid}, ${creation_offset})"
+        }
+    }
+
+    public func isBuy(): Bool {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => true
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => false
+        }
+    }
+
+    public func isSell(): Bool {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => false
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => true
+        }
+    }
+
+    public func setValid(valid: Bool): BSPoint {
+        match (this) {
+            case BUY(info, tp, dt, price, _, creation_offset, fix_offset) => BUY(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+            case SELL(info, tp, dt, price, _, creation_offset, fix_offset) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+        }
+    }
+
+    public func getValid(): Bool {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => valid
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => valid
+        }
+    }
+
+    public func getPrice(): Float64 {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => price
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => price
+        }
+    }
+
+    public func setPrice(price: Float64): BSPoint {
+        match (this) {
+            case BUY(info, tp, dt, _, valid, creation_offset, fix_offset) => BUY(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+            case SELL(info, tp, dt, _, valid, creation_offset, fix_offset) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+        }
+    }
+
+    public func getDt(): DateTime {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => dt
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => dt
+        }
+    }
+
+    public func setDt(dt: DateTime): BSPoint {
+        match (this) {
+            case BUY(info, tp, _, price, valid, creation_offset, fix_offset) => BUY(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+            case SELL(info, tp, _, price, valid, creation_offset, fix_offset) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+        }
+    }
+
+    public func getType(): String {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => tp
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => tp
+        }
+    }
+
+    public func setType(tp: String): BSPoint {
+        match (this) {
+            case BUY(info, _, dt, price, valid, creation_offset, fix_offset) => BUY(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+            case SELL(info, _, dt, price, valid, creation_offset, fix_offset) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+        }
+    }
+
+    public func getInfo(): String {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => info
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => info
+        }
+    }
+
+    public func setInfo(info: String): BSPoint {
+        match (this) {
+            case BUY(_, tp, dt, price, valid, creation_offset, fix_offset) => BUY(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+            case SELL(_, tp, dt, price, valid, creation_offset, fix_offset) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
+        }
+    }
+
+    public func getOffset(): Int64 {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => creation_offset
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => creation_offset
+        }
+    }
+
+    public func setOffset(fix_offset: Int64): BSPoint {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, _) => BUY(info, tp, dt, price, valid, creation_offset,
+                fix_offset)
+            case SELL(info, tp, dt, price, valid, creation_offset, _) => SELL(info, tp, dt, price, valid,
+                creation_offset, fix_offset)
         }
     }
 
@@ -260,6 +455,15 @@ public enum BSPoint <: ToString & Equatable<BSPoint> {
 
     public operator override func !=(other: BSPoint): Bool {
         return !(this == other)
+    }
+
+    public func hashCode(): Int64 {
+        match (this) {
+            case BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => "BUY(${info}, ${tp}, ${dt}, ${price})".
+                hashCode()
+            case SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => "SELL(${info}, ${tp}, ${dt}, ${price})".
+                hashCode()
+        }
     }
 }
 
@@ -302,6 +506,96 @@ public enum Freq <: ToString {
             case MINUTE(s) => Duration.minute * s
             case SECOND(s) => Duration.second * s
             case TICKET(dt) => dt.toUnixTimeStamp()
+        }
+    }
+}
+
+public enum Indicators <: ToString {
+    MACD(UInt32, UInt32, UInt32, String, Indicators, Indicators)
+    | // fast: UInt32, slow: UInt32, signl: UInt32, from: String = {open, high, low, close, ...}, Oscillator MA Type,  Signal Line MA Type
+        MA(UInt32, String)
+    | // len: UInt, from: String = {open, high, low, close, ...} # N日移动平均线=N日收盘价之和 / N
+        SMA(UInt32, String, UInt32)
+    | // len: UInt32, from: String = {open, high, low, close, ...}, offset: UInt32=0
+        EMA(UInt32, String, UInt32)
+    | //
+
+        BOLL(UInt32, String, UInt32, Indicators, UInt32) // len, from, dif, base ma type, offset
+
+    public func toString(): String {
+        ""
+    }
+
+    public static func calc_MA(ma: Indicators, array: Array<Float64>): Float64 {
+        match (ma) {
+            case Indicators.MA(n, _) =>
+                if (array.size != (n as Int64).getOrThrow()) {
+                    throw ChanException()
+                }
+                return sum(array) / (n as Float64).getOrThrow()
+            case _ => throw ChanException()
+        }
+    }
+
+    public static func calc_EMA(ema: Indicators, today: Float64, yesterday_ema: Float64): Float64 {
+        match (ema) {
+            case Indicators.EMA(n, _, offset) => (2.0 * today + yesterday_ema * ((n - 1) as Float64).getOrThrow()) /
+                ((n + 1) as Float64).getOrThrow()
+            case _ => throw ChanException()
+        }
+    }
+
+    public static func calc_MACD(macd: Indicators, today: Float64, yesterday_ema_slow: Float64,
+        yesterday_ema_fast: Float64, yesterday_dif: Float64): (Float64, Float64, Float64) {
+        // https://baike.baidu.com/item/MACD%E6%8C%87%E6%A0%87/6271283
+        match (macd) {
+            case Indicators.MACD(slow, fast, signal, s, ma, signal_ma) =>
+                let ma_slow = match (ma) {
+                    case Indicators.EMA(_, _, offset) => calc_EMA(Indicators.EMA(slow, s, offset), today,
+                        yesterday_ema_slow)
+                    case _ => throw ChanException()
+                }
+
+                let ma_fast = match (ma) {
+                    case Indicators.EMA(_, _, offset) => calc_EMA(Indicators.EMA(fast, s, offset), today,
+                        yesterday_ema_fast)
+                    case _ => throw ChanException()
+                }
+
+                let dif = ma_fast - ma_slow
+
+                let dea = match (signal_ma) {
+                    case Indicators.EMA(_, _, offset) => calc_EMA(Indicators.EMA(signal, s, offset), dif, yesterday_dif)
+                    case _ => throw ChanException()
+                }
+
+                let macd = (dif - dea) * 2.0
+                return (dif, dea, macd)
+
+            case _ => throw ChanException()
+        }
+    }
+
+    public static func calc_BOLL(boll: Indicators, array: Array<Float64>) {
+        match (boll) {
+            case Indicators.BOLL(n, _, K, ma, offset) =>
+                if (array.size != (n as Int64).getOrThrow()) {
+                    throw ChanException()
+                }
+
+                let average = match (ma) {
+                    case Indicators.MA(_, s) => calc_MA(Indicators.MA(n, s), array)
+                    case _ => throw ChanException()
+                }
+                var a = 0.0f64
+                for (i in array) {
+                    a += (i - average) ** 2
+                }
+
+                let sd = sqrt(a / (array.size as Float64).getOrThrow())
+                return (average + (K as Float64).getOrThrow() * sd, average, average - (K as Float64).getOrThrow() * sd)
+
+            case _ => throw ChanException()
         }
     }
 }
@@ -417,12 +711,6 @@ public interface Observer {
     func update(obj: Any, cmd: CMD): Unit
 }
 
-public interface BaseInterface<T> <: ToString & HashableEquatable<T> {}
-
-public interface BaseChanInterface<T> <: Pillar & BaseInterface<T> {
-    func getFields(): HashMap<String, JsonValue>
-}
-
 public interface Bar <: ToString & Pillar {
     mut prop index: Int64
     prop open: Float64
@@ -433,7 +721,11 @@ public interface Bar <: ToString & Pillar {
     prop direction: Direction
 }
 
-public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> {
+public interface BarExtensions {
+    prop macd: Float64
+}
+
+public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> & BarExtensions {
     public let dt: DateTime
     private var _index: Int64 = 0
     private var _open: Float64 = 0.0
@@ -445,6 +737,8 @@ public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> 
 
     private var dts: HashSet<DateTime> = HashSet<DateTime>()
     private var last_volume: Float64
+
+    private let _extensions: HashMap<String, Float64> = HashMap<String, Float64>()
 
     RawBar(dt: DateTime, open: Float64, high: Float64, low: Float64, close: Float64, volume: Float64, index: Int64) {
         this.dt = dt
@@ -507,6 +801,15 @@ public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> 
         }
     }
 
+    public prop macd: Float64 {
+        get() {
+            if (let Some(v) <- this._extensions.get("macd")) {
+                return v
+            }
+            return 0.0f64
+        }
+    }
+
     public func hashCode(): Int64 {
         "RawBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index}, ${this.dts}, ${this.last_volume}, ${this.direction})".
             hashCode()
@@ -559,7 +862,7 @@ public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> 
     }
 }
 
-public class NewBar <: Bar & HashableEquatable<NewBar> {
+public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
     public let dt: DateTime
     private var _index: Int64 = 0
     //private var _open: Float64 = 0.0
@@ -575,6 +878,8 @@ public class NewBar <: Bar & HashableEquatable<NewBar> {
     public var jump: Bool = false
     public var speck: Float64 = 0.0
     public var relation: Direction = Direction.Up // 与前一个NewBar 实际关系
+
+    private let _extensions: HashMap<String, Float64> = HashMap<String, Float64>()
 
     NewBar(dt!: DateTime, high!: Float64, low!: Float64, elements!: Array<RawBar>, pre!: Option<NewBar>) {
         this.dt = dt
@@ -617,6 +922,23 @@ public class NewBar <: Bar & HashableEquatable<NewBar> {
                     this.speck = this.high
             }
         }
+    }
+
+    public func hashCode(): Int64 {
+        "NewBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index}, ${this.shape}, ${this.jump}, ${this.speck}, ${this.relation}, ${this.elements})".
+            hashCode()
+    }
+
+    public operator override func ==(other: NewBar): Bool {
+        return refEq(this, other)
+    }
+
+    public operator override func !=(other: NewBar): Bool {
+        return !(this == other)
+    }
+
+    public func toString(): String {
+        return "NewBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index})"
     }
 
     public mut prop index: Int64 {
@@ -692,20 +1014,20 @@ public class NewBar <: Bar & HashableEquatable<NewBar> {
         }
     }
 
-    public func hashCode(): Int64 {
-        "NewBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index}, ${this.shape}, ${this.jump}, ${this.speck}, ${this.relation}, ${this.elements})".
-            hashCode()
-    }
-    public operator override func ==(other: NewBar): Bool {
-        return refEq(this, other)
-    }
-
-    public operator override func !=(other: NewBar): Bool {
-        return !(this == other)
+    public prop macd: Float64 {
+        get() {
+            if (let Some(v) <- this._extensions.get("macd")) {
+                return v
+            }
+            return 0.0f64
+        }
     }
 
-    public func toString(): String {
-        return "NewBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index})"
+    public func isPoint(dt: DateTime, price: Float64): Bool {
+        if (this.dt == dt && this.speck == price) {
+            return true
+        }
+        return false
     }
 
     public func merge(next_raw_bar: RawBar): Option<NewBar> {
@@ -844,7 +1166,8 @@ public class FenXing <: ToString & FenXingInterface<NewBar> & HashableEquatable<
     }
 
     public func hashCode(): Int64 {
-        "FenXing(${this.left.hashCode()}, ${this.mid.hashCode()}, ${this.right.hashCode()})".hashCode()
+        //"FenXing(${this.left.hashCode()}, ${this.mid.hashCode()}, ${this.right.hashCode()})".hashCode()
+        this.mid.hashCode()
     }
 
     public operator override func ==(other: FenXing): Bool {
@@ -888,7 +1211,7 @@ public interface Line {
     mut prop end: FenXing
 }
 
-public class Bi <: Pillar & HashableEquatable<Bi> & Line {
+public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
     public static let BI_JUMP: Bool = true
     public static let BI_LENGTH: Int64 = 5
     public static var BI_EQUAL: Bool = true
@@ -900,6 +1223,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line {
     private let _start: FenXing
     private var _end: FenXing
     public var pre: Option<Bi>
+    public var level: Byte = 0
 
     public var elements: ArrayList<NewBar>
     public var fake: Bool = false
@@ -972,6 +1296,16 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line {
     public prop direction: Direction {
         get() {
             this._direction
+        }
+    }
+
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                result += bar.macd
+            }
+            return result
         }
     }
 
@@ -1677,9 +2011,6 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
         "FeatureSequence(${this.direction}, ${this.elements})"
     }
 
-    public func update(): Unit {
-    }
-
     public func add(obj: T, _from: String): Bool {
         if (obj.direction == this._direction) {
             throw ChanException("方向不匹配 ${this.direction} ${obj.direction} ")
@@ -1725,7 +2056,7 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
     }
 }
 
-public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
+public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExtensions {
     public var pre: Option<Duan>
     private var _start: FenXing
     private var _end: FenXing
@@ -1766,6 +2097,23 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
         }
     }
 
+    public func hashCode(): Int64 {
+        //"Duan(${this.pre}, ${this.start}, ${this.end}, ${this.direction}, ${this.elements})".hashCode()
+        this._id
+    }
+
+    public operator override func ==(other: Duan): Bool {
+        return refEq(this, other)
+    }
+
+    public operator override func !=(other: Duan): Bool {
+        return !(this == other)
+    }
+
+    public func toString(): String {
+        "Duan(${this.pre.isSome()}, ${this.start}, ${this.end}, ${this.direction}, size=${this.elements.size})"
+    }
+
     public mut prop index: Int64 {
         get() {
             this._index
@@ -1800,8 +2148,8 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
     public prop volume: Float64 {
         get() {
             var sum = 0.0f64
-            for (bar in this.elements) {
-                sum += bar.volume
+            for (bi in this.elements) {
+                sum += bi.volume
             }
             sum
         }
@@ -1810,6 +2158,16 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
     public prop direction: Direction {
         get() {
             this._direction
+        }
+    }
+
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                result += bar.macd
+            }
+            return result
         }
     }
 
@@ -1915,59 +2273,33 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
 
     }
 
+    public func getBars(): Array<NewBar> {
+        let bars = ArrayList<NewBar>()
+        bars.appendAll(this.elements[0].elements)
+        for (bi in this.elements[1..]) {
+            bars.appendAll(bi.elements[1..])
+            if (bi.end == this.end) {
+                break
+            }
+        }
+        return bars.toArray()
+    }
+
+    public func toBi(): Bi {
+        let bi = Bi(pre: None, start: this.start, end: this.end, elements: this.getBars(), fake: false)
+        bi.level = 1
+        return bi
+    }
+
     public func get_elements(): ArrayList<Bi> {
         var elements = ArrayList<Bi>([])
-        for (obj in this.elements) {
-            elements.append(obj)
-            if (obj.end == this.end) {
+        for (bi in this.elements) {
+            elements.append(bi)
+            if (bi.end == this.end) {
                 break
             }
         }
         return elements
-    }
-
-    public func append_element(bi: Bi, observer: Observer): Option<ArrayList<Bi>> {
-        if (this.elements[this.elements.size - 1].end == bi.start) {
-            this.elements.append(bi)
-            if (this.direction == bi.direction) {
-                if (let Some(mid) <- this.mid) {
-                    if (this.direction == Direction.Up) {
-                        if (this.high < bi.high) {
-                            this.end = bi.end
-                        } else {
-                            this.end = mid.start
-                        }
-                    } else {
-                        if (this.low > bi.low) {
-                            this.end = bi.end
-                        } else {
-                            this.end = mid.start
-                        }
-                    }
-                } else {
-                    this.end = bi.end
-                }
-                if (observer.duan_zss.size > 0) {
-                    observer.update(observer.duan_zss[observer.duan_zss.size - 1], CMD.MODIFY("ZhongShu<Duan>"))
-                }
-            } else {
-                (this.left, this.mid, this.right) = this.get_features()
-                if (this.right.isSome()) {
-                    return Some(this.set_done(this.mid.getOrThrow().start))
-                }
-            }
-            return None
-        } else {
-            throw ChanException("线段添加元素时，元素不连续, ${this.elements[this.elements.size-1]}, ${bi}")
-        }
-    }
-
-    public func pop_element(bi: Bi): Bool {
-        if (this.elements[this.elements.size - 1] == bi) {
-            this.elements.pop()
-            return true
-        }
-        throw ChanException("线段弹出元素时，元素不匹配")
     }
 
     public func get_features(): (Option<FeatureSequence<Bi>>, Option<FeatureSequence<Bi>>, Option<FeatureSequence<Bi>>) {
@@ -2030,26 +2362,53 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
         return elements
     }
 
-    public func hashCode(): Int64 {
-        //"Duan(${this.pre}, ${this.start}, ${this.end}, ${this.direction}, ${this.elements})".hashCode()
-        this._id
+    public func append_element(bi: Bi, observer: Observer): Option<ArrayList<Bi>> {
+        if (this.elements[this.elements.size - 1].end == bi.start) {
+            this.elements.append(bi)
+            if (this.direction == bi.direction) {
+                if (let Some(mid) <- this.mid) {
+                    if (this.direction == Direction.Up) {
+                        if (this.high < bi.high) {
+                            this.end = bi.end
+                        } else {
+                            this.end = mid.start
+                        }
+                    } else {
+                        if (this.low > bi.low) {
+                            this.end = bi.end
+                        } else {
+                            this.end = mid.start
+                        }
+                    }
+                } else {
+                    this.end = bi.end
+                }
+                if (observer.duan_zss.size > 0) {
+                    observer.update(observer.duan_zss[observer.duan_zss.size - 1], CMD.MODIFY("ZhongShu<Duan>"))
+                }
+            } else {
+                (this.left, this.mid, this.right) = this.get_features()
+                if (this.right.isSome()) {
+                    let result = Some(this.set_done(this.mid.getOrThrow().start))
+                    observer.update(this, CMD.MODIFY("ZhongShu<Duan>_checkThird"))
+                    return result
+                }
+            }
+            return None
+        } else {
+            throw ChanException("线段添加元素时，元素不连续, ${this.elements[this.elements.size-1]}, ${bi}")
+        }
     }
 
-    public operator override func ==(other: Duan): Bool {
-        return refEq(this, other)
-    }
-
-    public operator override func !=(other: Duan): Bool {
-        return !(this == other)
-    }
-
-    public func toString(): String {
-        "Duan(${this.pre.isSome()}, ${this.start}, ${this.end}, ${this.direction}, size=${this.elements.size})"
+    public func pop_element(bi: Bi): Bool {
+        if (this.elements[this.elements.size - 1] == bi) {
+            this.elements.pop()
+            return true
+        }
+        throw ChanException("线段弹出元素时，元素不匹配")
     }
 
     public static func analyzer_pop(bi: Bi, xds: ArrayList<Duan>, level: UInt16, _from: String, observer: Observer): Unit {
-        let cmd = "Duan.POP"
-
         func __pop(xds: ArrayList<Duan>, duan: Duan, _from: String): Unit {
             if (xds.size == 0) {
                 return
@@ -2065,10 +2424,8 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
                 //dp("Duan.pop, level: ${level}, pop ${duan}")
                 observer.update(duan, CMD.REMOVE("Duan"))
             }
-
-            //this._zs_analyzer_pop<Duan>(duan, this.duan_zss, level, _from)
         }
-
+        let cmd = "Duan.POP"
         let duan: Duan = xds[xds.size - 1]
         let state: String = duan.state
         var pre: Option<Duan> = duan.pre
@@ -2087,7 +2444,6 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
                 right.isNone() && (last.left.getOrThrow().elements |> any {line: Bi => line == bi}))) {
                 __pop(xds, duan, _from)
                 last.pop_element(bi)
-                // last.features = [last.left, last.mid, None]
                 last.right = None
                 return
             }
@@ -2122,8 +2478,6 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
                 //dp("Duan.append, level: ${level}, pop ${duan}")
                 observer.update(duan, CMD.APPEND("Duan"))
             }
-
-            //this._zs_analyzer_push<Duan>(duan, this.duan_zss, xds, level, _from)
         }
 
         func __pop(xds: ArrayList<Duan>, duan: Duan, _from: String): Unit {
@@ -2139,8 +2493,6 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
             if (_from == "analyzer") {
                 observer.update(duan, CMD.REMOVE("Duan"))
             }
-
-            //this._zs_analyzer_pop<Duan>(duan, this.duan_zss, level, _from)
         }
 
         var new = Duan(None, bi.start, bi.end, ArrayList<Bi>([bi]))
@@ -2191,19 +2543,14 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line {
     }
 }
 
-public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> & Line where T <: ToString & Pillar & HashableEquatable<T> & Line {
+public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> & Line where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
     private var _index: Int64 = 0
     private let _direction: Direction
+    public let bspoints = ArrayList<BSPoint>()
 
     public var elements: ArrayList<T> = ArrayList<T>()
-    public var third: Option<T> = Option<T>.None
+    private var _third: Option<T> = Option<T>.None
     private let _id: Int64
-
-    init(element: T) {
-        this._id = TradingView.getID()
-        this.elements = ArrayList<T>([element])
-        this._direction = !element.direction
-    }
 
     init(elements: Array<T>) {
         this._id = TradingView.getID()
@@ -2214,6 +2561,16 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
 
         this.elements = ArrayList<T>(elements)
         this._direction = elements[1].direction
+    }
+
+    public mut prop third: Option<T> {
+        get() {
+            this._third
+        }
+        set(t) {
+            let old = this.third
+            this._third = t
+        }
     }
 
     public mut prop index: Int64 {
@@ -2259,6 +2616,24 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         }
     }
 
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                if (bar is Bi) {
+                    let bi = (bar as Bi).getOrThrow()
+                    result += bi.macd
+                } else if (bar is Duan) {
+                    let duan = (bar as Duan).getOrThrow()
+                    result += duan.macd
+                } else {
+                    throw ChanException()
+                }
+            }
+            return result
+        }
+    }
+
     public prop left: Option<T> {
         get() {
             this.elements.get(0)
@@ -2274,16 +2649,6 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
     public prop right: Option<T> {
         get() {
             this.elements.get(2)
-        }
-    }
-
-    public prop last_element: Option<T> {
-        get() {
-            if (this.elements.size > 0) {
-                return Some(this.elements[this.elements.size - 1])
-            } else {
-                return None
-            }
         }
     }
 
@@ -2351,36 +2716,43 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
 
     public func check(): Bool {
         let relation = double_relation(this.left.getOrThrow(), this.right.getOrThrow())
-        relation == Direction.Down || relation == Direction.Up || relation == Direction.Left || relation == Direction.
-            Right
+        return contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])
     }
 
-    public func isEmpty(): Bool {
-        this.elements.isEmpty()
-    }
-
-    public func pop_element(obj: T, _from: String): Unit {
+    public func pop_element(obj: T, observer: Observer, _from: String): Unit {
         if (let Some(third) <- this.third) {
             if (third == obj) {
                 this.third = None
+                dp("ZhongShu.pop_element, 第三买卖点, ${this.bspoints.size}, ${obj}")
+                var i = 0
+                for (bsp in this.bspoints) {
+                    if (bsp.getValid() == true && bsp.getInfo() == "Third") {
+                        let new = bsp.setValid(false) //.setOffset(observer.news[observer.news.size-1].index- obj.end.mid.index)
+                        this.bspoints.set(i, new)
+                        observer.update(new, CMD.MODIFY("BSPoint"))
+                    }
+                    i += 1
+                }
                 return
             }
-            throw ChanException()
+            if (third.index < obj.index) {
+                return
+            }
+            throw ChanException("中枢结束标志不符 ${third} == ${obj}")
         }
 
         let last = this.elements[this.elements.size - 1]
         if (last != obj) {
-            println("不同 ${last} ${obj}")
-            return
+            throw ChanException("不同 ${last} ${obj}")
         }
-        let size = this.elements.size
         this.elements.remove(this.elements.size - 1)
     }
 
-    public func append_element(obj: T, _from: String): Unit {
+    public func append_element(obj: T, observer: Observer, _from: String): Unit {
         let size = this.elements.size
         if (size == 0) {
-            this.elements.append(obj)
+            throw ChanException()
+            //this.elements.append(obj)
             return
         }
 
@@ -2392,31 +2764,47 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
             this.elements.append(obj)
         } else if (size == 2) {
             let relation = double_relation(this.elements[0], obj)
-            if (relation == Direction.Up || relation == Direction.Down || relation == Direction.Left || relation ==
-                Direction.Right) {
+            if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
                 this.elements.append(obj)
             } else if (relation == Direction.Unknow) {
                 throw ChanException()
             } else {
                 this.elements.remove(0)
+                this.elements.remove(0)
                 this.elements.append(obj)
             }
         } else {
             let relation = double_relation(this, obj)
-            if (relation == Direction.Up || relation == Direction.Down || relation == Direction.Left || relation ==
-                Direction.Right) {
-                let last = this.last_element.getOrThrow()
+            if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
+                let last = this.elements[this.elements.size - 1]
                 if (last.end == obj.start) {
                     this.elements.append(obj)
                 } else {
                     throw ChanException("中枢无法添加元素")
                 }
-            } else if (relation == Direction.JumpUp || relation == Direction.JumpDown) {
+            } else if (contains(relation)([Direction.JumpUp, Direction.JumpDown])) {
                 if (this.third.isSome()) {
                     throw ChanException("ZhongShu third is not None ${this.third}")
                 } else {
                     this.third = Some(obj)
-                }
+                    for (p in this.bspoints) {
+                        if (p.getValid() == true) {
+                            throw ChanException()
+                        }
+                    }
+                    if (let Some(bsp) <- BSPoint.calc_zs_third_bsp<T>(this, obj, observer)) {
+                        this.bspoints.append(bsp)
+                        observer.update(bsp, CMD.APPEND("BSPoint"))
+                    }
+                    if (_from == "analyzer") {
+                        if (obj is Bi) {
+                            observer.update(this, CMD.MODIFY("ZhongShu<Bi>"))
+                        }
+                        if (obj is Duan) {
+                            observer.update(this, CMD.MODIFY("ZhongShu<Duan>"))
+                        }
+                    }
+                    }
             } else {
                 throw ChanException("ZhongShu relation")
             }
@@ -2424,7 +2812,7 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
     }
 
     public static func analyzer_pop<T>(obj: T, zss: ArrayList<ZhongShu<T>>, level: UInt16, _from: String,
-        observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line & Pillar {
+        observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
         let cmd = "ZhongShu.POP"
 
         func _pop(zss: ArrayList<ZhongShu<T>>, zs: ZhongShu<T>, _from: String): Unit {
@@ -2442,95 +2830,117 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                 } else {
                     throw ChanException()
                 }
-                println("${cmd}, ${obj}")
             }
         }
 
         if (zss.size > 0) {
-            println("${cmd}, zss.size=${zss.size}, ${obj}")
             let last = zss[zss.size - 1]
-            if (last.third.isSome()) {
-                if (last.third.getOrThrow() == obj) {
-                    last.third = None
-                    return
-                }
-            }
-            last.pop_element(obj, _from)
-
+            dp("${cmd}, z  ss.size=${zss.size}, ${last.third.isSome()}, ${obj}")
+            last.pop_element(obj, observer, _from)
             if (last.elements.size == 0) {
                 _pop(zss, last, _from)
-                if (zss.size > 0) {
-                    let last = zss[zss.size - 1]
-                    if (last.third.getOrThrow() == obj) {
-                        last.third = None
-                        if (obj is Bi) {
-                            observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
-                        }
-                        if (obj is Duan) {
-                            observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
-                        }
-                    }
-                }
             } else {
-                if (obj is Bi) {
-                    observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
-                }
-                if (obj is Duan) {
-                    observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
+                if (_from == "analyzer") {
+                    if (obj is Bi) {
+                        observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
+                    }
+                    if (obj is Duan) {
+                        observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
+                    }
                 }
             }
         }
     }
 
     public static func analyzer_push<T>(obj: T, zss: ArrayList<ZhongShu<T>>, objs: ArrayList<T>, level: UInt16,
-        _from: String, observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line {
+        _from: String, observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
         let cmd = "ZhongShu.PUSH"
 
-        func _append(zss: ArrayList<ZhongShu<T>>, zs: ZhongShu<T>, _from: String): Unit {
+        func __append(zss: ArrayList<ZhongShu<T>>, zs: ZhongShu<T>, _from: String): Unit {
             var index: Int64 = 0
             if (zss.size > 0) {
                 index = zss[zss.size - 1].index + 1
             }
             zs.index = index
             zss.append(zs)
-            if (obj is Bi) {
-                observer.update(zs, CMD.APPEND("ZhongShu<Bi>"))
-            }
-            if (obj is Duan) {
-                observer.update(zs, CMD.APPEND("ZhongShu<Duan>"))
-            }
-
-            println("${cmd}, append")
-        }
-        println("${cmd}, zss.size=${zss.size}, ${obj}")
-
-        if (zss.isEmpty()) {
-            let new = ZhongShu<T>(obj)
-            _append(zss, new, _from)
-        } else {
-            let last = zss[zss.size - 1]
-            if (last.third.isSome()) {
-                let new = ZhongShu<T>(obj)
-                _append(zss, new, _from)
-                return
-            } else {
-                last.append_element(obj, _from)
+            if (_from == "analyzer") {
                 if (obj is Bi) {
-                    observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
+                    observer.update(zs, CMD.APPEND("ZhongShu<Bi>"))
                 }
                 if (obj is Duan) {
-                    observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
+                    observer.update(zs, CMD.APPEND("ZhongShu<Duan>"))
                 }
-                if (last.third.isSome()) {
-                    let new = ZhongShu<T>(obj)
-                    _append(zss, new, _from)
-                    return
+            }
+
+            dp("${cmd}, append")
+        }
+        dp("${cmd}, zss.size=${zss.size}, ${obj}")
+
+        if (zss.isEmpty()) {
+            if (obj.index >= 2) {
+                let left = objs[objs.size - 3]
+                let mid = objs[objs.size - 2]
+                let right = objs[objs.size - 1]
+                let relation = double_relation(left, right)
+                if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
+                    let new = ZhongShu<T>([left, mid, right])
+                    __append(zss, new, _from)
+                }
+            }
+        } else {
+            let last = zss[zss.size - 1]
+            if (let Some(third) <- last.third) {
+                if (contains(double_relation(last, third))([Direction.Up, Direction.Down, Direction.Right,
+                    Direction.Left])) {
+                    throw ChanException("第三买卖点 无效！${third}")
+                }
+                if (obj.index - third.index >= 2) {
+                    // 符合形成中枢条件
+                    let left = objs[objs.size - 3]
+                    let mid = objs[objs.size - 2]
+                    let right = objs[objs.size - 1]
+
+                    if (left.direction == third.direction) {
+                        let relation = double_relation(left, right)
+                        if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
+                            let new = ZhongShu<T>([left, mid, right])
+                            __append(zss, new, _from)
+                            return
+                        }
+                    }
+                }
+            } else {
+                last.append_element(obj, observer, _from)
+                if (_from == "analyzer") {
+                    if (obj is Bi) {
+                        observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
+                    }
+                    if (obj is Duan) {
+                        observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
+                    }
+                }
+                if (let Some(third) <- last.third) {
+                    if (obj.index - third.index >= 2) {
+                        // 符合形成中枢条件
+                        let left = objs[objs.size - 3]
+                        let mid = objs[objs.size - 2]
+                        let right = objs[objs.size - 1]
+
+                        if (left.direction == third.direction) {
+                            let relation = double_relation(left, right)
+                            if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
+                                let new = ZhongShu<T>([left, mid, right])
+                                __append(zss, new, _from)
+                                return
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    public static func analyzer<T>(elements: ArrayList<T>, observer: Observer): (Bool, ArrayList<ZhongShu<T>>) where T <: ToString & Pillar & HashableEquatable<T> & Line & Pillar {
+    public static func analyzer<T>(elements: ArrayList<T>, observer: Observer): (Bool, ArrayList<ZhongShu<T>>) where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
         let zss = ArrayList<ZhongShu<T>>()
         if (elements.size < 3) {
             return (false, zss)
@@ -2555,27 +2965,6 @@ class BaseAnalyzer <: Observer {
     public var _duan_zss: ArrayList<ZhongShu<Duan>> = ArrayList<ZhongShu<Duan>>()
     public var ws: Option<WebSocket> = None
 
-    public static func fromData(symbol: String, freq: UInt32, buffer: Array<Byte>, ws!: Option<WebSocket> = None): BaseAnalyzer {
-        var obj = BaseAnalyzer(symbol, freq, ws: ws)
-        let size = 48 // struct.calcsize(">6d")
-
-        for (i in 0..buffer.size / size) {
-            //for (i in 200..500) {
-            let bar = RawBar.readBigEndian(buffer[i * size..(i + 1) * size])
-            obj.push(bar)
-        }
-        return obj
-    }
-
-    public static func readFromDatFile(path: String, ws!: Option<WebSocket> = None): BaseAnalyzer {
-        let filename = Path(path).fileName.getOrThrow()
-        let tmp = filename.split("-", 3)
-        let symbol = tmp[0]
-        let freq: UInt32 = UInt32.parse(tmp[1])
-        let buffer = File.readFrom(path)
-        return BaseAnalyzer.fromData(symbol, freq, buffer, ws: ws)
-    }
-
     BaseAnalyzer(symbol: String, freq: UInt32, ws!: Option<WebSocket> = None) {
         this._symbol = symbol
         this._freq = freq
@@ -2587,41 +2976,49 @@ class BaseAnalyzer <: Observer {
             this._symbol
         }
     }
+
     public prop freq: UInt32 {
         get() {
             this._freq
         }
     }
+
     public prop raws: ArrayList<RawBar> {
         get() {
             this._raws
         }
     }
+
     public prop news: ArrayList<NewBar> {
         get() {
             this._news
         }
     }
+
     public prop fxs: ArrayList<FenXing> {
         get() {
             this._fxs
         }
     }
+
     public prop bis: ArrayList<Bi> {
         get() {
             this._bis
         }
     }
+
     public prop duans: ArrayList<Duan> {
         get() {
             this._duans
         }
     }
+
     public prop bi_zss: ArrayList<ZhongShu<Bi>> {
         get() {
             this._bi_zss
         }
     }
+
     public prop duan_zss: ArrayList<ZhongShu<Duan>> {
         get() {
             this._duan_zss
@@ -2637,6 +3034,9 @@ class BaseAnalyzer <: Observer {
             } else if (name == "NewBar") {
                 let obj = (o as NewBar).getOrThrow()
                 TradingView.push(obj, this.ws)
+            } else if (name == "BSPoint") {
+                let obj = (o as BSPoint).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
             } else if (name == "Bi") {
                 let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
@@ -2660,6 +3060,9 @@ class BaseAnalyzer <: Observer {
                 let obj = (o as RawBar).getOrThrow()
             } else if (name == "NewBar") {
                 let obj = (o as NewBar).getOrThrow()
+            } else if (name == "BSPoint") {
+                let obj = (o as BSPoint).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
             } else if (name == "Bi") {
                 let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
@@ -2684,6 +3087,9 @@ class BaseAnalyzer <: Observer {
             } else if (name == "NewBar") {
                 let obj = (o as NewBar).getOrThrow()
                 TradingView.push(obj, this.ws)
+            } else if (name == "BSPoint") {
+                let obj = (o as BSPoint).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
             } else if (name == "Bi") {
                 let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
@@ -2696,6 +3102,23 @@ class BaseAnalyzer <: Observer {
             } else if (name == "ZhongShu<Duan>") {
                 let obj = (o as ZhongShu<Duan>).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
+            } else if (name == "ZhongShu<Duan>_checkThird") {
+                let duan = (o as Duan).getOrThrow()
+                if (this._duan_zss.isEmpty()) {
+                    return
+                }
+                let zs = this._duan_zss[this._duan_zss.size - 1]
+                if (let Some(third) <- zs.third) {
+                    if (third == duan) {
+                        if (contains(double_relation(zs, duan))(
+                            [Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
+                            ZhongShu<Duan>.analyzer_pop(duan, this.duan_zss, 0, _from, this)
+                            ZhongShu<Duan>.analyzer_push(duan, this.duan_zss, this.duans, 0, _from, this)
+                        }
+                    }
+                }
+
+            //TradingView.push(zs, this.ws, cmd)
             } else {
                 println("unknow : ${cmd}")
             }
@@ -2732,7 +3155,7 @@ class BaseAnalyzer <: Observer {
             if (let Some(nb) <- this.news[this.news.size - 1].merge(bar)) {
                 this.news.append(nb)
                 this.update(nb, CMD.APPEND("NewBar"))
-                sleep(Duration.millisecond * 30)
+                sleep(Duration.millisecond * 5)
             } else {
                 this.update(this.news[this.news.size - 1], CMD.MODIFY("NewBar"))
             }
@@ -2771,9 +3194,28 @@ class BaseAnalyzer <: Observer {
             Bi.analyzer(fx, this.fxs, this.bis, this.news, "analyzer", 0, this)
         }
     }
-}
 
-///
+    public static func fromData(symbol: String, freq: UInt32, buffer: Array<Byte>, ws!: Option<WebSocket> = None): BaseAnalyzer {
+        var obj = BaseAnalyzer(symbol, freq, ws: ws)
+        let size = 48 // struct.calcsize(">6d")
+
+        for (i in 0..buffer.size / size) {
+            //for (i in 200..500) {
+            let bar = RawBar.readBigEndian(buffer[i * size..(i + 1) * size])
+            obj.push(bar)
+        }
+        return obj
+    }
+
+    public static func readFromDatFile(path: String, ws!: Option<WebSocket> = None): BaseAnalyzer {
+        let filename = Path(path).fileName.getOrThrow()
+        let tmp = filename.split("-", 3)
+        let symbol = tmp[0]
+        let freq: UInt32 = UInt32.parse(tmp[1])
+        let buffer = File.readFrom(path)
+        return BaseAnalyzer.fromData(symbol, freq, buffer, ws: ws)
+    }
+}
 
 class NaiveDistributor <: HttpRequestDistributor {
     let map = HashMap<String, HttpRequestHandler>()
@@ -2839,7 +3281,7 @@ class WSHandler <: HttpRequestHandler {
                     if (message == "hello") {
                         spawn {
                             BaseAnalyzer.readFromDatFile(
-                                "./btcusd-300-1713295800-1715695500.dat",
+                                "/home/moscow/PycharmProjects/chanlun.py/btcusd-300-1713295800-1715695500.dat",
                                 ws: Some(websocketServer)
                             )
                         }
@@ -2861,20 +3303,326 @@ class WSHandler <: HttpRequestHandler {
             }
         }
         /*
-        println("data: ${String.fromUtf8(data.toArray())}") // hello
+            println("data: ${String.fromUtf8(data.toArray())}") // hello
 
-        // 发 4097 个 a
-        websocketServer.write(TextWebFrame, Array<UInt8>(4097, repeat: 97))
+            // 发 4097 个 a
+            websocketServer.write(TextWebFrame, Array<UInt8>(4097, repeat: 97))
 
-        // 4 关闭 websocket，
-        // 收发 CloseFrame
-        let websocketFrame = websocketServer.read()
-        println("close frame type: ${websocketFrame.frameType}") // CloseWebFrame
-        println("close frame payload: ${websocketFrame.payload}") // 3, 232
-        websocketServer.write(CloseWebFrame, websocketFrame.payload)
-        // 关闭底层连接
-        websocketServer.closeConn()
+            // 4 关闭 websocket，
+            // 收发 CloseFrame
+            let websocketFrame = websocketServer.read()
+            println("close frame type: ${websocketFrame.frameType}") // CloseWebFrame
+            println("close frame payload: ${websocketFrame.payload}") // 3, 232
+            websocketServer.write(CloseWebFrame, websocketFrame.payload)
+            // 关闭底层连接
+            websocketServer.closeConn()
          */
+    }
+}
+
+public func CreateMultipointShapeOptions(
+    shape!: String = "trend_line",
+    lock!: Bool = true,
+    disableSelection!: Bool = true,
+    disableSave!: Bool = true,
+    disableUndo!: Bool = true,
+    text!: String = "text",
+    filled!: Bool = false,
+    icon!: Int64 = 0,
+    showInObjectsTree!: Bool = true,
+    zOrder!: Option<String> = None // ​"top" | "bottom"
+): JsonObject {
+    //https://www.tradingview.com/charting-library-docs/v27/api/interfaces/Charting_Library.CreateMultipointShapeOptions
+
+    let obj = JsonObject()
+    let shapes = "​emoji | triangle | curve | circle | ellipse | path | polyline | text | icon | extended | anchored_text | anchored_note | note | signpost | double_curve | arc | sticker | arrow_up | arrow_down | arrow_left | arrow_right | price_label | price_note | arrow_marker | flag | vertical_line | horizontal_line | cross_line | horizontal_ray | trend_line | info_line | trend_angle | arrow | ray | parallel_channel | disjoint_angle | flat_bottom | anchored_vwap | pitchfork | schiff_pitchfork_modified | schiff_pitchfork | balloon | comment | inside_pitchfork | pitchfan | gannbox | gannbox_square | gannbox_fixed | gannbox_fan | fib_retracement | fib_trend_ext | fib_speed_resist_fan | fib_timezone | fib_trend_time | fib_circles | fib_spiral | fib_speed_resist_arcs | fib_channel | xabcd_pattern | cypher_pattern | abcd_pattern | callout | triangle_pattern | 3divers_pattern | head_and_shoulders | fib_wedge | elliott_impulse_wave | elliott_triangle_wave | elliott_triple_combo | elliott_correction | elliott_double_combo | cyclic_lines | time_cycles | sine_line | long_position | short_position | forecast | date_range | price_range | date_and_price_range | bars_pattern | ghost_feed | projection | rectangle | rotated_rectangle | brush | highlighter | regression_trend | fixed_range_volume_profile"
+    if (shapes.indexOf(shape).isNone()) {
+        throw UnsupportedException("CreateMultipointShapeOptions: Unsupported shape (${shape})")
+    }
+    obj.put("shape", JsonString(shape))
+    obj.put("lock", JsonBool(lock))
+    obj.put("disableSelection", JsonBool(disableSelection))
+    obj.put("disableSave", JsonBool(disableSave))
+    obj.put("disableUndo", JsonBool(disableUndo))
+    obj.put("text", JsonString(text))
+    obj.put("filled", JsonBool(filled))
+    if (shape == "icon") {
+        obj.put("icon", JsonInt(icon))
+    }
+    obj.put("showInObjectsTree", JsonBool(showInObjectsTree))
+    if (let Some(tmp) <- zOrder) {
+        if (tmp == "top" || tmp == "bottom") {
+            obj.put("zOrder", JsonString(tmp))
+        } else {
+            println("CreateMultipointShapeOptions: Unsupported zOrder (${zOrder})")
+        }
+    }
+    return obj
+}
+
+public class IntervalsVisibilities {
+    IntervalsVisibilities(
+        let ticks!: Bool = true,
+        let seconds!: Bool = true,
+        let minutes!: Bool = true,
+        let hours!: Bool = true,
+        let days!: Bool = true,
+        let weeks!: Bool = true,
+        let months!: Bool = true,
+        let ranges!: Bool = true,
+        let secondsFrom!: Int64 = 1,
+        let secondsTo!: Int64 = 59,
+        let minutesFrom!: Int64 = 1,
+        let minutesTo!: Int64 = 59,
+        let hoursFrom!: Int64 = 1,
+        let hoursTo!: Int64 = 24,
+        let daysFrom!: Int64 = 1,
+        let daysTo!: Int64 = 366,
+        let weeksFrom!: Int64 = 1,
+        let weeksTo!: Int64 = 52,
+        let monthsFrom!: Int64 = 1,
+        let monthsTo!: Int64 = 12
+    ) {}
+
+    public func toJson(): JsonValue {
+        let obj = JsonObject()
+        obj.put("ticks", JsonBool(this.ticks))
+        obj.put("seconds", JsonBool(this.seconds))
+        obj.put("secondsFrom", JsonInt(this.secondsFrom))
+        obj.put("secondsTo", JsonInt(this.secondsTo))
+        obj.put("minutes", JsonBool(this.minutes))
+        obj.put("minutesFrom", JsonInt(this.minutesFrom))
+        obj.put("minutesTo", JsonInt(this.minutesTo))
+        obj.put("hours", JsonBool(this.hours))
+        obj.put("hoursFrom", JsonInt(this.hoursFrom))
+        obj.put("hoursTo", JsonInt(this.hoursTo))
+        obj.put("days", JsonBool(this.days))
+        obj.put("daysFrom", JsonInt(this.daysFrom))
+        obj.put("daysTo", JsonInt(this.daysTo))
+        obj.put("weeks", JsonBool(this.weeks))
+        obj.put("weeksFrom", JsonInt(this.weeksFrom))
+        obj.put("weeksTo", JsonInt(this.weeksTo))
+        obj.put("months", JsonBool(this.months))
+        obj.put("monthsFrom", JsonInt(this.monthsFrom))
+        obj.put("monthsTo", JsonInt(this.monthsTo))
+        obj.put("ranges", JsonBool(this.ranges))
+        return obj
+    }
+}
+
+public class MiddleLine {
+    MiddleLine(
+        let showLine!: Bool = false,
+        let lineWidth!: Int64 = 1,
+        let lineColor!: String = "#000066",
+        let lineStyle!: Int64 = 2
+    ) {}
+
+    public func toJson(): JsonValue {
+        let obj = JsonObject()
+        obj.put("showLine", JsonBool(this.showLine))
+        obj.put("lineWidth", JsonInt(this.lineWidth))
+        obj.put("lineColor", JsonString(this.lineColor))
+        obj.put("lineStyle", JsonInt(this.lineStyle))
+        return obj
+    }
+}
+
+public class Rectangle {
+    public static func getBi(title: String, direction: Direction, extendRight: Bool): Rectangle {
+        let linewidth: Int64 = 1
+        var linecolor: String = "rgba(76, 175, 80, 1)"
+        var backgroundColor: String = "rgba(76, 175, 80, 0.2)"
+        if (direction == Direction.Down) {
+            linecolor = "rgba(178, 40, 51, 1)"
+            backgroundColor = "rgba(178, 40, 51, 0.2)"
+        }
+        let middleline = MiddleLine(lineColor: linecolor, lineWidth: linewidth)
+        let obj = Rectangle(text: "Bizs", title: title, color: linecolor, linewidth: linewidth,
+            backgroundColor: backgroundColor, middleLine: middleline, extendRight: extendRight)
+        return obj
+    }
+
+    public static func getDuan(title: String, direction: Direction, extendRight: Bool): Rectangle {
+        let linewidth: Int64 = 2
+        var linecolor: String = "rgba(76, 175, 80, 1)"
+        var backgroundColor: String = "rgba(76, 175, 80, 0.2)"
+        if (direction == Direction.Down) {
+            linecolor = "rgba(178, 40, 51, 1)"
+            backgroundColor = "rgba(178, 40, 51, 0.2)"
+        }
+        let middleline = MiddleLine(lineColor: linecolor, lineWidth: linewidth)
+        let obj = Rectangle(text: "Duanzs", title: title, color: linecolor, linewidth: linewidth,
+            backgroundColor: backgroundColor, middleLine: middleline, extendRight: extendRight)
+        return obj
+    }
+
+    Rectangle(
+        let color!: String = "#99CC99",
+        let fillBackground!: Bool = true,
+        let backgroundColor!: String = "rgba(156, 39, 176, 0.2)",
+        let linewidth!: Int64 = 1,
+        let transparency!: Int64 = 50,
+        let showLabel!: Bool = false,
+        let horzLabelsAlign!: String = "left",
+        let vertLabelsAlign!: String = "bottom",
+        let textColor!: String = "#9c27b0",
+        let fontSize!: Int64 = 14,
+        let bold!: Bool = false,
+        let italic!: Bool = false,
+        let extendLeft!: Bool = false,
+        let extendRight!: Bool = false,
+        let middleLine!: MiddleLine = MiddleLine(),
+        let visible!: Bool = true,
+        let frozen!: Bool = true,
+        let title!: String = "Bi中枢-10",
+        let text!: String = "Bizs",
+        let intervalsVisibilities!: IntervalsVisibilities = IntervalsVisibilities()
+    ) {}
+
+    public func toJson(): JsonObject {
+        let obj = JsonObject()
+        obj.put("color", JsonString(this.color))
+        obj.put("fillBackground", JsonBool(this.fillBackground))
+        obj.put("backgroundColor", JsonString(this.backgroundColor))
+        obj.put("linewidth", JsonInt(this.linewidth))
+        obj.put("transparency", JsonInt(this.transparency))
+        obj.put("showLabel", JsonBool(this.showLabel))
+        obj.put("horzLabelsAlign", JsonString(this.horzLabelsAlign))
+        obj.put("vertLabelsAlign", JsonString(this.vertLabelsAlign))
+        obj.put("textColor", JsonString(this.textColor))
+        obj.put("fontSize", JsonInt(this.fontSize))
+        obj.put("bold", JsonBool(this.bold))
+        obj.put("italic", JsonBool(this.italic))
+        obj.put("extendLeft", JsonBool(this.extendLeft))
+        obj.put("extendRight", JsonBool(this.extendRight))
+        obj.put("middleLine", this.middleLine.toJson())
+        obj.put("visible", JsonBool(this.visible))
+        obj.put("frozen", JsonBool(this.frozen))
+        obj.put("title", JsonString(this.title))
+        obj.put("text", JsonString(this.text))
+        obj.put("intervalsVisibilities", this.intervalsVisibilities.toJson())
+        return obj
+    }
+}
+
+public class TrendLine {
+    public static func getBi(title: String): TrendLine {
+        let obj = TrendLine(text: "bi", title: title, linecolor: "#CC62FF", linewidth: 2, linestyle: 0)
+        return obj
+    }
+
+    public static func getDuan(title: String): TrendLine {
+        let obj = TrendLine(text: "duan", title: title, linecolor: "#F1C40F", linewidth: 3, linestyle: 0)
+        return obj
+    }
+
+    public static func getFeature(title: String, direction: Direction): TrendLine {
+        var obj = TrendLine(text: "feature", title: title, linecolor: "#22FF22", linewidth: 2, linestyle: 2)
+        if (direction == Direction.Up) {
+            obj = TrendLine(text: "feature", title: title, linecolor: "#FF2222", linewidth: 2, linestyle: 2)
+        }
+        return obj
+    }
+
+    TrendLine(
+        let linecolor!: String = "#22FF22",
+        let linewidth!: Int64 = 2,
+        let linestyle!: Int64 = 0,
+        let extendLeft!: Bool = false,
+        let extendRight!: Bool = false,
+        let leftEnd!: Int64 = 0,
+        let rightEnd!: Int64 = 0,
+        let showLabel!: Bool = false,
+        let horzLabelsAlign!: String = "center",
+        let vertLabelsAlign!: String = "bottom",
+        let textcolor!: String = "#2962FF",
+        let fontsize!: Int64 = 14,
+        let bold!: Bool = false,
+        let italic!: Bool = false,
+        let showMiddlePoint!: Bool = false,
+        let showPriceLabels!: Bool = false,
+        let showPriceRange!: Bool = false,
+        let showPercentPriceRange!: Bool = false,
+        let showPipsPriceRange!: Bool = false,
+        let showBarsRange!: Bool = false,
+        let showDateTimeRange!: Bool = false,
+        let showDistance!: Bool = false,
+        let showAngle!: Bool = false,
+        let statsPosition!: Int64 = 2,
+        let visible!: Bool = true,
+        let frozen!: Bool = true,
+        let title!: String = "特征序列",
+        let text!: String = "feature",
+        let intervalsVisibilities!: IntervalsVisibilities = IntervalsVisibilities()
+    ) {}
+    public func toJson(): JsonValue {
+        let obj = JsonObject()
+        obj.put("linecolor", JsonString(this.linecolor))
+        obj.put("linewidth", JsonInt(this.linewidth))
+        obj.put("linestyle", JsonInt(this.linestyle))
+        obj.put("title", JsonString(this.title))
+        obj.put("text", JsonString(this.text))
+        /*
+            obj.put("extendLeft", JsonBool(this.extendLeft))
+            obj.put("extendRight", JsonBool(this.extendRight))
+            obj.put("leftEnd", JsonInt(this.leftEnd))
+            obj.put("rightEnd", JsonInt(this.rightEnd))
+            obj.put("showLabel", JsonBool(this.showLabel))
+            obj.put("horzLabelsAlign", JsonString(this.horzLabelsAlign))
+            obj.put("vertLabelsAlign", JsonString(this.vertLabelsAlign))
+            obj.put("textcolor", JsonString(this.textcolor))
+            obj.put("fontsize", JsonInt(this.fontsize))
+            obj.put("bold", JsonBool(this.bold))
+            obj.put("italic", JsonBool(this.italic))
+            obj.put("showMiddlePoint", JsonBool(this.showMiddlePoint))
+            obj.put("showPriceLabels", JsonBool(this.showPriceLabels))
+            obj.put("showPriceRange", JsonBool(this.showPriceRange))
+            obj.put("showPercentPriceRange", JsonBool(this.showPercentPriceRange))
+            obj.put("showPipsPriceRange", JsonBool(this.showPipsPriceRange))
+            obj.put("showBarsRange", JsonBool(this.showBarsRange))
+            obj.put("showDateTimeRange", JsonBool(this.showDateTimeRange))
+            obj.put("showDistance", JsonBool(this.showDistance))
+            obj.put("showAngle", JsonBool(this.showAngle))
+            obj.put("statsPosition", JsonInt(this.statsPosition))
+            obj.put("visible", JsonBool(this.visible))
+            obj.put("frozen", JsonBool(this.frozen))
+            obj.put("intervalsVisibilities", JsonObject(this.intervalsVisibilities.getFields()))
+         */
+        return obj
+    }
+}
+
+public class Arrow {
+    Arrow(
+        let color!: String = "#CC2F3C",
+        let arrowColor!: String = "#CC2F3C",
+        let fontsize!: Int64 = 14,
+        let bold!: Bool = false,
+        let italic!: Bool = false,
+        let showLabel!: Bool = true,
+        let visible!: Bool = true,
+        let frozen!: Bool = true,
+        let title!: String = "BiTS",
+        let text!: String = "Bi三卖1",
+        let intervalsVisibilities!: IntervalsVisibilities = IntervalsVisibilities()
+    ) {}
+    public func toJson(): JsonValue {
+        let obj = JsonObject()
+        obj.put("color", JsonString(this.color))
+        obj.put("title", JsonString(this.title))
+        obj.put("text", JsonString(this.text))
+        /*
+        obj.put("arrowColor", JsonString(this.arrowColor))
+        obj.put("fontsize", JsonInt(this.fontsize))
+        obj.put("bold", JsonBool(this.bold))
+        obj.put("italic", JsonBool(this.italic))
+        obj.put("showLabel", JsonBool(this.showLabel))
+        obj.put("visible", JsonBool(this.visible))
+        obj.put("frozen", JsonBool(this.frozen))
+        obj.put("intervalsVisibilities", this.intervalsVisibilities.toJson())
+         */
+        return obj
     }
 }
 
@@ -2901,7 +3649,7 @@ public class TradingView {
         try {
             f.read(buffer)
             TradingView.seed = UInt64.readBigEndian(buffer)
-            println("TradingView.seed=${TradingView.seed}")
+            println(colored("TV.seed=${TradingView.seed}", color: "red"))
         } catch (E: IllegalArgumentException) {
             println(E.message)
         } catch (e: FSException) {
@@ -2961,6 +3709,48 @@ public class TradingView {
         obj.put("low", JsonFloat(bar.low))
         obj.put("close", JsonFloat(bar.close))
         obj.put("volume", JsonFloat(bar.volume))
+        if (let Some(ss) <- ws) {
+            TradingView.send(ss, obj.toString().toArray())
+        }
+    }
+
+    public static func push(bsp: BSPoint, ws: Option<WebSocket>, command: CMD): Unit {
+        let obj = JsonObject()
+        let cmd = command.toString()
+
+        let points = ArrayList<JsonValue>()
+        let s = JsonObject()
+        s.put("time", JsonInt(DateTime.dt2int(bsp.getDt())))
+        s.put("price", JsonFloat(bsp.getPrice()))
+        points.append(s)
+
+        obj.put("type", JsonString("shape"))
+        obj.put("cmd", JsonString(cmd))
+        var shape_name = "arrow_up"
+        var color = "#089981"
+        if (bsp.isSell()) {
+            shape_name = "arrow_down"
+            color = "#CC2F3C"
+        }
+
+        if (bsp.getValid() == false) {
+            color = "#FFFA50"
+        }
+        let title: String = match (bsp) {
+            case BSPoint.BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => "${tp}${info}Buy"
+            case BSPoint.SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => "${tp}${info}Sell"
+        }
+        let text = match (bsp) {
+            case BSPoint.BUY(info, tp, dt, price, valid, creation_offset, fix_offset) => "${tp}${info}Buy, ${creation_offset}, ${valid}"
+            case BSPoint.SELL(info, tp, dt, price, valid, creation_offset, fix_offset) => "${tp}${info}Sell, ${creation_offset}, ${valid}"
+        }
+        let options = CreateMultipointShapeOptions(shape: shape_name, text: "${command}")
+        let properties = Arrow(color: color, text: text, title: title)
+        obj.put("name", JsonString(shape_name))
+        obj.put("id", JsonString(bsp.hashCode().toString()))
+        obj.put("points", JsonArray(points))
+        obj.put("options", options)
+        obj.put("properties", properties.toJson())
         if (let Some(ss) <- ws) {
             TradingView.send(ss, obj.toString().toArray())
         }
@@ -3075,7 +3865,7 @@ public class TradingView {
         }
 
         let options = CreateMultipointShapeOptions(shape: "rectangle", text: "zs")
-        let properties = Rectangle.getBi("Bi中枢-${zs.index}", zs.direction)
+        let properties = Rectangle.getBi("Bi中枢-${zs.index}", zs.direction, zs.third.isNone())
 
         obj.put("name", JsonString("rectangle"))
         obj.put("id", JsonString(zs.hashCode().toString()))
@@ -3106,7 +3896,7 @@ public class TradingView {
         }
 
         let options = CreateMultipointShapeOptions(shape: "rectangle", text: "zs")
-        let properties = Rectangle.getDuan("Duan中枢-${zs.index}", zs.direction)
+        let properties = Rectangle.getDuan("Duan中枢-${zs.index}", zs.direction, zs.third.isNone())
 
         obj.put("name", JsonString("rectangle"))
         obj.put("id", JsonString(zs.hashCode().toString()))
@@ -3123,6 +3913,7 @@ main() {
     //let obj = BaseAnalyzer.readFromDatFile("./btcusd-300-1713295800-1715695500.dat")
 
     TradingView.setSeed()
+    println("\033[32m测试\033[0m")
 
     // 1. 构建 Server 实例
     let server = ServerBuilder().addr("0.0.0.0").port(8080).distributor(NaiveDistributor()) // 自定义分发器
@@ -3130,288 +3921,4 @@ main() {
     // 2. 启动服务
     //server.logger.level = DEBUG
     server.serve()
-}
-
-public func CreateMultipointShapeOptions(
-    shape!: String = "trend_line",
-    lock!: Bool = true,
-    disableSelection!: Bool = true,
-    disableSave!: Bool = true,
-    disableUndo!: Bool = true,
-    text!: String = "text",
-    filled!: Bool = false,
-    icon!: Int64 = 0,
-    showInObjectsTree!: Bool = false,
-    zOrder!: Option<String> = None // ​"top" | "bottom"
-): JsonObject {
-    /*
-            https://www.tradingview.com/charting-library-docs/v27/api/interfaces/Charting_Library.CreateMultipointShapeOptions
-            "emoji" | "triangle" | "curve" | "circle" | "ellipse" | "path" | "polyline" | "text" | "icon" | "extended" | "anchored_text" | "anchored_note" | "note" | "signpost" | "double_curve" | "arc" | "sticker" | "arrow_up" | "arrow_down" | "arrow_left" | "arrow_right" | "price_label" | "price_note" | "arrow_marker" | "flag" | "vertical_line" | "horizontal_line" | "cross_line" | "horizontal_ray" | "trend_line" | "info_line" | "trend_angle" | "arrow" | "ray" | "parallel_channel" | "disjoint_angle" | "flat_bottom" | "anchored_vwap" | "pitchfork" | "schiff_pitchfork_modified" | "schiff_pitchfork" | "balloon" | "comment" | "inside_pitchfork" | "pitchfan" | "gannbox" | "gannbox_square" | "gannbox_fixed" | "gannbox_fan" | "fib_retracement" | "fib_trend_ext" | "fib_speed_resist_fan" | "fib_timezone" | "fib_trend_time" | "fib_circles" | "fib_spiral" | "fib_speed_resist_arcs" | "fib_channel" | "xabcd_pattern" | "cypher_pattern" | "abcd_pattern" | "callout" | "triangle_pattern" | "3divers_pattern" | "head_and_shoulders" | "fib_wedge" | "elliott_impulse_wave" | "elliott_triangle_wave" | "elliott_triple_combo" | "elliott_correction" | "elliott_double_combo" | "cyclic_lines" | "time_cycles" | "sine_line" | "long_position" | "short_position" | "forecast" | "date_range" | "price_range" | "date_and_price_range" | "bars_pattern" | "ghost_feed" | "projection" | "rectangle" | "rotated_rectangle" | "brush" | "highlighter" | "regression_trend" | "fixed_range_volume_profile"
-     */
-    let obj = JsonObject()
-    let shapes = "​emoji | triangle | curve | circle | ellipse | path | polyline | text | icon | extended | anchored_text | anchored_note | note | signpost | double_curve | arc | sticker | arrow_up | arrow_down | arrow_left | arrow_right | price_label | price_note | arrow_marker | flag | vertical_line | horizontal_line | cross_line | horizontal_ray | trend_line | info_line | trend_angle | arrow | ray | parallel_channel | disjoint_angle | flat_bottom | anchored_vwap | pitchfork | schiff_pitchfork_modified | schiff_pitchfork | balloon | comment | inside_pitchfork | pitchfan | gannbox | gannbox_square | gannbox_fixed | gannbox_fan | fib_retracement | fib_trend_ext | fib_speed_resist_fan | fib_timezone | fib_trend_time | fib_circles | fib_spiral | fib_speed_resist_arcs | fib_channel | xabcd_pattern | cypher_pattern | abcd_pattern | callout | triangle_pattern | 3divers_pattern | head_and_shoulders | fib_wedge | elliott_impulse_wave | elliott_triangle_wave | elliott_triple_combo | elliott_correction | elliott_double_combo | cyclic_lines | time_cycles | sine_line | long_position | short_position | forecast | date_range | price_range | date_and_price_range | bars_pattern | ghost_feed | projection | rectangle | rotated_rectangle | brush | highlighter | regression_trend | fixed_range_volume_profile"
-    if (shapes.indexOf(shape).isNone()) {
-        throw UnsupportedException("CreateMultipointShapeOptions: Unsupported shape (${shape})")
-    }
-    obj.put("shape", JsonString(shape))
-    obj.put("lock", JsonBool(lock))
-    obj.put("disableSelection", JsonBool(disableSelection))
-    obj.put("disableSave", JsonBool(disableSave))
-    obj.put("disableUndo", JsonBool(disableUndo))
-    obj.put("text", JsonString(text))
-    obj.put("filled", JsonBool(filled))
-    if (shape == "icon") {
-        obj.put("icon", JsonInt(icon))
-    }
-    obj.put("showInObjectsTree", JsonBool(showInObjectsTree))
-    if (let Some(tmp) <- zOrder) {
-        if (tmp == "top" || tmp == "bottom") {
-            obj.put("zOrder", JsonString(tmp))
-        } else {
-            println("CreateMultipointShapeOptions: Unsupported zOrder (${zOrder})")
-        }
-    }
-    return obj
-}
-
-public class IntervalsVisibilities {
-    IntervalsVisibilities(
-        let ticks!: Bool = true,
-        let seconds!: Bool = true,
-        let minutes!: Bool = true,
-        let hours!: Bool = true,
-        let days!: Bool = true,
-        let weeks!: Bool = true,
-        let months!: Bool = true,
-        let ranges!: Bool = true,
-        let secondsFrom!: Int64 = 1,
-        let secondsTo!: Int64 = 59,
-        let minutesFrom!: Int64 = 1,
-        let minutesTo!: Int64 = 59,
-        let hoursFrom!: Int64 = 1,
-        let hoursTo!: Int64 = 24,
-        let daysFrom!: Int64 = 1,
-        let daysTo!: Int64 = 366,
-        let weeksFrom!: Int64 = 1,
-        let weeksTo!: Int64 = 52,
-        let monthsFrom!: Int64 = 1,
-        let monthsTo!: Int64 = 12
-    ) {}
-
-    public func toJson(): JsonValue {
-        return JsonObject(this.getFields())
-    }
-
-    public func getFields(): HashMap<String, JsonValue> {
-        let obj = HashMap<String, JsonValue>()
-        obj.put("ticks", JsonBool(this.ticks))
-        obj.put("seconds", JsonBool(this.seconds))
-        obj.put("secondsFrom", JsonInt(this.secondsFrom))
-        obj.put("secondsTo", JsonInt(this.secondsTo))
-        obj.put("minutes", JsonBool(this.minutes))
-        obj.put("minutesFrom", JsonInt(this.minutesFrom))
-        obj.put("minutesTo", JsonInt(this.minutesTo))
-        obj.put("hours", JsonBool(this.hours))
-        obj.put("hoursFrom", JsonInt(this.hoursFrom))
-        obj.put("hoursTo", JsonInt(this.hoursTo))
-        obj.put("days", JsonBool(this.days))
-        obj.put("daysFrom", JsonInt(this.daysFrom))
-        obj.put("daysTo", JsonInt(this.daysTo))
-        obj.put("weeks", JsonBool(this.weeks))
-        obj.put("weeksFrom", JsonInt(this.weeksFrom))
-        obj.put("weeksTo", JsonInt(this.weeksTo))
-        obj.put("months", JsonBool(this.months))
-        obj.put("monthsFrom", JsonInt(this.monthsFrom))
-        obj.put("monthsTo", JsonInt(this.monthsTo))
-        obj.put("ranges", JsonBool(this.ranges))
-        return obj
-    }
-}
-
-public class MiddleLine {
-    MiddleLine(
-        let showLine!: Bool = false,
-        let lineWidth!: Int64 = 1,
-        let lineColor!: String = "#000066",
-        let lineStyle!: Int64 = 2
-    ) {}
-
-    public func toJson(): JsonValue {
-        return JsonObject(this.getFields())
-    }
-
-    public func getFields(): HashMap<String, JsonValue> {
-        let obj = HashMap<String, JsonValue>()
-        obj.put("showLine", JsonBool(this.showLine))
-        obj.put("lineWidth", JsonInt(this.lineWidth))
-        obj.put("lineColor", JsonString(this.lineColor))
-        obj.put("lineStyle", JsonInt(this.lineStyle))
-        return obj
-    }
-}
-
-public class Rectangle {
-    public static func getBi(title: String, direction: Direction): Rectangle {
-        let linewidth: Int64 = 1
-        var linecolor: String = "rgba(76, 175, 80, 1)"
-        var backgroundColor: String = "rgba(76, 175, 80, 0.2)"
-        if (direction == Direction.Down) {
-            linecolor = "rgba(178, 40, 51, 1)"
-            backgroundColor = "rgba(178, 40, 51, 0.2)"
-        }
-        let middleline = MiddleLine(lineColor: linecolor, lineWidth: linewidth)
-        let obj = Rectangle(text: "Bizs", title: title, color: linecolor, linewidth: linewidth,
-            backgroundColor: backgroundColor, middleLine: middleline)
-        return obj
-    }
-
-    public static func getDuan(title: String, direction: Direction): Rectangle {
-        let linewidth: Int64 = 2
-        var linecolor: String = "rgba(76, 175, 80, 1)"
-        var backgroundColor: String = "rgba(76, 175, 80, 0.2)"
-        if (direction == Direction.Down) {
-            linecolor = "rgba(178, 40, 51, 1)"
-            backgroundColor = "rgba(178, 40, 51, 0.2)"
-        }
-        let middleline = MiddleLine(lineColor: linecolor, lineWidth: linewidth)
-        let obj = Rectangle(text: "Duanzs", title: title, color: linecolor, linewidth: linewidth,
-            backgroundColor: backgroundColor, middleLine: middleline)
-        return obj
-    }
-
-    Rectangle(
-        let color!: String = "#99CC99",
-        let fillBackground!: Bool = true,
-        let backgroundColor!: String = "rgba(156, 39, 176, 0.2)",
-        let linewidth!: Int64 = 1,
-        let transparency!: Int64 = 50,
-        let showLabel!: Bool = false,
-        let horzLabelsAlign!: String = "left",
-        let vertLabelsAlign!: String = "bottom",
-        let textColor!: String = "#9c27b0",
-        let fontSize!: Int64 = 14,
-        let bold!: Bool = false,
-        let italic!: Bool = false,
-        let extendLeft!: Bool = false,
-        let extendRight!: Bool = false,
-        let middleLine!: MiddleLine = MiddleLine(),
-        let visible!: Bool = true,
-        let frozen!: Bool = true,
-        let title!: String = "Bi中枢-10",
-        let text!: String = "Bizs",
-        let intervalsVisibilities!: IntervalsVisibilities = IntervalsVisibilities()
-    ) {}
-
-    public func toJson(): JsonObject {
-        let obj = JsonObject()
-        obj.put("color", JsonString(this.color))
-        obj.put("fillBackground", JsonBool(this.fillBackground))
-        obj.put("backgroundColor", JsonString(this.backgroundColor))
-        obj.put("linewidth", JsonInt(this.linewidth))
-        obj.put("transparency", JsonInt(this.transparency))
-        obj.put("showLabel", JsonBool(this.showLabel))
-        obj.put("horzLabelsAlign", JsonString(this.horzLabelsAlign))
-        obj.put("vertLabelsAlign", JsonString(this.vertLabelsAlign))
-        obj.put("textColor", JsonString(this.textColor))
-        obj.put("fontSize", JsonInt(this.fontSize))
-        obj.put("bold", JsonBool(this.bold))
-        obj.put("italic", JsonBool(this.italic))
-        obj.put("extendLeft", JsonBool(this.extendLeft))
-        obj.put("extendRight", JsonBool(this.extendRight))
-        obj.put("middleLine", this.middleLine.toJson())
-        obj.put("visible", JsonBool(this.visible))
-        obj.put("frozen", JsonBool(this.frozen))
-        obj.put("title", JsonString(this.title))
-        obj.put("text", JsonString(this.text))
-        obj.put("intervalsVisibilities", JsonObject(this.intervalsVisibilities.getFields()))
-        return obj
-    }
-}
-
-public class TrendLine {
-    public static func getBi(title: String): TrendLine {
-        let obj = TrendLine(text: "bi", title: title, linecolor: "#CC62FF", linewidth: 2, linestyle: 0)
-        return obj
-    }
-
-    public static func getDuan(title: String): TrendLine {
-        let obj = TrendLine(text: "duan", title: title, linecolor: "#F1C40F", linewidth: 3, linestyle: 0)
-        return obj
-    }
-
-    public static func getFeature(title: String, direction: Direction): TrendLine {
-        var obj = TrendLine(text: "feature", title: title, linecolor: "#22FF22", linewidth: 2, linestyle: 2)
-        if (direction == Direction.Up) {
-            obj = TrendLine(text: "feature", title: title, linecolor: "#FF2222", linewidth: 2, linestyle: 2)
-        }
-        return obj
-    }
-
-    TrendLine(
-        let linecolor!: String = "#22FF22",
-        let linewidth!: Int64 = 2,
-        let linestyle!: Int64 = 0,
-        let extendLeft!: Bool = false,
-        let extendRight!: Bool = false,
-        let leftEnd!: Int64 = 0,
-        let rightEnd!: Int64 = 0,
-        let showLabel!: Bool = false,
-        let horzLabelsAlign!: String = "center",
-        let vertLabelsAlign!: String = "bottom",
-        let textcolor!: String = "#2962FF",
-        let fontsize!: Int64 = 14,
-        let bold!: Bool = false,
-        let italic!: Bool = false,
-        let showMiddlePoint!: Bool = false,
-        let showPriceLabels!: Bool = false,
-        let showPriceRange!: Bool = false,
-        let showPercentPriceRange!: Bool = false,
-        let showPipsPriceRange!: Bool = false,
-        let showBarsRange!: Bool = false,
-        let showDateTimeRange!: Bool = false,
-        let showDistance!: Bool = false,
-        let showAngle!: Bool = false,
-        let statsPosition!: Int64 = 2,
-        let visible!: Bool = true,
-        let frozen!: Bool = true,
-        let title!: String = "特征序列",
-        let text!: String = "feature",
-        let intervalsVisibilities!: IntervalsVisibilities = IntervalsVisibilities()
-    ) {
-    }
-    public func toJson(): JsonValue {
-        let obj = JsonObject()
-        obj.put("linecolor", JsonString(this.linecolor))
-        obj.put("linewidth", JsonInt(this.linewidth))
-        obj.put("linestyle", JsonInt(this.linestyle))
-        obj.put("title", JsonString(this.title))
-        obj.put("text", JsonString(this.text))
-        /*
-        obj.put("extendLeft", JsonBool(this.extendLeft))
-        obj.put("extendRight", JsonBool(this.extendRight))
-        obj.put("leftEnd", JsonInt(this.leftEnd))
-        obj.put("rightEnd", JsonInt(this.rightEnd))
-        obj.put("showLabel", JsonBool(this.showLabel))
-        obj.put("horzLabelsAlign", JsonString(this.horzLabelsAlign))
-        obj.put("vertLabelsAlign", JsonString(this.vertLabelsAlign))
-        obj.put("textcolor", JsonString(this.textcolor))
-        obj.put("fontsize", JsonInt(this.fontsize))
-        obj.put("bold", JsonBool(this.bold))
-        obj.put("italic", JsonBool(this.italic))
-        obj.put("showMiddlePoint", JsonBool(this.showMiddlePoint))
-        obj.put("showPriceLabels", JsonBool(this.showPriceLabels))
-        obj.put("showPriceRange", JsonBool(this.showPriceRange))
-        obj.put("showPercentPriceRange", JsonBool(this.showPercentPriceRange))
-        obj.put("showPipsPriceRange", JsonBool(this.showPipsPriceRange))
-        obj.put("showBarsRange", JsonBool(this.showBarsRange))
-        obj.put("showDateTimeRange", JsonBool(this.showDateTimeRange))
-        obj.put("showDistance", JsonBool(this.showDistance))
-        obj.put("showAngle", JsonBool(this.showAngle))
-        obj.put("statsPosition", JsonInt(this.statsPosition))
-        obj.put("visible", JsonBool(this.visible))
-        obj.put("frozen", JsonBool(this.frozen))
-        obj.put("intervalsVisibilities", JsonObject(this.intervalsVisibilities.getFields()))
-         */
-        return obj
-    }
 }
