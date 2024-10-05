@@ -18,7 +18,7 @@
         const step = "{{ step }}";
         const limit = "{{ limit }}";
         //const socket = new WebSocket("ws://" + window.location.host + "/ws", compression=undefined);
-        const socket = new WebSocket("ws://127.0.0.1:8080/ws", compression = undefined);
+        const socket = new WebSocket("ws://"+window.location.hostname+":8080/ws", compression = undefined);
 
         socket.onopen = () => {
             console.log("WebSocket connection established");
@@ -73,7 +73,7 @@
                     session: "24x7",
                     timezone: "Asia/Shanghai",
                     minmov: 1,
-                    pricescale: 100000000, // 精度 数值越高小数点
+                    pricescale: 100, // 精度 数值越高小数点
                     visible_plots_set: "ohlcv",
                     has_no_volume: true,
                     has_weekly_and_monthly: false, // 周线 月线
@@ -144,12 +144,14 @@
                         onRealtimeCallback(bar);
                         //createShape(message.shape);
                     } else if (message.type === "shape") {
-                        if (message.cmd === "APPEND(Bi)" || message.cmd === "APPEND(Duan)" || message.cmd === "APPEND(ZhongShu<Bi>)" || message.cmd === "APPEND(ZhongShu<Duan>)" || message.cmd === "APPEND(Feature)") {
+                        if (message.cmd === "APPEND(Bi)" || message.cmd === "APPEND(Duan)" || message.cmd === "APPEND(BSPoint)" || message.cmd === "APPEND(ZhongShu<Bi>)" || message.cmd === "APPEND(ZhongShu<Duan>)" || message.cmd === "APPEND(Feature)") {
                             addShapeToChart(message);
-                        } else if (message.cmd === "REMOVE(Bi)" || message.cmd === "REMOVE(Duan)" || message.cmd === "REMOVE(ZhongShu<Bi>)" || message.cmd === "REMOVE(ZhongShu<Duan>)" || message.cmd === "REMOVE(Feature)") {
+                        } else if (message.cmd === "REMOVE(Bi)" || message.cmd === "REMOVE(Duan)" || message.cmd === "REMOVE(BSPoint)" || message.cmd === "REMOVE(ZhongShu<Bi>)" || message.cmd === "REMOVE(ZhongShu<Duan>)" || message.cmd === "REMOVE(Feature)") {
                             delShapeById(message)
-                        } else if (message.cmd === "MODIFY(Bi)" || message.cmd === "MODIFY(Duan)" || message.cmd === "MODIFY(ZhongShu<Bi>)" || message.cmd === "MODIFY(ZhongShu<Duan>)" || message.cmd === "MODIFY(Feature)") {
+                        } else if (message.cmd === "MODIFY(Bi)" || message.cmd === "MODIFY(Duan)" || message.cmd === "MODIFY(BSPoint)" || message.cmd === "MODIFY(ZhongShu<Bi>)" || message.cmd === "MODIFY(ZhongShu<Duan>)" || message.cmd === "MODIFY(Feature)") {
                             modifyShape(message)
+                        }else {
+                            console.error("未知", message);
                         }
                     } else {
                         console.log("未知消息", message);
@@ -279,8 +281,8 @@
                         if (name === "arrow_up" || name === "arrow_down") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
-                            if (properties.title === "BiFS" || properties.title === "BiSS" || properties.title === "BiTS"
-                                || properties.title === "BiFB" || properties.title === "BiSB" || properties.title === "BiTB"
+                            if (properties.title === "BiFristSell" || properties.title === "BiSecondSell" || properties.title === "BiThirdSell"
+                                || properties.title === "BiristFBuy" || properties.title === "BiSecondBuy" || properties.title === "BiThirdBuy"
                             )
                                 shape.setProperties({visible: !properties.visible})
                         }
@@ -292,8 +294,8 @@
                         if (name === "arrow_up" || name === "arrow_down") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
-                            if (properties.title === "DuanFS" || properties.title === "DuanSS" || properties.title === "DuanTS"
-                                || properties.title === "DuanFB" || properties.title === "DuanSB" || properties.title === "DuanTB"
+                            if (properties.title === "DuanFirstSell" || properties.title === "DuanSecondSell" || properties.title === "DuanThirdSell"
+                                || properties.title === "DuanFirstBuy" || properties.title === "DuanSecondBuy" || properties.title === "DuanThirdBuy"
                             )
                                 shape.setProperties({visible: !properties.visible})
                         }
