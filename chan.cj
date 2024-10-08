@@ -24,23 +24,15 @@ SOFTWARE.
 
 package chanlun
 
-import std.unittest.testmacro.*
-import std.binary.*
-import std.math.{abs}
-import std.math.MathExtension
-import std.collection
+import std.binary.BigEndianOrder
+import std.convert.Parsable
 import std.collection.{HashSet, ArrayList, enumerate, HashMap, any, contains}
-import std.time.*
-import std.math.*
-import std.fs.*
-import net.http.*
-import std.log.*
-import std.convert.*
-import std.ast.*
-import std.collection.concurrent.*
-import encoding.json.*
+import std.fs.{Path, File, FSException}
+import std.math.{abs, MathExtension, sqrt}
 import std.random.Random
-import std.console.*
+import std.time.{DateTime, MonoTime}
+import encoding.json.{JsonObject, JsonArray, JsonBool, JsonFloat, JsonString, JsonValue, JsonInt}
+import net.http.*
 
 public func dp(s: String): Unit {
     if (1 == 0) {
@@ -75,15 +67,23 @@ extend DateTime {
     }
 }
 
+type News = ArrayList<NewBar>
+
+type Raws = ArrayList<RawBar>
+
+type Lines = ArrayList<Line>
+
+type Bis = ArrayList<Bi>
+
+type Duans = ArrayList<Duan>
+
 extend<T> ArrayList<T> where T <: ToString {
-    public func pop(index!: Int64 = -1): T {
-        var i = index
-        if (index < 0) {
-            i = this.size - abs(index)
+    public func toLines(): Lines {
+        let lines = Lines()
+        for (bi in this) {
+            lines.append((bi as Line).getOrThrow())
         }
-        let obj = this.get(i)
-        this.remove(i)
-        return obj.getOrThrow()
+        return lines
     }
 
     public func index(obj: NewBar): Int64 {
@@ -112,7 +112,7 @@ extend<T> ArrayList<T> where T <: ToString {
         throw ChanException("元素不在列表中")
     }
 
-    public func index(obj: Bi): Int64 {
+    public func index2(obj: Bi): Int64 {
         if (this.isEmpty()) {
             throw ChanException("列表为空")
         }
@@ -125,7 +125,7 @@ extend<T> ArrayList<T> where T <: ToString {
         throw ChanException("元素不在列表中")
     }
 
-    public func index(obj: Duan): Int64 {
+    public func index2(obj: Duan): Int64 {
         if (this.isEmpty()) {
             throw ChanException("列表为空")
         }
@@ -137,23 +137,10 @@ extend<T> ArrayList<T> where T <: ToString {
         }
         throw ChanException("元素不在列表中")
     }
-
-    public func index(obj: Int64): Int64 {
-        if (this.isEmpty()) {
-            throw ChanException("列表为空")
-        }
-
-        for ((i, o) in enumerate(this.iterator())) {
-            if (obj == (o as Int64).getOrThrow()) {
-                return i
-            }
-        }
-        throw ChanException("元素不在列表中")
-    }
 }
 
-public func colored(text: String, color!: Option<String> = Option<String>.None,
-    on_color!: Option<String> = Option<String>.None, attrs!: Option<String> = Option<String>.None): String {
+public func colored(text: String, color!: ?String = Option<String>.None, on_color!: ?String = Option<String>.None,
+    attrs!: ?String = Option<String>.None): String {
     let COLORS = HashMap<String, Byte>(
         [('black', 30), ('grey', 30), ('red', 31), ('green', 32), ('yellow', 33), ('blue', 34), ('magenta', 35),
         ('cyan', 36), ('light_grey', 37), ('dark_grey', 90), ('light_red', 91), ('light_green', 92),
@@ -165,16 +152,18 @@ public func colored(text: String, color!: Option<String> = Option<String>.None,
         ('on_light_cyan', 106), ('on_white', 107)])
     let ATTRIBUTES = HashMap<String, Byte>(
         [('bold', 1), ('dark', 2), ('underline', 4), ('blink', 5), ('reverse', 7), ('concealed', 8)])
-    let RESET = "\033[0m"
+
+    let RESET = "\u{1B}[0m"
     var result = text
+
     if (let Some(code) <- color) {
-        result = "\033[${COLORS[code]}m${result}"
+        result = "\u{1B}[${COLORS[code]}m${result}"
     }
     if (let Some(code) <- on_color) {
-        result = "\033[${HIGHLIGHTS[code]}m${result}"
+        result = "\u{1B}[${HIGHLIGHTS[code]}m${result}"
     }
     if (let Some(code) <- attrs) {
-        result = "\033[${ATTRIBUTES[code]}m${result}"
+        result = "\u{1B}[${ATTRIBUTES[code]}m${result}"
     }
 
     result += RESET
@@ -302,15 +291,9 @@ public enum BSPoint <: ToString & Equatable<BSPoint> & Hashable {
         Int64)
     // info: String, type: String, dt:DateTime, price: Float, valid: Bool, creation_offset:Int64 首次创建偏移, fix_offset:Int64 失效偏移
 
-    public static func calc_zs_third_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+    public static func calc_zs_third_bsp(zs: ZhongShu, third: Line, observer: Observer): ?BSPoint {
         let relation = double_relation(zs, third)
-        let tp: String = if (third is Bi) {
-            "Bi"
-        } else if (third is Duan) {
-            "Duan"
-        } else {
-            "Unknow"
-        }
+        let tp: String = third.stamp
         if (relation == Direction.JumpDown) {
             return BSPoint.SELL("Third", "${tp}", third.end.mid.dt, third.end.mid.speck, true,
                 observer.news[observer.news.size - 1].index - third.end.mid.index, 0)
@@ -318,14 +301,6 @@ public enum BSPoint <: ToString & Equatable<BSPoint> & Hashable {
             return BSPoint.BUY("Third", "${tp}", third.end.mid.dt, third.end.mid.speck, true,
                 observer.news[observer.news.size - 1].index - third.end.mid.index, 0)
         }
-        return None
-    }
-
-    public static func calc_zs_second_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
-        return None
-    }
-
-    public static func calc_zs_first_bsp<T>(zs: ZhongShu<T>, third: T, observer: Observer): Option<BSPoint> where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
         return None
     }
 
@@ -600,15 +575,16 @@ public enum Indicators <: ToString {
     }
 }
 
-public interface Pillar <: ToString {
+public interface Continuously {
     mut prop index: Int64
-    prop high: Float64
-    prop low: Float64
-    prop volume: Float64
-    prop direction: Direction
 }
 
-public func double_relation<T>(left: T, right: T): Direction where T <: Pillar {
+public interface Interval {
+    prop high: Float64
+    prop low: Float64
+}
+
+public func double_relation<T>(left: T, right: T): Direction where T <: Interval {
     var relation: Direction = Direction.Unknow
     if (left.low <= right.low && left.high >= right.high) {
         relation = Direction.Left // "左包右" # 顺序
@@ -631,7 +607,7 @@ public func double_relation<T>(left: T, right: T): Direction where T <: Pillar {
     return relation
 }
 
-public func triple_relation<T>(left: T, mid: T, right: T, use_right!: Bool = false): (Shape, (Direction, Direction)) where T <: Pillar {
+public func triple_relation<T>(left: T, mid: T, right: T, use_right!: Bool = false): (Shape, (Direction, Direction)) where T <: Interval {
     let lm: Direction = double_relation(left, mid)
     let mr: Direction = double_relation(mid, right)
     var shape: Shape = match ((lm, mr)) {
@@ -701,17 +677,24 @@ public interface HashableEquatable<T> <: Hashable & Equatable<T> {}
 public interface Observer {
     prop symbol: String
     prop freq: UInt32
-    prop raws: ArrayList<RawBar>
-    prop news: ArrayList<NewBar>
+    prop raws: Raws
+    prop news: News
     prop fxs: ArrayList<FenXing>
-    prop bis: ArrayList<Bi>
-    prop duans: ArrayList<Duan>
-    prop bi_zss: ArrayList<ZhongShu<Bi>>
-    prop duan_zss: ArrayList<ZhongShu<Duan>>
-    func update(obj: Any, cmd: CMD): Unit
+
+    prop bis: Bis // level=0
+    prop duans: Duans // level=0
+    prop bi_zss: ArrayList<ZhongShu> // level=0
+    prop duan_zss: ArrayList<ZhongShu> // level=0
+
+    prop duan_bis: Bis // level=1
+    prop duan_duans: Duans // level=2
+    prop duan_bi_zss: ArrayList<ZhongShu> // level=1
+    prop duan_duan_zss: ArrayList<ZhongShu> // level=2
+
+    func update(obj: ToString, cmd: CMD): Unit
 }
 
-public interface Bar <: ToString & Pillar {
+public interface Bar <: ToString & Interval {
     mut prop index: Int64
     prop open: Float64
     prop close: Float64
@@ -827,7 +810,7 @@ public class RawBar <: Bar & HashableEquatable<RawBar> & BigEndianOrder<RawBar> 
         return "RawBar(${this.dt}, ${this.open}, ${this.high}, ${this.low}, ${this.close}, ${this.volume}, ${this.index})"
     }
 
-    public func toNewBar(pre: Option<NewBar>): NewBar {
+    public func toNewBar(pre: ?NewBar): NewBar {
         return NewBar(
             dt: this.dt,
             high: this.high,
@@ -873,7 +856,7 @@ public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
     private var _direction: Direction = Direction.Unknow
 
     private var _shape: Shape = Shape.Unknow
-    public var elements: ArrayList<RawBar>
+    public var elements: Raws
 
     public var jump: Bool = false
     public var speck: Float64 = 0.0
@@ -881,7 +864,7 @@ public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
 
     private let _extensions: HashMap<String, Float64> = HashMap<String, Float64>()
 
-    NewBar(dt!: DateTime, high!: Float64, low!: Float64, elements!: Array<RawBar>, pre!: Option<NewBar>) {
+    NewBar(dt!: DateTime, high!: Float64, low!: Float64, elements!: Array<RawBar>, pre!: ?NewBar) {
         this.dt = dt
         //this._open = open
         this._high = high
@@ -891,7 +874,7 @@ public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
         //this._index = index
         this._direction = Direction.Up
 
-        this.elements = ArrayList<RawBar>(elements)
+        this.elements = Raws(elements)
         //this.doInit(pre)
 
         if (let Some(last) <- pre) {
@@ -1030,7 +1013,7 @@ public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
         return false
     }
 
-    public func merge(next_raw_bar: RawBar): Option<NewBar> {
+    public func merge(next_raw_bar: RawBar): ?NewBar {
         let last: RawBar = this.elements[this.elements.size - 1]
         if (next_raw_bar.index - 1 != last.index) {
             throw ChanException("数据不连续: ${next_raw_bar}, ${last}")
@@ -1060,7 +1043,7 @@ public class NewBar <: Bar & HashableEquatable<NewBar> & BarExtensions {
     }
 }
 
-public interface FenXingInterface<T> <: Pillar where T <: Bar {
+public interface FenXingInterface<T> <: Interval where T <: Interval {
     mut prop left: T
     mut prop mid: T
     mut prop right: T
@@ -1070,9 +1053,9 @@ public interface FenXingInterface<T> <: Pillar where T <: Bar {
 
 public class FenXing <: ToString & FenXingInterface<NewBar> & HashableEquatable<FenXing> {
     private var _index: Int64 = 0
-    private var _left: Option<NewBar> = None
-    private var _mid: Option<NewBar> = None
-    private var _right: Option<NewBar> = None
+    private var _left: ?NewBar = None
+    private var _mid: ?NewBar = None
+    private var _right: ?NewBar = None
     private var _high: Float64 = 0.0
     private var _low: Float64 = 0.0
 
@@ -1206,44 +1189,118 @@ public class FenXing <: ToString & FenXingInterface<NewBar> & HashableEquatable<
     }
 }
 
-public interface Line {
-    prop start: FenXing
-    mut prop end: FenXing
+public interface LineExtensions {
+    mut prop level: Byte
+    prop elements: Lines
 }
 
-public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
+public interface Line <: ToString & HashableEquatable<Line> & Interval & Continuously & BarExtensions {
+    prop start: FenXing
+    mut prop end: FenXing
+
+    prop bars: News
+
+    prop stamp: String {
+        get() {
+            "Line"
+        }
+    }
+    prop direction: Direction {
+        get() {
+            match ((this.start.shape, this.end.shape)) {
+                case (Shape.G, Shape.D) => Direction.Down
+
+                case (Shape.D, Shape.G) => Direction.Up
+
+                case _ => throw ChanException("Line.direction: ${this.start.shape}, ${this.end.shape}")
+            }
+        }
+    }
+
+    prop high: Float64 {
+        get() {
+            if (this.direction == Direction.Down) {
+                this.start.speck
+            } else {
+                this.end.speck
+            }
+        }
+    }
+
+    prop low: Float64 {
+        get() {
+            if (this.direction == Direction.Up) {
+                this.start.speck
+            } else {
+                this.end.speck
+            }
+        }
+    }
+
+    prop volume: Float64 {
+        get() {
+            var sum = 0.0f64
+            for (bar in this.getBars()) {
+                sum += bar.volume
+            }
+            sum
+        }
+    }
+
+    prop macd: Float64 {
+        get() {
+            var sum = 0.0f64
+            for (bar in this.getBars()) {
+                sum += bar.macd
+            }
+            sum
+        }
+    }
+
+    func toString(): String {
+        "${this.stamp}(${this.index}, ${this.start}, ${this.end})"
+    }
+
+    func hashCode(): Int64 {
+        "Line(${this.start.hashCode()}, ${this.end.hashCode()})".hashCode()
+    }
+
+    operator override func ==(other: Line): Bool {
+        return refEq(this.start, other.start) && refEq(this.end, other.end)
+    }
+
+    operator override func !=(other: Line): Bool {
+        return !(this == other)
+    }
+
+    func getBars(): Array<NewBar> {
+        return this.bars[this.start.mid.index..this.end.mid.index + 1].toArray()
+    }
+}
+
+public class Bi <: HashableEquatable<Bi> & Line {
     public static let BI_JUMP: Bool = true
     public static let BI_LENGTH: Int64 = 5
     public static var BI_EQUAL: Bool = true
     public static let BI_FENGXING: Bool = false
 
     private var _index: Int64 = 0
-    private var _direction: Direction = Direction.Unknow
 
     private let _start: FenXing
     private var _end: FenXing
-    public var pre: Option<Bi>
-    public var level: Byte = 0
+    public var pre: ?Bi
 
-    public var elements: ArrayList<NewBar>
+    public var elements: News
     public var fake: Bool = false
     private let _id: Int64
 
-    Bi(pre!: Option<Bi>, start!: FenXing, end!: FenXing, elements!: Array<NewBar>, fake!: Bool = false) {
+    Bi(pre!: ?Bi, start!: FenXing, end!: FenXing, elements!: Array<NewBar>, fake!: Bool = false) {
         this._id = TradingView.getID()
         this.pre = pre
         this._start = start
         this._end = end
-        this.elements = ArrayList(elements)
+        this.elements = News(elements)
         this.fake = fake
-
-        match ((start.shape, end.shape)) {
-            case (Shape.G, Shape.D) => this._direction = Direction.Down
-
-            case (Shape.D, Shape.G) => this._direction = Direction.Up
-
-            case _ => throw ChanException("Bi.start.shape: ${start.shape}, ${end.shape}")
-        }
 
         if (let Some(last) <- pre) {
             if (last.end != start) {
@@ -1252,6 +1309,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
             this.index = pre.getOrThrow().index + 1
         }
     }
+
     public mut prop index: Int64 {
         get() {
             this._index
@@ -1261,51 +1319,15 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
         }
     }
 
-    public prop high: Float64 {
+    public prop stamp: String {
         get() {
-            //this._high
-            if (this.direction == Direction.Down) {
-                this.start.speck
-            } else {
-                this.end.speck
-            }
+            "Bi"
         }
     }
 
-    public prop low: Float64 {
+    public prop bars: News {
         get() {
-            //this._low
-            if (this.direction == Direction.Up) {
-                this.start.speck
-            } else {
-                this.end.speck
-            }
-        }
-    }
-
-    public prop volume: Float64 {
-        get() {
-            var sum = 0.0f64
-            for (bar in this.elements) {
-                sum += bar.volume
-            }
-            sum
-        }
-    }
-
-    public prop direction: Direction {
-        get() {
-            this._direction
-        }
-    }
-
-    public prop macd: Float64 {
-        get() {
-            var result = 0.0f64
-            for (bar in elements) {
-                result += bar.macd
-            }
-            return result
+            this.elements
         }
     }
 
@@ -1320,7 +1342,6 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
             this._end
         }
         set(fx) {
-            var flag = false
             //let old = this._end
             this._end = fx
             match (this.direction) {
@@ -1339,13 +1360,37 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
         }
     }
 
+    public prop volume: Float64 {
+        get() {
+            var sum = 0.0f64
+            for (bar in this.elements) {
+                sum += bar.volume
+            }
+            sum
+        }
+    }
+
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                result += bar.macd
+            }
+            return result
+        }
+    }
+
+    public func getBars(): Array<NewBar> {
+        this.elements.toArray()
+    }
+
     public prop real_low: NewBar {
         get() {
             if (this.elements.isEmpty()) {
                 throw ChanException("Bi.real_low: 列表为空")
             }
             if (Bi.BI_EQUAL) {
-                var lows: ArrayList<NewBar> = ArrayList([this.elements[0]])
+                var lows: News = ArrayList([this.elements[0]])
                 let length = this.elements.size
                 for (bar in this.elements[1..length]) {
                     if (bar.low <= lows[lows.size - 1].low) {
@@ -1376,7 +1421,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
                 throw ChanException("Bi.real_high: 列表为空")
             }
             if (Bi.BI_EQUAL) {
-                var highs: ArrayList<NewBar> = ArrayList([this.elements[0]])
+                var highs: News = ArrayList([this.elements[0]])
                 for (bar in this.elements[1..this.elements.size]) {
                     if (bar.high >= highs[highs.size - 1].high) {
                         if (bar.high == max(bar.high, highs[highs.size - 1].high)) { // bar.high > highs[highs.size - 1].high
@@ -1409,11 +1454,11 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
 
     public prop relation: Bool {
         get() {
-            var start = this.start.mid
+            var start: Interval = this.start.mid
             if (Bi.BI_FENGXING) {
-                var start = this.start
+                start = this.start
             }
-            let end = this.end
+            let end: Interval = this.end.mid
             let relation = double_relation(start, end)
             if (this.direction == Direction.Down) {
                 if (relation == Direction.Down || relation == Direction.JumpDown) {
@@ -1463,7 +1508,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
         return false
     }
 
-    public static func calc_length(elements: ArrayList<NewBar>): Int64 {
+    public static func calc_length(elements: News): Int64 {
         var size: Int64 = 1
         for (i in 1..elements.size) {
             var left = elements[i - 1]
@@ -1489,8 +1534,8 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
         return elements.size
     }
 
-    public static func analyzer(fx: FenXing, fxs: ArrayList<FenXing>, bis: ArrayList<Bi>, cklines: ArrayList<NewBar>,
-        _from: String, level: UInt16, observer: Observer): Unit {
+    public static func analyzer(fx: FenXing, fxs: ArrayList<FenXing>, bis: Bis, cklines: News, _from: String,
+        level: UInt16, observer: Observer): Unit {
         if (fxs.isEmpty()) {
             if (fx.shape == Shape.G || fx.shape == Shape.D) {
                 fxs.append(fx)
@@ -1498,12 +1543,13 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
             return
         }
 
-        func __pop(bis: ArrayList<Bi>, fx: FenXing, _from: String): Option<Bi> {
+        func __pop(bis: Bis, fx: FenXing, _from: String): ?Bi {
             let size = bis.size
-            var bi: Option<Bi> = Option<Bi>.None
+            var bi: ?Bi = Option<Bi>.None
             if (size > 0) {
                 if (bis[size - 1].end == fx) {
-                    bi = Some(bis.pop())
+                    bi = bis[size - 1]
+                    bis.remove(size - 1)
                     // bi.done = false
                     if (_from == "analyzer") {
                         //dp("Bi.analyzer, level: ${level}, pop ${bi}")
@@ -1516,13 +1562,13 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
             return bi
         }
 
-        func __append(bis: ArrayList<Bi>, bi: Bi, _from: String): Unit {
+        func __append(bis: Bis, bi: Bi, _from: String): Unit {
             let size = bis.size
             if (size > 0 && !refEq(bis[size - 1].end, bi.start)) {
                 throw ChanException("笔连续性错误!!!")
             }
             var index: Int64 = 0
-            var pre: Option<Bi> = None
+            var pre: ?Bi = None
             if (size > 0) {
                 pre = Some(bis[size - 1])
                 index = bis[size - 1].index + 1
@@ -1622,7 +1668,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
                         if (last.shape != Shape.D) {
                             throw ChanException()
                         }
-                        var tmp: Option<NewBar> = None
+                        var tmp: ?NewBar = None
                         for (bar in cklines[cklines.index(last.mid)..cklines.index(fx.mid) + 1]) {
                             if (tmp.isNone()) {
                                 tmp = Some(bar)
@@ -1664,7 +1710,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
                         if (last.shape != Shape.D) {
                             throw ChanException()
                         }
-                        var tmp: Option<NewBar> = None
+                        var tmp: ?NewBar = None
                         for (bar in cklines[cklines.index(last.mid)..cklines.index(fx.mid) + 1]) {
                             if (tmp.isNone()) {
                                 tmp = Some(bar)
@@ -1780,7 +1826,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
                         if (last.shape != Shape.G) {
                             throw ChanException()
                         }
-                        var tmp: Option<NewBar> = None
+                        var tmp: ?NewBar = None
                         for (bar in cklines[cklines.index(last.mid)..cklines.index(fx.mid) + 1]) {
                             if (tmp.isNone()) {
                                 tmp = Some(bar)
@@ -1822,7 +1868,7 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
                         if (last.shape != Shape.G) {
                             throw ChanException()
                         }
-                        var tmp: Option<NewBar> = None
+                        var tmp: ?NewBar = None
                         for (bar in cklines[cklines.index(last.mid)..cklines.index(fx.mid) + 1]) {
                             if (tmp.isNone()) {
                                 tmp = Some(bar)
@@ -1874,11 +1920,11 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
         return
     }
 
-    public static func analysis_one(cklines: ArrayList<NewBar>, observer: Observer): (Option<FenXing>, Option<Bi>) {
+    public static func analysis_one(cklines: News, observer: Observer): (?FenXing, ?Bi) {
         if (cklines.size > 2) {
-            var bis: ArrayList<Bi> = ArrayList<Bi>()
+            var bis: Bis = Bis()
             var fxs: ArrayList<FenXing> = ArrayList<FenXing>()
-            var fx: Option<FenXing> = None
+            var fx: ?FenXing = None
             let size = cklines.size
             for (i in 1..size - 2) {
                 let left = cklines[i - 1]
@@ -1897,16 +1943,14 @@ public class Bi <: Pillar & HashableEquatable<Bi> & Line & BarExtensions {
     }
 }
 
-public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line & Pillar where T <: ToString & HashableEquatable<T> & Line & Pillar {
-    public var elements: HashSet<T>
+public class FeatureSequence <: HashableEquatable<FeatureSequence> & Line {
+    public var elements: HashSet<Line>
     private let _id: Int64
-    private var _direction: Direction = Direction.Unknow
+    private var _direction: Direction = Direction.Unknow // 特征序列方向为线段方向
 
-    //public var direction: Direction // 特征序列方向为线段方向， 处理时需要注意！！！
-
-    FeatureSequence(elements: Array<T>, direction: Direction) {
+    FeatureSequence(elements: Array<Line>, direction: Direction) {
         this._id = TradingView.getID()
-        this.elements = HashSet<T>(elements)
+        this.elements = HashSet<Line>(elements)
         this._direction = direction
         for (obj in elements) {
             if (direction == obj.direction) {
@@ -1914,6 +1958,13 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
             }
         }
     }
+
+    public prop bars: News {
+        get() {
+            throw ChanException()
+        }
+    }
+
     public mut prop index: Int64 {
         get() {
             throw ChanException()
@@ -1922,24 +1973,38 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
             throw ChanException()
         }
     }
+
     public prop high: Float64 {
         get() {
             max(this.start.speck, this.end.speck)
         }
     }
+
     public prop low: Float64 {
         get() {
             min(this.start.speck, this.end.speck)
         }
     }
+
     public prop volume: Float64 {
         get() {
             throw ChanException()
         }
     }
+
     public prop direction: Direction {
         get() {
             this._direction
+        }
+    }
+
+    public prop level: Byte {
+        get() {
+            let array = this.elements.toArray()
+            if (array[0] is Duan) {
+                return (array[0] as Duan).getOrThrow().level
+            }
+            return 0
         }
     }
 
@@ -1994,16 +2059,26 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
         }
     }
 
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                result += bar.macd
+            }
+            return result
+        }
+    }
+
     public func hashCode(): Int64 {
         //"FeatureSequence(${this.direction}, ${this.elements})".hashCode()
         this._id
     }
 
-    public operator override func ==(other: FeatureSequence<T>): Bool {
+    public operator override func ==(other: FeatureSequence): Bool {
         return refEq(this, other)
     }
 
-    public operator override func !=(other: FeatureSequence<T>): Bool {
+    public operator override func !=(other: FeatureSequence): Bool {
         return !(this == other)
     }
 
@@ -2011,77 +2086,137 @@ public class FeatureSequence<T> <: HashableEquatable<FeatureSequence<T>> & Line 
         "FeatureSequence(${this.direction}, ${this.elements})"
     }
 
-    public func add(obj: T, _from: String): Bool {
+    public func add(obj: Line, _from: String): Bool {
         if (obj.direction == this._direction) {
-            throw ChanException("方向不匹配 ${this.direction} ${obj.direction} ")
+            throw ChanException("方向不匹配 ${this.direction} ${obj.direction} ${_from}")
         }
         return this.elements.put(obj)
     }
 
-    public func romove(obj: T, _from: String): Bool {
+    public func romove(obj: Line, _from: String): Bool {
         if (obj.direction == this._direction) {
-            throw ChanException("方向不匹配")
+            throw ChanException("方向不匹配 ${_from}")
         }
         return this.elements.remove(obj)
     }
 
-    public func copy(other: FeatureSequence<T>): FeatureSequence<T> {
-        if (this._direction != other.direction) {
-            throw ChanException()
-        }
-        this.elements = other.elements
-        // self.notify_observer(cmd=FeatureSequence.CMD_MODIFY, obj=self)
-        return this
-    }
-
-    public static func analyzer<T>(objs: ArrayList<T>, direction: Direction, _from: String): ArrayList<FeatureSequence<T>> where T <: ToString & HashableEquatable<T> & Line & Pillar {
-        var result = ArrayList<FeatureSequence<T>>()
+    public static func analyzer(objs: ArrayList<Line>, direction: Direction, _from: String): ArrayList<FeatureSequence> {
+        var result = ArrayList<FeatureSequence>()
         for (obj in objs) {
             if (obj.direction == direction) {
                 continue
             }
 
             if (result.size == 0) {
-                result.append(FeatureSequence<T>([obj], direction))
+                result.append(FeatureSequence([obj], direction))
             } else {
                 let last = result[result.size - 1]
                 if (double_relation(last, obj) == Direction.Left) {
                     last.add(obj, _from)
                 } else {
-                    result.append(FeatureSequence<T>([obj], direction))
+                    result.append(FeatureSequence([obj], direction))
                 }
             }
         }
         return result
     }
+
+    public static func analyzer(lines: Lines, direction: Direction): (?FeatureSequence, ?FeatureSequence, ?FeatureSequence) {
+        if (!contains(direction)([Direction.Up, Direction.Down])) {
+            throw ChanException("特征序列无法分辨方向 ${direction}")
+        }
+        let features = ArrayList<FeatureSequence>()
+        for (line in lines) {
+            if (line.direction == direction) {
+                continue
+            }
+
+            if (features.size == 0) {
+                features.append(FeatureSequence([line], direction))
+            } else {
+                let last = features[features.size - 1]
+                if (double_relation(last, line) == Direction.Left) {
+                    last.add(line, "")
+                } else {
+                    features.append(FeatureSequence([line], direction))
+                }
+            }
+        }
+
+        if (features.size == 0) {
+            return (None, None, None)
+        }
+
+        if (features.size == 1) {
+            return (Some(features[0]), Option<FeatureSequence>.None, Option<FeatureSequence>.None)
+        }
+
+        if (features.size == 2) {
+            return (Some(features[0]), Some(features[1]), Option<FeatureSequence>.None)
+        }
+
+        if (features.size >= 3) {
+            for (i in 0..features.size - 2) {
+                let left = features[i]
+                let mid = features[i + 1]
+                let right = features[i + 2]
+
+                try {
+                    let (shape, (lm, mr)) = triple_relation(left, mid, right)
+                    println("${features.size}, ${i}, ${shape}")
+                    if (shape == Shape.G || shape == Shape.D) {
+                    }
+                } catch (a: ChanException) {
+                    println("${a}")
+                }
+            }
+            let relation = double_relation(features[features.size - 2], features[features.size - 1])
+            if (direction == Direction.Up) {
+                if (relation == Direction.JumpDown || relation == Direction.Down) {
+                    return (Some(features[features.size - 3]), Some(features[features.size - 2]), Some(
+                            features[features.size - 1]))
+                } else {
+                    return (Some(features[features.size - 2]), Some(features[features.size - 1]), Option<FeatureSequence>.
+                            None)
+                }
+            } else {
+                if (relation == Direction.JumpUp || relation == Direction.Up) {
+                    return (Some(features[features.size - 3]), Some(features[features.size - 2]), Some(
+                            features[features.size - 1]))
+                } else {
+                    return (Some(features[features.size - 2]), Some(features[features.size - 1]), Option<FeatureSequence>.
+                            None)
+                }
+            }
+        }
+
+        return (None, None, None)
+    }
 }
 
-public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExtensions {
-    public var pre: Option<Duan>
+public class Duan <: HashableEquatable<Duan> & Line & LineExtensions {
+    public var pre: ?Duan
     private var _start: FenXing
     private var _end: FenXing
-    public var elements: ArrayList<Bi>
-
+    private var _elements: Lines
     private var _index: Int64 = 0
-    private var _direction: Direction
 
     public var done: Bool = false
     public var jump: Bool = false
 
-    private var features: Array<Option<FeatureSequence<Bi>>> = [None, None, None]
+    public let features: Array<?FeatureSequence> = [None, None, None]
     private let _id: Int64
+    private var _level: Byte = 1
+    private let _stamp: String
+    private let _bars: News = News()
 
-    Duan(pre: Option<Duan>, start: FenXing, end: FenXing, elements: ArrayList<Bi>) {
+    Duan(pre: ?Duan, start: FenXing, end: FenXing, elements: Lines, stamp!: String = "Duan") {
         this._id = TradingView.getID()
         this.pre = pre
         this._start = start
         this._end = end
-        this.elements = elements
-        if (start.shape == Shape.G) {
-            this._direction = Direction.Down
-        } else {
-            this._direction = Direction.Up
-        }
+        this._elements = elements
+        this._stamp = stamp
 
         for (i in 1..elements.size) {
             if (elements[i - 1].index + 1 != elements[i].index) {
@@ -2114,6 +2249,18 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExt
         "Duan(${this.pre.isSome()}, ${this.start}, ${this.end}, ${this.direction}, size=${this.elements.size})"
     }
 
+    public prop elements: Lines {
+        get() {
+            this._elements
+        }
+    }
+
+    public prop bars: News {
+        get() {
+            this._bars
+        }
+    }
+
     public mut prop index: Int64 {
         get() {
             this._index
@@ -2123,133 +2270,9 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExt
         }
     }
 
-    public prop high: Float64 {
+    public prop stamp: String {
         get() {
-            //this._high
-            if (this.direction == Direction.Down) {
-                this.start.speck
-            } else {
-                this.end.speck
-            }
-        }
-    }
-
-    public prop low: Float64 {
-        get() {
-            //this._low
-            if (this.direction == Direction.Up) {
-                this.start.speck
-            } else {
-                this.end.speck
-            }
-        }
-    }
-
-    public prop volume: Float64 {
-        get() {
-            var sum = 0.0f64
-            for (bi in this.elements) {
-                sum += bi.volume
-            }
-            sum
-        }
-    }
-
-    public prop direction: Direction {
-        get() {
-            this._direction
-        }
-    }
-
-    public prop macd: Float64 {
-        get() {
-            var result = 0.0f64
-            for (bar in elements) {
-                result += bar.macd
-            }
-            return result
-        }
-    }
-
-    public prop lmr: (Bool, Bool, Bool) {
-        get() {
-            (this.features[0].isSome(), this.features[1].isSome(), this.features[2].isSome())
-        }
-    }
-
-    public prop state: String {
-        get() {
-            if (let Some(pre) <- this.pre) {
-                if (let Some(mid) <- pre.mid) {
-                } else {
-                    return "None"
-                }
-                let relation = double_relation(pre.left.getOrThrow(), pre.mid.getOrThrow())
-                if (relation == Direction.JumpUp && this.direction == Direction.Up) {
-                    return "老阳"
-                } else if (relation == Direction.JumpDown && this.direction == Direction.Down) {
-                    return "老阴"
-                } else {
-                    if (this.direction == Direction.Up) {
-                        return "小阳"
-                    } else {
-                        return "少阴"
-                    }
-                }
-            } else {
-                if (this.direction == Direction.Up) {
-                    return "小阳"
-                } else {
-                    return "少阴"
-                }
-            }
-        }
-    }
-
-    private func __feature_setter(offset: Int64, feature: Option<FeatureSequence<Bi>>): Unit {
-        if (feature.isNone()) {
-            if (let Some(obj) <- feature) {
-                // notify
-            }
-            this.features[offset] = feature
-            return
-        }
-        if (feature.getOrThrow().direction != this.direction) {
-            throw ChanException("特征序列方向不匹配")
-        }
-        if (this.features[offset].isNone()) {
-            //feature.notify_observer(cmd=FeatureSequence.CMD_APPEND, obj=feature)
-            this.features[offset] = feature
-        } else {
-            this.features[offset].getOrThrow().copy(feature.getOrThrow())
-            //self._features[offset].notify_observer(cmd=FeatureSequence.CMD_MODIFY, obj=self._features[offset])
-        }
-    }
-
-    public mut prop left: Option<FeatureSequence<Bi>> {
-        get() {
-            return this.features[0]
-        }
-        set(feature) {
-            this.__feature_setter(0, feature)
-        }
-    }
-
-    public mut prop mid: Option<FeatureSequence<Bi>> {
-        get() {
-            return this.features[1]
-        }
-        set(feature) {
-            this.__feature_setter(1, feature)
-        }
-    }
-
-    public mut prop right: Option<FeatureSequence<Bi>> {
-        get() {
-            return this.features[2]
-        }
-        set(feature) {
-            this.__feature_setter(2, feature)
+            this._stamp
         }
     }
 
@@ -2264,35 +2287,59 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExt
             return this._end
         }
         set(fx) {
-            if (fx == this._end) {
-                return
-            }
             this._end = fx
         }
-        // this.notify_observer(cmd=Duan.CMD_MODIFY, obj=self)
-
     }
 
-    public func getBars(): Array<NewBar> {
-        let bars = ArrayList<NewBar>()
-        bars.appendAll(this.elements[0].elements)
-        for (bi in this.elements[1..]) {
-            bars.appendAll(bi.elements[1..])
-            if (bi.end == this.end) {
-                break
+    public prop volume: Float64 {
+        get() {
+            var sum = 0.0f64
+            for (bi in this.elements) {
+                sum += bi.volume
             }
+            sum
         }
-        return bars.toArray()
     }
 
-    public func toBi(): Bi {
-        let bi = Bi(pre: None, start: this.start, end: this.end, elements: this.getBars(), fake: false)
-        bi.level = 1
-        return bi
+    public prop macd: Float64 {
+        get() {
+            var result = 0.0f64
+            for (bar in elements) {
+                result += bar.macd
+            }
+            return result
+        }
     }
 
-    public func get_elements(): ArrayList<Bi> {
-        var elements = ArrayList<Bi>([])
+    public prop left: ?FeatureSequence {
+        get() {
+            return this.features[0]
+        }
+    }
+
+    public prop mid: ?FeatureSequence {
+        get() {
+            return this.features[1]
+        }
+    }
+
+    public prop right: ?FeatureSequence {
+        get() {
+            return this.features[2]
+        }
+    }
+
+    public mut prop level: Byte {
+        get() {
+            this._level
+        }
+        set(level) {
+            this._level = level
+        }
+    }
+
+    public func get_elements(): ArrayList<Line> {
+        var elements = ArrayList<Line>([])
         for (bi in this.elements) {
             elements.append(bi)
             if (bi.end == this.end) {
@@ -2302,50 +2349,50 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExt
         return elements
     }
 
-    public func get_features(): (Option<FeatureSequence<Bi>>, Option<FeatureSequence<Bi>>, Option<FeatureSequence<Bi>>) {
-        let features = FeatureSequence<Bi>.analyzer<Bi>(this.elements, this.direction, "tmp")
-        if (features.size == 0) {
-            return (None, None, None)
-        }
-
-        if (features.size == 1) {
-            return (Some(features[0]), None, None)
-        }
-
-        if (features.size == 2) {
-            return (Some(features[0]), Some(features[1]), None)
-        }
-
-        if (features.size >= 3) {
-            let relation = double_relation(features[features.size - 2], features[features.size - 1])
-            if (this.direction == Direction.Up) {
-                if (relation == Direction.JumpDown || relation == Direction.Down) {
-                    return (Some(features[features.size - 3]), Some(features[features.size - 2]), Some(
-                            features[features.size - 1]))
-                } else {
-                    return (Some(features[features.size - 2]), Some(features[features.size - 1]), None)
-                }
-            } else {
-                if (relation == Direction.JumpUp || relation == Direction.Up) {
-                    return (Some(features[features.size - 3]), Some(features[features.size - 2]), Some(
-                            features[features.size - 1]))
-                } else {
-                    return (Some(features[features.size - 2]), Some(features[features.size - 1]), None)
-                }
+    public static func feature_setter(offset: Int64, feature: ?FeatureSequence, features: Array<?FeatureSequence>,
+        direction: Direction, line: Line, observer: Observer): Unit {
+        if (feature.isSome()) {
+            if (feature.getOrThrow().direction != direction) {
+                throw ChanException("特征序列方向不匹配")
             }
         }
+        if (feature.isNone()) {
+            if (let Some(obj) <- features[offset]) {
+                if (line is Duan) {
+                    observer.update(obj, CMD.REMOVE("FeatureSequence"))
+                }
+            }
+            features[offset] = feature
+            return
+        }
 
-        return (None, None, None)
+        if (features[offset].isNone()) {
+            if (line is Duan) {
+                observer.update(feature.getOrThrow(), CMD.APPEND("FeatureSequence"))
+            }
+            features[offset] = feature
+        } else {
+            features[offset].getOrThrow().elements = feature.getOrThrow().elements
+            if (line is Duan) {
+                observer.update(features[offset].getOrThrow(), CMD.MODIFY("FeatureSequence"))
+            }
+        }
     }
 
-    public func set_done(fx: FenXing): ArrayList<Bi> {
-        (this.left, this.mid, this.right) = this.get_features()
-        if (fx != this.mid.getOrThrow().start) {
+    public static func set_features(duan: Duan, bi: Line, observer: Observer): Unit {
+        let (left, mid, right) = FeatureSequence.analyzer(duan.elements, duan.direction)
+        Duan.feature_setter(0, left, duan.features, duan.direction, bi, observer)
+        Duan.feature_setter(1, mid, duan.features, duan.direction, bi, observer)
+        Duan.feature_setter(2, right, duan.features, duan.direction, bi, observer)
+    }
+
+    public static func set_done(duan: Duan, fx: FenXing, observer: Observer): ArrayList<Line> {
+        if (fx != duan.mid.getOrThrow().start) {
             throw ChanException()
         }
 
-        let elements = ArrayList<Bi>([])
-        for (obj in this.elements) {
+        let elements = ArrayList<Line>([])
+        for (obj in duan.elements) {
             if (elements.size > 0) {
                 elements.append(obj)
             }
@@ -2355,221 +2402,285 @@ public class Duan <: ToString & Pillar & HashableEquatable<Duan> & Line & BarExt
             }
         }
 
-        this.end = fx
-        this.done = true
-        let relation = double_relation(this.left.getOrThrow(), this.mid.getOrThrow())
-        this.jump = relation == Direction.JumpDown || relation == Direction.JumpUp
+        duan.end = fx
+        let relation = double_relation(duan.left.getOrThrow(), duan.mid.getOrThrow())
+        duan.jump = relation == Direction.JumpDown || relation == Direction.JumpUp
+        observer.update(duan, CMD.MODIFY("ZhongShu<Duan>_checkThird"))
+        observer.update(duan, CMD.MODIFY(duan.stamp))
+        //println(colored("setDone, ${duan}", color: "red", attrs: "blink"))
         return elements
     }
 
-    public func append_element(bi: Bi, observer: Observer): Option<ArrayList<Bi>> {
-        if (this.elements[this.elements.size - 1].end == bi.start) {
-            this.elements.append(bi)
-            if (this.direction == bi.direction) {
-                if (let Some(mid) <- this.mid) {
-                    if (this.direction == Direction.Up) {
-                        if (this.high < bi.high) {
-                            this.end = bi.end
-                        } else {
-                            this.end = mid.start
-                        }
-                    } else {
-                        if (this.low > bi.low) {
-                            this.end = bi.end
-                        } else {
-                            this.end = mid.start
-                        }
-                    }
-                } else {
-                    this.end = bi.end
-                }
-                if (observer.duan_zss.size > 0) {
-                    observer.update(observer.duan_zss[observer.duan_zss.size - 1], CMD.MODIFY("ZhongShu<Duan>"))
-                }
-            } else {
-                (this.left, this.mid, this.right) = this.get_features()
-                if (this.right.isSome()) {
-                    let result = Some(this.set_done(this.mid.getOrThrow().start))
-                    observer.update(this, CMD.MODIFY("ZhongShu<Duan>_checkThird"))
-                    return result
-                }
-            }
-            return None
-        } else {
-            throw ChanException("线段添加元素时，元素不连续, ${this.elements[this.elements.size-1]}, ${bi}")
+    public static func __append(xds: Duans, duan: Duan, observer: Observer): Unit {
+        if (xds.size > 0 && xds[xds.size - 1].end != duan.start) {
+            throw ChanException("线段连续性错误")
         }
+
+        var index = 0
+        var pre: ?Duan = None
+        if (xds.size > 0) {
+            index = xds[xds.size - 1].index + 1
+        }
+
+        duan.index = index
+
+        xds.append(duan)
+
+        observer.update(duan, CMD.APPEND(duan.stamp))
     }
 
-    public func pop_element(bi: Bi): Bool {
-        if (this.elements[this.elements.size - 1] == bi) {
-            this.elements.pop()
-            return true
+    public static func __pop(xds: Duans, duan: Duan, observer: Observer): Unit {
+        if (xds.size == 0) {
+            return
         }
-        throw ChanException("线段弹出元素时，元素不匹配")
+        if (xds[xds.size - 1] != duan) {
+            throw ChanException()
+        }
+        xds.remove(xds.size - 1)
+        observer.update(duan, CMD.REMOVE(duan.stamp))
     }
 
-    public static func analyzer_pop(bi: Bi, xds: ArrayList<Duan>, level: UInt16, _from: String, observer: Observer): Unit {
-        func __pop(xds: ArrayList<Duan>, duan: Duan, _from: String): Unit {
-            if (xds.size == 0) {
-                return
-            }
-            if (xds[xds.size - 1] != duan) {
-                throw ChanException()
-            }
-
-            //let tmp = xds[xds.size - 1]
-            xds.remove(xds.size - 1)
-
-            if (_from == "analyzer") {
-                //dp("Duan.pop, level: ${level}, pop ${duan}")
-                observer.update(duan, CMD.REMOVE("Duan"))
-            }
+    public static func pop(line: Line, xds: Duans, observer: Observer): Unit {
+        if (xds.size == 0) {
+            return
         }
         let cmd = "Duan.POP"
         let duan: Duan = xds[xds.size - 1]
-        let state: String = duan.state
-        var pre: Option<Duan> = duan.pre
-        if (pre.isNone() && xds.size > 1) {
-            if (xds[xds.size - 2].index + 1 != duan.index) {
-                throw ChanException()
-            }
-            pre = Some(xds[xds.size - 2])
+        var pre: ?Duan = if (xds.size > 1) {
+            xds[xds.size - 2]
+        } else {
+            None
         }
-        let lmr = duan.lmr
-        dp("${cmd}, ${level}, ${state}, (${lmr[0]} ${lmr[1]} ${lmr[2]}), ${duan} ${bi}")
 
-        duan.pop_element(bi)
+        dp("${cmd}, ${duan} ${line}")
+
+        if (duan.elements[duan.elements.size - 1] == line) {
+            duan.elements.remove(duan.elements.size - 1)
+        }
+
         if (let Some(last) <- pre) {
-            if ((last.right.isSome() && (last.right.getOrThrow().elements |> any {line: Bi => line == bi})) || (last.
-                right.isNone() && (last.left.getOrThrow().elements |> any {line: Bi => line == bi}))) {
-                __pop(xds, duan, _from)
-                last.pop_element(bi)
-                last.right = None
+            if ((last.right.isSome() && (last.right.getOrThrow().elements |> any {bi: Line => line == bi})) || (last.
+                right.isNone() && (last.left.getOrThrow().elements |> any {bi: Line => line == bi}))) {
+                Duan.__pop(xds, duan, observer)
+                if (last.elements[last.elements.size - 1] == line) {
+                    last.elements.remove(last.elements.size - 1)
+                }
+                Duan.set_features(last, line, observer)
                 return
             }
         }
-
         if (duan.elements.size > 0) {
-            (duan.left, duan.mid, duan.right) = duan.get_features()
+            Duan.set_features(duan, line, observer)
         } else {
-            __pop(xds, duan, _from)
+            Duan.__pop(xds, duan, observer)
         }
     }
 
-    public static func analyzer_push(bi: Bi, xds: ArrayList<Duan>, level: UInt16, _from: String, observer: Observer): Unit {
+    public static func push(bi: Line, xds: Duans, observer: Observer): Unit {
         let cmd = "Duan.PUSH"
-        func __append(xds: ArrayList<Duan>, duan: Duan, _from: String): Unit {
-            if (xds.size > 0 && xds[xds.size - 1].end != duan.start) {
-                throw ChanException("线段连续性错误")
-            }
 
-            var index = 0
-            var pre: Option<Duan> = None
-            if (xds.size > 0) {
-                index = xds[xds.size - 1].index + 1
-                pre = Some(xds[xds.size - 1])
-            }
-
-            duan.index = index
-            duan.pre = pre
-            xds.append(duan)
-
-            if (_from == "analyzer") {
-                //dp("Duan.append, level: ${level}, pop ${duan}")
-                observer.update(duan, CMD.APPEND("Duan"))
-            }
+        let stamp = if (bi.stamp == "Bi") {
+            "Duan"
+        } else {
+            "Duan${bi.stamp}"
         }
 
-        func __pop(xds: ArrayList<Duan>, duan: Duan, _from: String): Unit {
-            if (xds.size == 0) {
-                return
-            }
-            if (xds[xds.size - 1] != duan) {
-                throw ChanException()
-            }
-            //let tmp = xds[xds.size - 1]
-            xds.remove(xds.size - 1)
-
-            if (_from == "analyzer") {
-                observer.update(duan, CMD.REMOVE("Duan"))
-            }
+        let level: Byte = if (bi.stamp == "Bi") {
+            1
+        } else {
+            (bi as Duan).getOrThrow().level + 1
         }
 
-        var new = Duan(None, bi.start, bi.end, ArrayList<Bi>([bi]))
+        var new = Duan(None, bi.start, bi.end, Lines([bi]), stamp: stamp)
+        new.level = level
         if (xds.isEmpty()) {
-            __append(xds, new, _from)
+            Duan.__append(xds, new, observer)
             return
         }
 
         var duan = xds[xds.size - 1]
-        var state = duan.state
-        let lmr = duan.lmr
-        dp("${cmd}, ${level}, ${state}, (${lmr[0]} ${lmr[1]} ${lmr[2]}), ${duan} ${bi}")
 
+        dp("${cmd}, ${duan} ${bi}")
+
+        if (duan.elements[duan.elements.size - 1].end != bi.start) {
+            throw ChanException("线段添加元素时，元素不连续${duan.elements[duan.elements.size - 1]}, ${bi}")
+        }
+
+        if (duan.elements[duan.elements.size - 1].index + 1 != bi.index) {
+            throw ChanException("线段添加元素时，元素不连续${duan.elements[duan.elements.size - 1].index}, ${bi.index}")
+        }
+
+        duan.elements.append(bi)
         if (duan.direction == bi.direction) {
             // 与线段方向相同时修改线段终点
-            duan.append_element(bi, observer)
-            observer.update(duan, CMD.MODIFY("Duan"))
+            if (let Some(mid) <- duan.mid) {
+                if (duan.direction == Direction.Up) {
+                    if (duan.high < bi.high) {
+                        duan.end = bi.end
+                    } else {
+                        duan.end = mid.start
+                    }
+                } else {
+                    if (duan.low > bi.low) {
+                        duan.end = bi.end
+                    } else {
+                        duan.end = mid.start
+                    }
+                }
+            } else {
+                duan.end = bi.end
+            }
+            if (duan.stamp == "Duan" && observer.duan_zss.size > 0) {
+                observer.update(observer.duan_zss[observer.duan_zss.size - 1], CMD.MODIFY("ZhongShu<Duan>"))
+            }
+
+            if (duan.stamp == "DuanDuan" && observer.duan_duan_zss.size > 0) {
+                observer.update(observer.duan_zss[observer.duan_duan_zss.size - 1], CMD.MODIFY("ZhongShu<Duan>"))
+            }
+            observer.update(duan, CMD.MODIFY(duan.stamp))
             return
         }
 
         if (xds.size == 1) {
             if ((duan.direction == Direction.Up && bi.low < duan.start.speck && duan.elements.size == 1) || (duan.
                 direction == Direction.Down && bi.high > duan.start.speck && duan.elements.size == 1)) {
-                new = Duan(None, bi.start, bi.end, ArrayList<Bi>([bi]))
-                __pop(xds, duan, _from)
-                __append(xds, new, _from)
+                new = Duan(None, bi.start, bi.end, Lines([bi]), stamp: stamp)
+                new.level = level
+                Duan.__pop(xds, duan, observer)
+                Duan.__append(xds, new, observer)
                 return
             }
         }
 
-        let elements = duan.append_element(bi, observer)
+        Duan.set_features(duan, bi, observer)
+        if (duan.right.isSome()) {
+            let elements = set_done(duan, duan.mid.getOrThrow().start, observer)
 
-        if (let Some(elements) <- elements) {
-            // 分型成型
-            observer.update(duan, CMD.MODIFY("Duan"))
-            new = Duan(duan, elements[0].start, elements[elements.size - 1].end, elements)
-            (new.left, new.mid, new.right) = new.get_features()
-            __append(xds, new, _from)
+            new = Duan(duan, elements[0].start, elements[elements.size - 1].end, elements, stamp: stamp)
+            new.level = level
+            Duan.set_features(new, bi, observer)
+            Duan.__append(xds, new, observer)
             if (duan.jump) {
                 new.pre = Some(duan)
             }
             if (duan.direction == Direction.Up) {
-                dp("${cmd}, ${level}, 顶分型终结，缺口: ${duan.jump}")
+                dp("${cmd}, 顶分型终结，缺口: ${duan.jump}")
             } else {
-                dp("${cmd}, ${level}, 底分型终结，缺口: ${duan.jump}")
+                dp("${cmd}, 底分型终结，缺口: ${duan.jump}")
+            }
+        }
+    }
+
+    public static func modify(line: Line, xds: Duans, observer: Observer): Unit {
+        let cmd = "Duan.MODIFY"
+        let duan = xds[xds.size - 1]
+
+        Duan.set_features(duan, line, observer)
+        if (duan.elements.size == 1) {
+            duan.end = duan.elements[0].end
+        }
+        if (duan.left.isSome()) {
+            duan.end = duan.left.getOrThrow().start
+        }
+        if (duan.mid.isSome()) {
+            duan.end = duan.mid.getOrThrow().start
+        }
+
+        if (duan.elements.size >= 3) {
+            let bi = if (duan.elements.size % 2 == 1) {
+                duan.elements[duan.elements.size - 1]
+            } else {
+                duan.elements[duan.elements.size - 2]
+            }
+            if (let Some(mid) <- duan.mid) {
+                if (duan.direction == Direction.Up) {
+                    if (duan.high < bi.high) {
+                        duan.end = bi.end
+                    } else {
+                        duan.end = mid.start
+                    }
+                } else {
+                    if (duan.low > bi.low) {
+                        duan.end = bi.end
+                    } else {
+                        duan.end = mid.start
+                    }
+                }
+            } else {
+                duan.end = bi.end
+            }
+        }
+
+        observer.update(duan, CMD.MODIFY(duan.stamp))
+        if (duan.right.isSome()) {
+            let elements = set_done(duan, duan.mid.getOrThrow().start, observer)
+
+            let new = Duan(duan, elements[0].start, elements[elements.size - 1].end, elements, stamp: duan.stamp)
+            new.level = duan.level
+            Duan.set_features(new, line, observer)
+            Duan.__append(xds, new, observer)
+            if (duan.jump) {
+                new.pre = Some(duan)
+            }
+            if (duan.direction == Direction.Up) {
+                dp("${cmd}, 顶分型终结，缺口: ${duan.jump}")
+            } else {
+                dp("${cmd}, 底分型终结，缺口: ${duan.jump}")
             }
         }
     }
 }
 
-public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> & Line where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+public class ZhongShu <: ToString & Interval & HashableEquatable<ZhongShu> & Line {
     private var _index: Int64 = 0
     private let _direction: Direction
     public let bspoints = ArrayList<BSPoint>()
 
-    public var elements: ArrayList<T> = ArrayList<T>()
-    private var _third: Option<T> = Option<T>.None
+    public var elements: ArrayList<Line> = ArrayList<Line>()
+    private var _third: ?Line = Option<Line>.None
     private let _id: Int64
+    private var _level: Byte = 0
 
-    init(elements: Array<T>) {
+    init(elements: Array<Line>) {
         this._id = TradingView.getID()
         if (elements.size < 3) {
             throw ChanException("ZhongShu init elements size < 3")
         }
         //let relation = double_relation(elements[0], elements[2])
 
-        this.elements = ArrayList<T>(elements)
+        this.elements = ArrayList<Line>(elements)
         this._direction = elements[1].direction
     }
 
-    public mut prop third: Option<T> {
+    public func hashCode(): Int64 {
+        //"ZhongShu(${this.index}, ${this.third}, ${this.direction}, ${this.elements})".hashCode()
+        this._id
+    }
+
+    public operator override func ==(other: ZhongShu): Bool {
+        return refEq(this, other)
+    }
+
+    public operator override func !=(other: ZhongShu): Bool {
+        return !(this == other)
+    }
+
+    public func toString(): String {
+        "ZhongShu(index:${this.index}, third:${this.third.isSome()}, ${this.direction}, zg:${this.zg}, zd:${this.zd}, elements.size=${this.elements.size})"
+    }
+
+    public prop bars: News {
+        get() {
+            throw ChanException()
+        }
+    }
+
+    public mut prop third: ?Line {
         get() {
             this._third
         }
-        set(t) {
-            let old = this.third
-            this._third = t
+        set(third) {
+            this._third = third
         }
     }
 
@@ -2579,6 +2690,12 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         }
         set(index) {
             this._index = index
+        }
+    }
+
+    public prop stamp: String {
+        get() {
+            "ZhongShu<${this.elements[0].stamp}>"
         }
     }
 
@@ -2619,34 +2736,26 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
     public prop macd: Float64 {
         get() {
             var result = 0.0f64
-            for (bar in elements) {
-                if (bar is Bi) {
-                    let bi = (bar as Bi).getOrThrow()
-                    result += bi.macd
-                } else if (bar is Duan) {
-                    let duan = (bar as Duan).getOrThrow()
-                    result += duan.macd
-                } else {
-                    throw ChanException()
-                }
+            for (line in elements) {
+                result += line.macd
             }
             return result
         }
     }
 
-    public prop left: Option<T> {
+    public prop left: ?Line {
         get() {
             this.elements.get(0)
         }
     }
 
-    public prop mid: Option<T> {
+    public prop mid: ?Line {
         get() {
             this.elements.get(1)
         }
     }
 
-    public prop right: Option<T> {
+    public prop right: ?Line {
         get() {
             this.elements.get(2)
         }
@@ -2682,6 +2791,26 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         }
     }
 
+    public prop gg: Float64 {
+        get() {
+            var high = Float64.Min
+            for (obj in this.elements) {
+                high = max(high, obj.high)
+            }
+            return high
+        }
+    }
+
+    public prop dd: Float64 {
+        get() {
+            var low = Float64.Max
+            for (obj in this.elements) {
+                low = min(low, obj.low)
+            }
+            return low
+        }
+    }
+
     public prop start: FenXing {
         get() {
             this.elements[0].start
@@ -2697,21 +2826,13 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         }
     }
 
-    public func hashCode(): Int64 {
-        //"ZhongShu(${this.index}, ${this.third}, ${this.direction}, ${this.elements})".hashCode()
-        this._id
-    }
-
-    public operator override func ==(other: ZhongShu<T>): Bool {
-        return refEq(this, other)
-    }
-
-    public operator override func !=(other: ZhongShu<T>): Bool {
-        return !(this == other)
-    }
-
-    public func toString(): String {
-        "ZhongShu(index:${this.index}, third:${this.third.isSome()}, ${this.direction}, zg:${this.zg}, zd:${this.zd}, elements.size=${this.elements.size})"
+    public mut prop level: Byte {
+        get() {
+            this._level
+        }
+        set(level) {
+            this._level = level
+        }
     }
 
     public func check(): Bool {
@@ -2719,11 +2840,11 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         return contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])
     }
 
-    public func pop_element(obj: T, observer: Observer, _from: String): Unit {
+    public func pop_element(obj: Line, observer: Observer, _from: String): Unit {
         if (let Some(third) <- this.third) {
             if (third == obj) {
                 this.third = None
-                dp("ZhongShu.pop_element, 第三买卖点, ${this.bspoints.size}, ${obj}")
+                dp("ZhongShu.pop_element ${_from}, 第三买卖点, ${this.bspoints.size}, ${obj}")
                 var i = 0
                 for (bsp in this.bspoints) {
                     if (bsp.getValid() == true && bsp.getInfo() == "Third") {
@@ -2748,12 +2869,10 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         this.elements.remove(this.elements.size - 1)
     }
 
-    public func append_element(obj: T, observer: Observer, _from: String): Unit {
+    public func append_element(obj: Line, observer: Observer, _from: String): Unit {
         let size = this.elements.size
         if (size == 0) {
             throw ChanException()
-            //this.elements.append(obj)
-            return
         }
 
         if (this.elements[size - 1].index + 1 != obj.index) {
@@ -2792,33 +2911,38 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                             throw ChanException()
                         }
                     }
-                    if (let Some(bsp) <- BSPoint.calc_zs_third_bsp<T>(this, obj, observer)) {
+                    if (let Some(bsp) <- BSPoint.calc_zs_third_bsp(this, obj, observer)) {
                         this.bspoints.append(bsp)
                         observer.update(bsp, CMD.APPEND("BSPoint"))
                     }
                     if (_from == "analyzer") {
+                        observer.update(this, CMD.MODIFY(this.stamp))
+                        /*
                         if (obj is Bi) {
                             observer.update(this, CMD.MODIFY("ZhongShu<Bi>"))
                         }
                         if (obj is Duan) {
                             observer.update(this, CMD.MODIFY("ZhongShu<Duan>"))
                         }
+                         */
                     }
-                    }
+                }
             } else {
                 throw ChanException("ZhongShu relation")
             }
         }
     }
 
-    public static func analyzer_pop<T>(obj: T, zss: ArrayList<ZhongShu<T>>, level: UInt16, _from: String,
-        observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+    public static func analyzer_pop(obj: Line, zss: ArrayList<ZhongShu>, level: UInt16, _from: String,
+        observer: Observer): Unit {
         let cmd = "ZhongShu.POP"
 
-        func _pop(zss: ArrayList<ZhongShu<T>>, zs: ZhongShu<T>, _from: String): Unit {
+        func _pop(zss: ArrayList<ZhongShu>, zs: ZhongShu, _from: String): Unit {
             if (zss.size > 0) {
                 if (zss[zss.size - 1] == zs) {
                     zss.remove(zss.size - 1)
+                    observer.update(zs, CMD.REMOVE(zs.stamp))
+                /*
                     if (_from == "analyzer") {
                         if (obj is Bi) {
                             observer.update(zs, CMD.REMOVE("ZhongShu<Bi>"))
@@ -2827,6 +2951,7 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                             observer.update(zs, CMD.REMOVE("ZhongShu<Duan>"))
                         }
                     }
+                 */
                 } else {
                     throw ChanException()
                 }
@@ -2841,22 +2966,25 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                 _pop(zss, last, _from)
             } else {
                 if (_from == "analyzer") {
+                    observer.update(last, CMD.MODIFY(last.stamp))
+                    /*
                     if (obj is Bi) {
                         observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
                     }
                     if (obj is Duan) {
                         observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
                     }
+                     */
                 }
             }
         }
     }
 
-    public static func analyzer_push<T>(obj: T, zss: ArrayList<ZhongShu<T>>, objs: ArrayList<T>, level: UInt16,
-        _from: String, observer: Observer): Unit where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
+    public static func analyzer_push(obj: Line, zss: ArrayList<ZhongShu>, objs: ArrayList<Line>, level: UInt16,
+        _from: String, observer: Observer): Unit {
         let cmd = "ZhongShu.PUSH"
 
-        func __append(zss: ArrayList<ZhongShu<T>>, zs: ZhongShu<T>, _from: String): Unit {
+        func __append(zss: ArrayList<ZhongShu>, zs: ZhongShu, _from: String): Unit {
             var index: Int64 = 0
             if (zss.size > 0) {
                 index = zss[zss.size - 1].index + 1
@@ -2864,12 +2992,15 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
             zs.index = index
             zss.append(zs)
             if (_from == "analyzer") {
+                observer.update(zs, CMD.APPEND(zs.stamp))
+                /*
                 if (obj is Bi) {
                     observer.update(zs, CMD.APPEND("ZhongShu<Bi>"))
                 }
                 if (obj is Duan) {
                     observer.update(zs, CMD.APPEND("ZhongShu<Duan>"))
                 }
+                 */
             }
 
             dp("${cmd}, append")
@@ -2883,7 +3014,7 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                 let right = objs[objs.size - 1]
                 let relation = double_relation(left, right)
                 if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
-                    let new = ZhongShu<T>([left, mid, right])
+                    let new = ZhongShu([left, mid, right])
                     __append(zss, new, _from)
                 }
             }
@@ -2903,7 +3034,7 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                     if (left.direction == third.direction) {
                         let relation = double_relation(left, right)
                         if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
-                            let new = ZhongShu<T>([left, mid, right])
+                            let new = ZhongShu([left, mid, right])
                             __append(zss, new, _from)
                             return
                         }
@@ -2912,12 +3043,15 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
             } else {
                 last.append_element(obj, observer, _from)
                 if (_from == "analyzer") {
+                    observer.update(last, CMD.MODIFY(last.stamp))
+                    /*
                     if (obj is Bi) {
                         observer.update(last, CMD.MODIFY("ZhongShu<Bi>"))
                     }
                     if (obj is Duan) {
                         observer.update(last, CMD.MODIFY("ZhongShu<Duan>"))
                     }
+                     */
                 }
                 if (let Some(third) <- last.third) {
                     if (obj.index - third.index >= 2) {
@@ -2929,7 +3063,7 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
                         if (left.direction == third.direction) {
                             let relation = double_relation(left, right)
                             if (contains(relation)([Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
-                                let new = ZhongShu<T>([left, mid, right])
+                                let new = ZhongShu([left, mid, right])
                                 __append(zss, new, _from)
                                 return
                             }
@@ -2940,14 +3074,14 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
         }
     }
 
-    public static func analyzer<T>(elements: ArrayList<T>, observer: Observer): (Bool, ArrayList<ZhongShu<T>>) where T <: ToString & Pillar & HashableEquatable<T> & Line & BarExtensions {
-        let zss = ArrayList<ZhongShu<T>>()
+    public static func analyzer(elements: ArrayList<Line>, observer: Observer): (Bool, ArrayList<ZhongShu>) {
+        let zss = ArrayList<ZhongShu>()
         if (elements.size < 3) {
             return (false, zss)
         }
 
         for (obj in elements) {
-            ZhongShu<T>.analyzer_push(obj, zss, elements, 0, "tmp", observer)
+            ZhongShu.analyzer_push(obj, zss, elements, 0, "tmp", observer)
         }
         return (zss.size > 0, zss)
     }
@@ -2956,16 +3090,22 @@ public class ZhongShu<T> <: ToString & Pillar & HashableEquatable<ZhongShu<T>> &
 class BaseAnalyzer <: Observer {
     public var _symbol: String
     public var _freq: UInt32
-    public var _raws: ArrayList<RawBar> = ArrayList<RawBar>()
-    public var _news: ArrayList<NewBar> = ArrayList<NewBar>()
+    public var ws: ?WebSocket = None
+    public var _raws: Raws = Raws()
+    public var _news: News = News()
     public var _fxs: ArrayList<FenXing> = ArrayList<FenXing>()
-    public var _bis: ArrayList<Bi> = ArrayList<Bi>()
-    public var _duans: ArrayList<Duan> = ArrayList<Duan>()
-    public var _bi_zss: ArrayList<ZhongShu<Bi>> = ArrayList<ZhongShu<Bi>>()
-    public var _duan_zss: ArrayList<ZhongShu<Duan>> = ArrayList<ZhongShu<Duan>>()
-    public var ws: Option<WebSocket> = None
 
-    BaseAnalyzer(symbol: String, freq: UInt32, ws!: Option<WebSocket> = None) {
+    public let _bis: Bis = Bis()
+    public let _duans: Duans = Duans()
+    public let _bi_zss: ArrayList<ZhongShu> = ArrayList<ZhongShu>()
+    public let _duan_zss: ArrayList<ZhongShu> = ArrayList<ZhongShu>()
+
+    public var _duan_bis: Bis = Bis()
+    public var _duan_duans: Duans = Duans()
+    public var _duan_bi_zss: ArrayList<ZhongShu> = ArrayList<ZhongShu>()
+    public var _duan_duan_zss: ArrayList<ZhongShu> = ArrayList<ZhongShu>()
+
+    BaseAnalyzer(symbol: String, freq: UInt32, ws!: ?WebSocket = None) {
         this._symbol = symbol
         this._freq = freq
         this.ws = ws
@@ -2983,13 +3123,13 @@ class BaseAnalyzer <: Observer {
         }
     }
 
-    public prop raws: ArrayList<RawBar> {
+    public prop raws: Raws {
         get() {
             this._raws
         }
     }
 
-    public prop news: ArrayList<NewBar> {
+    public prop news: News {
         get() {
             this._news
         }
@@ -3001,34 +3141,66 @@ class BaseAnalyzer <: Observer {
         }
     }
 
-    public prop bis: ArrayList<Bi> {
+    public prop bis: Bis {
         get() {
             this._bis
         }
     }
 
-    public prop duans: ArrayList<Duan> {
+    public prop duans: Duans {
         get() {
             this._duans
         }
     }
 
-    public prop bi_zss: ArrayList<ZhongShu<Bi>> {
+    public prop bi_zss: ArrayList<ZhongShu> {
         get() {
             this._bi_zss
         }
     }
 
-    public prop duan_zss: ArrayList<ZhongShu<Duan>> {
+    public prop duan_zss: ArrayList<ZhongShu> {
         get() {
             this._duan_zss
         }
     }
 
-    public func update(o: Any, cmd: CMD): Unit {
+    public prop duan_bis: Bis {
+        get() {
+            this._duan_bis
+        }
+    }
+
+    public prop duan_duans: Duans {
+        get() {
+            this._duan_duans
+        }
+    }
+
+    public prop duan_bi_zss: ArrayList<ZhongShu> {
+        get() {
+            this._duan_bi_zss
+        }
+    }
+
+    public prop duan_duan_zss: ArrayList<ZhongShu> {
+        get() {
+            this._duan_duan_zss
+        }
+    }
+
+    public func update(o: ToString, cmd: CMD): Unit {
         let _from = "analyzer"
+        if (cmd.toString().indexOf("NewBar").isSome()) {
+            let obj = (o as NewBar).getOrThrow()
+            TradingView.push(obj, this.ws)
+            return
+        }
+        //println("${cmd}, ${o}")
         match (cmd) {
-            case CMD.APPEND(name) => if (name == "RawBar") {
+            case CMD.APPEND(name) =>
+                //println(name)
+                if (name == "RawBar") {
                 let obj = (o as RawBar).getOrThrow()
             //TradingView.push(obj, this.ws)
             } else if (name == "NewBar") {
@@ -3040,80 +3212,113 @@ class BaseAnalyzer <: Observer {
             } else if (name == "Bi") {
                 let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-                ZhongShu<Bi>.analyzer_push(obj, this.bi_zss, this.bis, 0, _from, this)
-                Duan.analyzer_push(obj, this.duans, 0, _from, this)
+                let (zss, duans, bis) = (this.bi_zss, this.duans, this.bis)
+                ZhongShu.analyzer_push(obj, zss, bis.toLines(), 0, _from, this)
+                Duan.push(obj, duans, this)
             } else if (name == "Duan") {
                 let obj = (o as Duan).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-                ZhongShu<Duan>.analyzer_push(obj, this.duan_zss, this.duans, 0, _from, this)
+                ZhongShu.analyzer_push(obj, this.duan_zss, this.duans.toLines(), 0, _from, this)
+                Duan.push(obj, this.duan_duans, this)
+            } else if (name == "FeatureSequence") {
+                let obj = (o as FeatureSequence).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "DuanDuan") {
+                let obj = (o as Duan).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.APPEND("Duan"))
+                ZhongShu.analyzer_push(obj, this.duan_duan_zss, this.duan_duans.toLines(), 0, _from, this)
             } else if (name == "ZhongShu<Bi>") {
-                let obj = (o as ZhongShu<Bi>).getOrThrow()
+                let obj = (o as ZhongShu).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-            } else if (name == "ZhongShu<Duan>") {
-                let obj = (o as ZhongShu<Duan>).getOrThrow()
-                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "ZhongShu<Duan>" || name == "ZhongShu<DuanDuan>") {
+                let obj = (o as ZhongShu).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.APPEND("ZhongShu<Duan>"))
             } else {
                 println("unknow : ${cmd}")
             }
 
-            case CMD.REMOVE(name) => if (name == "RawBar") {
-                let obj = (o as RawBar).getOrThrow()
-            } else if (name == "NewBar") {
-                let obj = (o as NewBar).getOrThrow()
-            } else if (name == "BSPoint") {
+            case CMD.REMOVE(name) =>
+                //println(name)
+                if (name == "BSPoint") {
                 let obj = (o as BSPoint).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
             } else if (name == "Bi") {
                 let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-                ZhongShu<Bi>.analyzer_pop(obj, this.bi_zss, 0, _from, this)
-                Duan.analyzer_pop(obj, this.duans, 0, _from, this)
+                let (bi_zss, duans) = (this.bi_zss, this.duans)
+                ZhongShu.analyzer_pop(obj, bi_zss, 0, _from, this)
+                Duan.pop(obj, duans, this)
             } else if (name == "Duan") {
                 let obj = (o as Duan).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-                ZhongShu<Duan>.analyzer_pop(obj, this.duan_zss, 0, _from, this)
+                ZhongShu.analyzer_pop(obj, this.duan_zss, 0, _from, this)
+                Duan.pop(obj, this.duan_duans, this)
+            } else if (name == "FeatureSequence") {
+                let obj = (o as FeatureSequence).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "DuanDuan") {
+                let obj = (o as Duan).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.REMOVE("Duan"))
+                ZhongShu.analyzer_pop(obj, this.duan_duan_zss, 0, _from, this)
             } else if (name == "ZhongShu<Bi>") {
-                let obj = (o as ZhongShu<Bi>).getOrThrow()
+                let obj = (o as ZhongShu).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-            } else if (name == "ZhongShu<Duan>") {
-                let obj = (o as ZhongShu<Duan>).getOrThrow()
-                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "ZhongShu<Duan>" || name == "ZhongShu<DuanDuan>") {
+                let obj = (o as ZhongShu).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.REMOVE("ZhongShu<Duan>"))
             } else {
                 println("unknow : ${cmd}")
             }
 
-            case CMD.MODIFY(name) => if (name == "RawBar") {
-                let obj = (o as RawBar).getOrThrow()
-            } else if (name == "NewBar") {
-                let obj = (o as NewBar).getOrThrow()
-                TradingView.push(obj, this.ws)
-            } else if (name == "BSPoint") {
+            case CMD.MODIFY(name) =>
+                //println(name)
+                if (name == "BSPoint") {
                 let obj = (o as BSPoint).getOrThrow()
-                TradingView.push(obj, this.ws, cmd)
-            } else if (name == "Bi") {
-                let obj = (o as Bi).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
             } else if (name == "Duan") {
                 let obj = (o as Duan).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
+                Duan.modify(obj, this.duan_duans, this)
+            } else if (name == "FeatureSequence") {
+                let obj = (o as FeatureSequence).getOrThrow()
+                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "DuanDuan") {
+                let obj = (o as Duan).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.MODIFY("Duan"))
             } else if (name == "ZhongShu<Bi>") {
-                let obj = (o as ZhongShu<Bi>).getOrThrow()
+                let obj = (o as ZhongShu).getOrThrow()
                 TradingView.push(obj, this.ws, cmd)
-            } else if (name == "ZhongShu<Duan>") {
-                let obj = (o as ZhongShu<Duan>).getOrThrow()
-                TradingView.push(obj, this.ws, cmd)
+            } else if (name == "ZhongShu<Duan>" || name == "ZhongShu<DuanDuan>") {
+                let obj = (o as ZhongShu).getOrThrow()
+                TradingView.push(obj, this.ws, CMD.MODIFY("ZhongShu<Duan>"))
             } else if (name == "ZhongShu<Duan>_checkThird") {
                 let duan = (o as Duan).getOrThrow()
-                if (this._duan_zss.isEmpty()) {
+                var zss = if (duan.level == 1) {
+                    this.duan_zss
+                } else if (duan.level == 2) {
+                    this.duan_duan_zss
+                } else {
+                    throw ChanException()
+                }
+
+                var duans = if (duan.level == 1) {
+                    this.duans
+                } else if (duan.level == 2) {
+                    this.duan_duans
+                } else {
+                    throw ChanException()
+                }
+
+                if (zss.isEmpty()) {
                     return
                 }
-                let zs = this._duan_zss[this._duan_zss.size - 1]
+                let zs = zss[zss.size - 1]
                 if (let Some(third) <- zs.third) {
                     if (third == duan) {
                         if (contains(double_relation(zs, duan))(
                             [Direction.Up, Direction.Down, Direction.Right, Direction.Left])) {
-                            ZhongShu<Duan>.analyzer_pop(duan, this.duan_zss, 0, _from, this)
-                            ZhongShu<Duan>.analyzer_push(duan, this.duan_zss, this.duans, 0, _from, this)
+                            ZhongShu.analyzer_pop(duan, zss, 0, _from, this)
+                            ZhongShu.analyzer_push(duan, zss, duans.toLines(), 0, _from, this)
                         }
                     }
                 }
@@ -3195,19 +3400,22 @@ class BaseAnalyzer <: Observer {
         }
     }
 
-    public static func fromData(symbol: String, freq: UInt32, buffer: Array<Byte>, ws!: Option<WebSocket> = None): BaseAnalyzer {
+    public func analyzer() {
+    }
+
+    public static func fromData(symbol: String, freq: UInt32, buffer: Array<Byte>, ws!: ?WebSocket = None): BaseAnalyzer {
         var obj = BaseAnalyzer(symbol, freq, ws: ws)
         let size = 48 // struct.calcsize(">6d")
 
         for (i in 0..buffer.size / size) {
-            //for (i in 200..500) {
+            //for (i in 3050..buffer.size / size) {
             let bar = RawBar.readBigEndian(buffer[i * size..(i + 1) * size])
             obj.push(bar)
         }
         return obj
     }
 
-    public static func readFromDatFile(path: String, ws!: Option<WebSocket> = None): BaseAnalyzer {
+    public static func readFromDatFile(path: String, ws!: ?WebSocket = None): BaseAnalyzer {
         let filename = Path(path).fileName.getOrThrow()
         let tmp = filename.split("-", 3)
         let symbol = tmp[0]
@@ -3330,7 +3538,7 @@ public func CreateMultipointShapeOptions(
     filled!: Bool = false,
     icon!: Int64 = 0,
     showInObjectsTree!: Bool = true,
-    zOrder!: Option<String> = None // ​"top" | "bottom"
+    zOrder!: ?String = None // ​"top" | "bottom"
 ): JsonObject {
     //https://www.tradingview.com/charting-library-docs/v27/api/interfaces/Charting_Library.CreateMultipointShapeOptions
 
@@ -3512,15 +3720,15 @@ public class TrendLine {
         return obj
     }
 
-    public static func getDuan(title: String): TrendLine {
-        let obj = TrendLine(text: "duan", title: title, linecolor: "#F1C40F", linewidth: 3, linestyle: 0)
+    public static func getDuan(title: String, linecolor!: String = "#F1C40F"): TrendLine {
+        let obj = TrendLine(text: "duan", title: title, linecolor: linecolor, linewidth: 3, linestyle: 0)
         return obj
     }
 
-    public static func getFeature(title: String, direction: Direction): TrendLine {
-        var obj = TrendLine(text: "feature", title: title, linecolor: "#22FF22", linewidth: 2, linestyle: 2)
+    public static func getFeature(title: String, direction: Direction, linestyle!: Int64 = 2, text!: String = "feature"): TrendLine {
+        var obj = TrendLine(text: text, title: title, linecolor: "#22FF22", linewidth: 2, linestyle: linestyle)
         if (direction == Direction.Up) {
-            obj = TrendLine(text: "feature", title: title, linecolor: "#FF2222", linewidth: 2, linestyle: 2)
+            obj = TrendLine(text: text, title: title, linecolor: "#FF2222", linewidth: 2, linestyle: linestyle)
         }
         return obj
     }
@@ -3629,14 +3837,13 @@ public class Arrow {
 public class TradingView {
     public static let IDS = HashSet<Int64>()
     public static var seed: UInt64 = 40320
-
+    public static var ID: Int64 = Int64.Max
     public static func getID(): Int64 {
-        let m: Random = Random(TradingView.seed)
-
         while (true) {
-            let i: Int64 = m.nextInt64()
-            if (IDS.put(i)) {
-                return i
+            ID -= 1
+            let b = IDS.put(ID)
+            if (b) {
+                return ID
             }
         }
 
@@ -3649,7 +3856,7 @@ public class TradingView {
         try {
             f.read(buffer)
             TradingView.seed = UInt64.readBigEndian(buffer)
-            println(colored("TV.seed=${TradingView.seed}", color: "red"))
+            println(colored("TV.seed=${TradingView.seed}", color: "red", attrs: "blink"))
         } catch (E: IllegalArgumentException) {
             println(E.message)
         } catch (e: FSException) {
@@ -3682,7 +3889,7 @@ public class TradingView {
         //dp(String.fromUtf8(message))
     }
 
-    public static func push(bar: RawBar, ws: Option<WebSocket>): Unit {
+    public static func push(bar: RawBar, ws: ?WebSocket): Unit {
         let obj = JsonObject()
         let cmd = CMD.APPEND("RawBar").toString()
         obj.put("type", JsonString("realtime"))
@@ -3698,7 +3905,7 @@ public class TradingView {
         }
     }
 
-    public static func push(bar: NewBar, ws: Option<WebSocket>): Unit {
+    public static func push(bar: NewBar, ws: ?WebSocket): Unit {
         let obj = JsonObject()
         let cmd = CMD.APPEND("NewBar").toString()
         obj.put("type", JsonString("realtime"))
@@ -3714,9 +3921,12 @@ public class TradingView {
         }
     }
 
-    public static func push(bsp: BSPoint, ws: Option<WebSocket>, command: CMD): Unit {
+    public static func push(bsp: BSPoint, ws: ?WebSocket, command: CMD): Unit {
         let obj = JsonObject()
-        let cmd = command.toString()
+        var cmd = command.toString()
+        if (command.toString() == "MODIFY(BSPoint)") {
+            cmd = "REMOVE(BSPoint)"
+        }
 
         let points = ArrayList<JsonValue>()
         let s = JsonObject()
@@ -3756,7 +3966,7 @@ public class TradingView {
         }
     }
 
-    public static func push(bi: Bi, ws: Option<WebSocket>, command: CMD): Unit {
+    public static func push(bi: Bi, ws: ?WebSocket, command: CMD): Unit {
         let obj = JsonObject()
         let cmd = command.toString()
         obj.put("type", JsonString("shape"))
@@ -3786,7 +3996,7 @@ public class TradingView {
         }
     }
 
-    public static func push(duan: Duan, ws: Option<WebSocket>, command: CMD): Unit {
+    public static func push(duan: Duan, ws: ?WebSocket, command: CMD): Unit {
         let obj = JsonObject()
         let cmd = command.toString()
         obj.put("type", JsonString("shape"))
@@ -3801,9 +4011,14 @@ public class TradingView {
         e.put("time", JsonInt(DateTime.dt2int(duan.end.dt)))
         e.put("price", JsonFloat(duan.end.speck))
         points.append(e)
+        let linecolor: String = if (duan.stamp != "Duan") {
+            "#2962FF"
+        } else {
+            "#F1C40F"
+        }
 
         let options = CreateMultipointShapeOptions(shape: "trend_line", text: "")
-        let properties = TrendLine.getDuan("Duan-${duan.index}")
+        let properties = TrendLine.getDuan("Duan-${duan.index}", linecolor: linecolor)
 
         obj.put("name", JsonString("trend_line"))
         obj.put("id", JsonString(duan.hashCode().toString()))
@@ -3816,7 +4031,7 @@ public class TradingView {
         }
     }
 
-    public static func push(feature: FeatureSequence<Bi>, ws: Option<WebSocket>, command: CMD): Unit {
+    public static func push(feature: FeatureSequence, ws: ?WebSocket, command: CMD): Unit {
         let obj = JsonObject()
         let cmd = command.toString()
         obj.put("type", JsonString("shape"))
@@ -3833,7 +4048,16 @@ public class TradingView {
         points.append(e)
 
         let options = CreateMultipointShapeOptions(shape: "trend_line", text: "")
-        let properties = TrendLine.getFeature("特征序列", feature.direction)
+        let level: Int64 = if (feature.level == 0) {
+            1
+        } else if (feature.level == 1) {
+            1
+        } else if (feature.level == 2) {
+            2
+        } else {
+            0
+        }
+        let properties = TrendLine.getFeature("特征序列", feature.direction, linestyle: level)
 
         obj.put("name", JsonString("trend_line"))
         obj.put("id", JsonString(feature.hashCode().toString()))
@@ -3846,14 +4070,20 @@ public class TradingView {
         }
     }
 
-    public static func push(zs: ZhongShu<Bi>, ws: Option<WebSocket>, command: CMD): Unit {
+    public static func push(zs: ZhongShu, ws: ?WebSocket, command: CMD): Unit {
         let obj = JsonObject()
         let cmd = command.toString()
         obj.put("type", JsonString("shape"))
         obj.put("cmd", JsonString(cmd))
 
+        match (command) {
+            case CMD.APPEND(s) => "APPEND(${s})"
+            case CMD.REMOVE(s) => "REMOVE(${s})"
+            case CMD.MODIFY(s) => "MODIFY(${s})"
+        }
+
         let points = ArrayList<JsonValue>()
-        if (cmd != "REMOVE(ZhongShu<Bi>)") {
+        if (cmd.indexOf("REMOVE").isNone()) {
             let s = JsonObject()
             s.put("time", JsonInt(DateTime.dt2int(zs.start.dt)))
             s.put("price", JsonFloat(zs.zg))
@@ -3865,44 +4095,15 @@ public class TradingView {
         }
 
         let options = CreateMultipointShapeOptions(shape: "rectangle", text: "zs")
-        let properties = Rectangle.getBi("Bi中枢-${zs.index}", zs.direction, zs.third.isNone())
-
-        obj.put("name", JsonString("rectangle"))
+        let properties = obj.put("name", JsonString("rectangle"))
         obj.put("id", JsonString(zs.hashCode().toString()))
         obj.put("points", JsonArray(points))
         obj.put("options", options)
-        obj.put("properties", properties.toJson())
-        if (let Some(ss) <- ws) {
-            TradingView.send(ss, obj.toString().toArray())
+        if (zs.left.getOrThrow().stamp == "Bi") {
+            obj.put("properties", Rectangle.getBi("Bi中枢-${zs.index}", zs.direction, zs.third.isNone()).toJson())
+        } else {
+            obj.put("properties", Rectangle.getDuan("Duan中枢-${zs.index}", zs.direction, zs.third.isNone()).toJson())
         }
-    }
-
-    public static func push(zs: ZhongShu<Duan>, ws: Option<WebSocket>, command: CMD): Unit {
-        let obj = JsonObject()
-        let cmd = command.toString()
-        obj.put("type", JsonString("shape"))
-        obj.put("cmd", JsonString(cmd))
-
-        let points = ArrayList<JsonValue>()
-        if (cmd != "REMOVE(ZhongShu<Duan>)") {
-            let s = JsonObject()
-            s.put("time", JsonInt(DateTime.dt2int(zs.start.dt)))
-            s.put("price", JsonFloat(zs.zg))
-            points.append(s)
-            let e = JsonObject()
-            e.put("time", JsonInt(DateTime.dt2int(zs.end.dt)))
-            e.put("price", JsonFloat(zs.zd))
-            points.append(e)
-        }
-
-        let options = CreateMultipointShapeOptions(shape: "rectangle", text: "zs")
-        let properties = Rectangle.getDuan("Duan中枢-${zs.index}", zs.direction, zs.third.isNone())
-
-        obj.put("name", JsonString("rectangle"))
-        obj.put("id", JsonString(zs.hashCode().toString()))
-        obj.put("points", JsonArray(points))
-        obj.put("options", options)
-        obj.put("properties", properties.toJson())
         if (let Some(ss) <- ws) {
             TradingView.send(ss, obj.toString().toArray())
         }
@@ -3913,7 +4114,6 @@ main() {
     //let obj = BaseAnalyzer.readFromDatFile("./btcusd-300-1713295800-1715695500.dat")
 
     TradingView.setSeed()
-    println("\033[32m测试\033[0m")
 
     // 1. 构建 Server 实例
     let server = ServerBuilder().addr("0.0.0.0").port(8080).distributor(NaiveDistributor()) // 自定义分发器
