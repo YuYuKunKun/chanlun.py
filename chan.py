@@ -1,9 +1,30 @@
 """
+MIT License
+
+Copyright (c) 2024 YuYuKunKun
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
 # -*- coding: utf-8 -*-
 # @Time    : 2024/10/15 16:45
 # @Author  : YuYuKunKun
 # @File    : chan.py
-"""
 
 import json
 import mmap
@@ -14,10 +35,11 @@ import datetime
 import traceback
 
 from enum import Enum
+from random import randint, choice
 from pathlib import Path
 from threading import Thread
 from functools import wraps
-from typing import List, Self, Optional, Tuple, final, Dict, Any, Set, Final, SupportsInt, TypeVar, Union
+from typing import List, Self, Optional, Tuple, final, Dict, Any, Set, Final, SupportsInt, Union
 from abc import ABCMeta, abstractmethod
 
 import requests
@@ -26,9 +48,36 @@ from fastapi.templating import Jinja2Templates
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from termcolor import colored
 
+"""
+2	3	5	7	11	13	17	19	23	29	31	37	41	43	47	53	59	61	67	71
+73	79	83	89	97	101	103	107	109	113	127	131	137	139	149	151	157	163	167	173
+179	181	191	193	197	199	211	223	227	229	233	239	241	251	257	263	269	271	277	281
+283	293	307	311	313	317	331	337	347	349	353	359	367	373	379	383	389	397	401	409
+419	421	431	433	439	443	449	457	461	463	467	479	487	491	499	503	509	521	523	541
+547	557	563	569	571	577	587	593	599	601	607	613	617	619	631	641	643	647	653	659
+661	673	677	683	691	701	709	719	727	733	739	743	751	757	761	769	773	787	797	809
+811	821	823	827	829	839	853	857	859	863	877	881	883	887	907	911	919	929	937	941
+947	953	967	971	977	983	991	997	1009	1013	1019	1021	1031	1033	1039	1049	1051	1061	1063	1069
+1087	1091	1093	1097	1103	1109	1117	1123	1129	1151	1153	1163	1171	1181	1187	1193	1201	1213	1217	1223
+1229	1231	1237	1249	1259	1277	1279	1283	1289	1291	1297	1301	1303	1307	1319	1321	1327	1361	1367	1373
+1381	1399	1409	1423	1427	1429	1433	1439	1447	1451	1453	1459	1471	1481	1483	1487	1489	1493	1499	1511
+1523	1531	1543	1549	1553	1559	1567	1571	1579	1583	1597	1601	1607	1609	1613	1619	1621	1627	1637	1657
+1663	1667	1669	1693	1697	1699	1709	1721	1723	1733	1741	1747	1753	1759	1777	1783	1787	1789	1801	1811
+1823	1831	1847	1861	1867	1871	1873	1877	1879	1889	1901	1907	1913	1931	1933	1949	1951	1973	1979	1987
+1993	1997	1999	2003	2011	2017	2027	2029	2039	2053	2063	2069	2081	2083	2087	2089	2099	2111	2113	2129
+2131	2137	2141	2143	2153	2161	2179	2203	2207	2213	2221	2237	2239	2243	2251	2267	2269	2273	2281	2287
+2293	2297	2309	2311	2333	2339	2341	2347	2351	2357	2371	2377	2381	2383	2389	2393	2399	2411	2417	2423
+2437	2441	2447	2459	2467	2473	2477	2503	2521	2531	2539	2543	2549	2551	2557	2579	2591	2593	2609	2617
+2621	2633	2647	2657	2659	2663	2671	2677	2683	2687	2689	2693	2699	2707	2711	2713	2719	2729	2731	2741
+2749	2753	2767	2777	2789	2791	2797	2801	2803	2819	2833	2837	2843	2851	2857	2861	2879	2887	2897	2903
+2909	2917	2927	2939	2953	2957	2963	2969	2971	2999	3001	3011	3019	3023	3037	3041	3049	3061	3067	3079
+3083	3089	3109	3119	3121	3137	3163	3167	3169	3181	3187	3191	3203	3209	3217	3221	3229	3251	3253	3257
+3259	3271	3299	3301	3307	3313	3319	3323	3329	3331	3343	3347	3359	3361	3371	3373	3389	3391	3407	3413
+3433	3449	3457	3461	3463	3467	3469	3491	3499	3511	3517	3527	3529	3533	3539	3541	3547	3557	3559	3571
+"""
+
+
 # __all__ = ["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
-
-
 SupportsHL = Union["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Bar", "Interval"]
 
 
@@ -95,6 +144,8 @@ class Direction(Enum):
     Down = "向下"
     JumpUp = "缺口向上"
     JumpDown = "缺口向下"
+    NextUp = "连接向上"  # 高点与后一 低点相同
+    NextDown = "连接向下"  # 低点与后一 高点相同
 
     Left = "左包右"  # 顺序包含
     Right = "右包左"  # 逆序包含
@@ -104,6 +155,25 @@ class Direction(Enum):
 
     def __repr__(self):
         return self.name
+
+    def __int__(self):
+        match self:
+            case Direction.Up:
+                return 1
+            case Direction.Down:
+                return -1
+            case Direction.JumpUp:
+                return 2
+            case Direction.JumpDown:
+                return -2
+            case Direction.NextUp:
+                return 3
+            case Direction.NextDown:
+                return -3
+            case Direction.Left:
+                return 7
+            case Direction.Right:
+                return 9
 
     def reversal(self) -> Self:
         match self:
@@ -115,6 +185,10 @@ class Direction(Enum):
                 return Direction.JumpDown
             case Direction.JumpDown:
                 return Direction.JumpUp
+            case Direction.NextUp:
+                return Direction.NextDown
+            case Direction.NextDown:
+                return Direction.NextUp
             case Direction.Left:
                 return Direction.Right
             case Direction.Right:
@@ -127,6 +201,26 @@ class Direction(Enum):
     @staticmethod
     def jumps() -> tuple:
         return Direction.JumpUp, Direction.JumpDown
+
+    @staticmethod
+    def ups() -> tuple:
+        return Direction.Up, Direction.JumpUp, Direction.NextUp
+
+    @staticmethod
+    def downs() -> tuple:
+        return Direction.Down, Direction.JumpDown, Direction.NextDown
+
+    @staticmethod
+    def generator(obj: int | list, directions):
+        if type(obj) is int:
+            print(obj)
+            i: int = obj
+            while i >= 0:
+                yield choice(directions)
+                i -= 1
+        else:
+            for direction in obj:
+                yield direction
 
 
 class ChanException(Exception):
@@ -203,10 +297,15 @@ def double_relation(left: SupportsHL, right: SupportsHL) -> Direction:
         if left.high < right.low:
             relation = Direction.JumpUp  # "跳涨"
 
+        if left.high == right.low:
+            relation = Direction.NextUp
+
     elif (left.low > right.low) and (left.high > right.high):
         relation = Direction.Down  # "下跌"
         if left.low > right.high:
             relation = Direction.JumpDown  # "跳跌"
+        if left.low == right.high:
+            relation = Direction.NextDown
 
     return relation
 
@@ -234,23 +333,23 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
         case (_, Direction.Left):
             raise ChanException("顺序包含 mr")
 
-        case (Direction.Up | Direction.JumpUp, Direction.Up | Direction.JumpUp):
+        case (Direction.Up | Direction.JumpUp | Direction.NextUp, Direction.Up | Direction.JumpUp | Direction.NextUp):
             shape = Shape.S
-        case (Direction.Up | Direction.JumpUp, Direction.Down | Direction.JumpDown):
+        case (Direction.Up | Direction.JumpUp | Direction.NextUp, Direction.Down | Direction.JumpDown | Direction.NextDown):
             shape = Shape.G
-        case (Direction.Up | Direction.JumpUp, Direction.Right) if use_right:
+        case (Direction.Up | Direction.JumpUp | Direction.NextUp, Direction.Right) if use_right:
             shape = Shape.S
 
-        case (Direction.Down | Direction.JumpDown, Direction.Up | Direction.JumpUp):
+        case (Direction.Down | Direction.JumpDown | Direction.NextDown, Direction.Up | Direction.JumpUp | Direction.NextUp):
             shape = Shape.D
-        case (Direction.Down | Direction.JumpDown, Direction.Down | Direction.JumpDown):
+        case (Direction.Down | Direction.JumpDown | Direction.NextDown, Direction.Down | Direction.JumpDown | Direction.NextDown):
             shape = Shape.X
-        case (Direction.Down | Direction.JumpDown, Direction.Right) if use_right:
+        case (Direction.Down | Direction.JumpDown | Direction.NextDown, Direction.Right) if use_right:
             shape = Shape.X
 
-        case (Direction.Right | Direction.Up, Direction.JumpUp) if use_right:
+        case (Direction.Right, Direction.Up | Direction.JumpUp | Direction.NextUp) if use_right:
             shape = Shape.D
-        case (Direction.Right | Direction.Down, Direction.JumpDown) if use_right:
+        case (Direction.Right, Direction.Down | Direction.JumpDown | Direction.NextDown) if use_right:
             shape = Shape.G
         case (Direction.Right, Direction.Right) if use_right:
             shape = Shape.T
@@ -357,12 +456,16 @@ class Observer(metaclass=ABCMeta):
 
 
 class Interval:
-    __slots__ = "elements", "__high", "__low"
+    __slots__ = "index", "elements", "__high", "__low"
 
-    def __init__(self, elements: List, high, low):
+    def __init__(self, elements: List, high: float, low: float):
         self.elements = elements
         self.__high = high
         self.__low = low
+        self.index = 0
+
+    def __str__(self):
+        return f"Interval({self.index}, {len(self)}, {self.__high}, {self.__low})"
 
     def __len__(self):
         return len(self.elements)
@@ -377,6 +480,18 @@ class Interval:
     @property
     def low(self) -> int | float:
         return self.__low
+
+    def check(self) -> Optional[bool]:
+        tmp = Interval.new(self.elements)
+        if tmp:
+            for i in range(3, len(self.elements) - 1):
+                hl = self.elements[i]
+                if double_relation(self, hl) in Direction.jumps():
+                    if i != len(self.elements) - 1:
+                        self.elements = self.elements[:i]
+                    return None
+            return True
+        return False
 
     @classmethod
     def new(cls, elements) -> Optional["Interval"]:
@@ -400,45 +515,53 @@ class Interval:
         return cls(elements, high, low)
 
     @classmethod
-    def analyzer(cls, hls: List, intervals: List["Interval"]):
+    def analyzer(cls, hls: List, intervals: List["Interval"], observer: Observer):
         if not intervals:
             for i in range(1, len(hls) - 1):
                 new = cls.new([hls[i - 1], hls[i], hls[i + 1]])
                 if new is not None:
                     intervals.append(new)
-                    return cls.analyzer(hls, intervals)
+                    observer.notify(new, Command.Append("nb"))
+                    return cls.analyzer(hls, intervals, observer)
 
         else:
             last = intervals[-1]
-            tmp = cls.new(last.elements)
-            if tmp is None:
-                intervals.pop()
-                return cls.analyzer(hls, intervals)
+            index = -1
+            flag: Optional[bool] = last.check()
+            if flag is None:
+                index = hls.index(last.elements[2]) + 1
+            elif flag is True:
+                index = hls.index(last.elements[-1]) + 1
             else:
-                if last.high == tmp.high and last.low == tmp.low:
-                    ...
-                else:
-                    intervals.pop()
-                    return cls.analyzer(hls, intervals)
+                intervals.pop()
+                observer.notify(last, Command.Remove("nb"))
+                return cls.analyzer(hls, intervals, observer)
 
-            while 1:
+            observer.notify(last, Command.Modify("nb"))
+
+            while index == -1:
                 try:
                     index = hls.index(last.elements[-1]) + 1
                     break
                 except ValueError:
                     if len(last) > 3:
-                        drop = last.elements.pop()
+                        last.elements.pop()
                     else:
-                        intervals.pop()
-                        return cls.analyzer(hls, intervals)
+                        drop = intervals.pop()
+                        observer.notify(drop, Command.Remove("nb"))
+                        return cls.analyzer(hls, intervals, observer)
 
             elements = []
             for hl in hls[index:]:
                 if double_relation(last, hl) in Direction.jumps():
+                    if not elements:
+                        elements.append(last.elements[-1])
                     elements.append(hl)
                 else:
                     if not elements:
-                        last.elements.append(hl)
+                        if hl not in last.elements:
+                            last.elements.append(hl)
+                        observer.notify(last, Command.Modify("nb"))
                     else:
                         elements.append(hl)
 
@@ -448,8 +571,10 @@ class Interval:
                         elements.pop(0)
                     else:
                         intervals.append(new)
+                        new.index = last.index + 1
+                        observer.notify(new, Command.Append("nb"))
                         last = new
-                        elements = []
+                        elements.clear()
 
 
 class Bar:
@@ -569,7 +694,12 @@ class RawBar:
 
     def to_new_bar(self, pre) -> "NewBar":
         return NewBar(
-            raw=self,
+            dt=self.dt,
+            high=self.high,
+            low=self.low,
+            direction=self.direction,
+            volume=self.volume,
+            raw_index=self.index,
             pre=pre,
         )
 
@@ -592,24 +722,29 @@ class NewBar:
 
     def __init__(
         self,
-        raw: RawBar,
+        dt: datetime,
+        high: float,
+        low: float,
+        direction: Direction,
+        volume: float,
+        raw_index: int,
         pre: Optional["NewBar"] = None,
     ):
         self.index: int = 0
-        self.dt: datetime = raw.dt
-        self.high: float = raw.high
-        self.low: float = raw.low
+        self.dt: datetime = dt  # raw.dt
+        self.high: float = high  # raw.high
+        self.low: float = low  # raw.low
         self.__shape: Shape = Shape.S
 
-        if raw.direction is Direction.Up:
+        if direction is Direction.Up:
             self.__shape = Shape.S
         else:
             self.__shape = Shape.X
 
-        self.__raw_start_index: int = raw.index
-        self.raw_end_index: int = raw.index
-        self.__direction: Direction = raw.direction
-        self.volume: float = raw.volume
+        self.__raw_start_index: int = raw_index
+        self.raw_end_index: int = raw_index
+        self.__direction: Direction = direction
+        self.volume: float = volume
         self.macd = MACD(self.close, self.close, 0.0, 0.0)
 
         if pre is not None:
@@ -668,6 +803,45 @@ class NewBar:
 
     def to_bar(self) -> Bar:
         return Bar(self.dt.timestamp(), self.open, self.high, self.low, self.close, self.volume, self.index)
+
+    @classmethod
+    def generate(cls, bar: "NewBar", direction: Direction, seconds: int) -> Self:
+        offset = datetime.timedelta(seconds=seconds)
+        dt: datetime = bar.dt + offset
+        volume: float = 998
+        raw_index: int = bar.raw_start_index + 1
+        high: float = 0
+        low: float = 0
+        d = bar.high - bar.low
+        match direction:
+            case Direction.Up:
+                i = randint(int(d * 0.1279), int(d * 0.883))
+                low: float = bar.low + i
+                high: float = bar.high + i
+            case Direction.Down:
+                i = randint(int(d * 0.1279), int(d * 0.883))
+                low: float = bar.low - i
+                high: float = bar.high - i
+            case Direction.JumpUp:
+                i = randint(int(d * 1.1279), int(d * 1.883))
+                low: float = bar.low + i
+                high: float = bar.high + i
+            case Direction.JumpDown:
+                i = randint(int(d * 1.1279), int(d * 1.883))
+                low: float = bar.low - i
+                high: float = bar.high - i
+            case Direction.NextUp:
+                i = bar.high - bar.low
+                high: float = bar.high + i
+                low: float = bar.high
+            case Direction.NextDown:
+                i = bar.high - bar.low
+                high: float = bar.low
+                low: float = bar.low - i
+        nb = NewBar(dt, high, low, Direction.Up if direction in Direction.ups() else Direction.Down, volume, raw_index, bar)
+        nb.index = bar.index + 1
+        assert double_relation(bar, nb) is direction
+        return nb
 
     @classmethod
     def get_fx(cls, bars: List["NewBar"], bar: "NewBar") -> "FenXing":
@@ -769,10 +943,12 @@ class FenXing:
 
 
 class Line(metaclass=ABCMeta):
-    __slots__ = "index", "__start", "__end", "__stamp", "__elements"
+    __slots__ = "pre", "next", "index", "__start", "__end", "__stamp", "__elements"
 
     def __init__(self, start: FenXing, end: FenXing, index: int, elements: List | Set, stamp: str = "Line"):
         self.index: int = index
+        self.pre: Optional[Self] = None
+        self.next: Optional[Self] = None
         self.__start = start
         self.__end = end
         self.__stamp = stamp
@@ -874,6 +1050,9 @@ class Line(metaclass=ABCMeta):
 
         if lines:
             line.index = lines[-1].index + 1
+            line.pre = lines[-1]
+            if len(lines) > 1:
+                lines[-2].next = lines[-1]
 
         lines.append(line)
 
@@ -885,6 +1064,15 @@ class Line(metaclass=ABCMeta):
         if lines[-1] is line:
             return lines.pop()
         raise ChanException("Line.pop 弹出数据不在列表中")
+
+    @classmethod
+    @final
+    def create(cls, obj: List | "Line", stamp: str) -> "Line":
+        if type(obj) is list:
+            lines: List["Line"] = obj
+            return Line(lines[0].start, lines[-1].end, 0, lines[:], stamp)
+        line: "Line" = obj
+        return Line(line.start, line.end, 0, [line], stamp)
 
 
 @final
@@ -949,6 +1137,8 @@ class FeatureSequence(Line):
 
     @staticmethod
     def analyzer(lines: List[Line], direction: Direction, combines: Tuple[Direction] = (Direction.Left,)) -> Tuple[Optional["FeatureSequence"], Optional["FeatureSequence"], Optional["FeatureSequence"]]:
+        if combines is None:
+            combines = (Direction.Left,)
         features: List[FeatureSequence] = []
         for obj in lines:
             if obj.direction is direction:
@@ -1139,7 +1329,7 @@ class ZhongShu:
                     break
                 except ValueError:
                     if len(last.elements) > 3:
-                        drop = last.elements.pop()
+                        last.elements.pop()
                         observer.notify(last, Command.Modify(last.stamp))
                     else:
                         cls.pop(zss, last, observer)
@@ -1163,6 +1353,17 @@ class ZhongShu:
                     if new is None:
                         elements.pop(0)
                     else:
+                        if double_relation(last, new) in Direction.ups():
+                            if elements[0].direction == Direction.Up:
+                                elements.pop(0)
+                                continue
+                        elif double_relation(last, new) in Direction.downs():
+                            if elements[0].direction == Direction.Down:
+                                elements.pop(0)
+                                continue
+                        else:
+                            print(colored(f"{double_relation(last, new)}", "red"))
+
                         cls.append(zss, new, observer)
                         last = new
                         elements = []
@@ -1185,7 +1386,7 @@ class ZouShi(Line):
 
 @final
 class Bi(Line):
-    __slots__ = "pre", "fake", "config"
+    __slots__ = "fake", "config"
 
     def __init__(
         self,
@@ -1389,10 +1590,14 @@ class Bi(Line):
         elif (last.shape is Shape.G and (fx.shape is Shape.S or fx.shape is Shape.G)) or (last.shape is Shape.D and (fx.shape is Shape.X or fx.shape is Shape.D)):
             if last.shape is Shape.G:
                 func = min
-                lkey = lambda o: o.low
+
+                def okey(o):
+                    return o.low
             else:
                 func = max
-                lkey = lambda o: o.high
+
+                def okey(o):
+                    return o.high
 
             if fx.shape is Shape.S:
                 speck = fx.right.high
@@ -1414,7 +1619,7 @@ class Bi(Line):
                         bars,
                         func(
                             Bi.get_elements(bars, last, fx),
-                            key=lkey,
+                            key=okey,
                         ),
                     )
 
@@ -1478,7 +1683,7 @@ class Bi(Line):
 
 @final
 class Duan(Line):
-    __slots__ = "pre", "features", "jump"
+    __slots__ = "features", "jump"
 
     def __init__(
         self,
@@ -1498,7 +1703,7 @@ class Duan(Line):
             self.index = pre.index + 1
 
     def __str__(self):
-        return f"{self.stamp}({self.index}, {self.direction}, {self.pre is not None}, {self.start}, {self.end}, size={len(self.elements)})"
+        return f"{self.stamp}({self.index}, {self.direction}, {self.pre is not None}, done: {self.done}, {self.state}, {self.start}, {self.end}, size={len(self.elements)})"
 
     def __repr__(self):
         return str(self)
@@ -1513,18 +1718,9 @@ class Duan(Line):
 
     @property
     def state(self) -> Optional[str]:
-        if self.pre is not None:
-            if self.pre.mid is None:
-                return None
-            relation = double_relation(self.pre.left, self.pre.mid)
-            if relation is Direction.JumpUp and self.direction is Direction.Up:
-                return "老阳"
-            elif relation is Direction.JumpDown and self.direction is Direction.Down:
-                return "老阴"
-            else:
-                return "小阳" if self.direction is Direction.Up else "少阴"
-        else:
-            return "小阳" if self.direction is Direction.Up else "少阴"
+        if self.pre is not None and self.pre.jump:
+            return "老阳" if self.direction is Direction.Up else "老阴"
+        return "小阳" if self.direction is Direction.Up else "少阴"
 
     @property
     def left(self) -> FeatureSequence:
@@ -1558,19 +1754,6 @@ class Duan(Line):
                 break
         return elements
 
-    def append_element(self, line: Line, observer: Observer):
-        if self.elements[-1].end is line.start:
-            self.elements.append(line)
-        else:
-            raise ChanException("线段添加元素时，元素不连续", self.elements[-1], line)
-
-    def pop_element(self, line: Line) -> bool:
-        if self.elements[-1] is line:
-            self.elements.pop()
-            return True
-        else:
-            raise ChanException("线段弹出元素时，元素不匹配")
-
     @classmethod
     def new(cls, line: Line | List[Line], stamp: str) -> "Duan":
         if type(line) is list:
@@ -1599,7 +1782,7 @@ class Duan(Line):
 
     @classmethod
     def set_features(cls, duan: "Duan", observer: Observer):
-        (left, mid, right) = FeatureSequence.analyzer(duan.elements, duan.direction)
+        (left, mid, right) = FeatureSequence.analyzer(duan.elements, duan.direction, Direction.includes() if duan.state in ("老阴", "老阳") else None)
         Duan.feature_setter(0, left, duan.features, duan.direction.reversal(), observer)
         Duan.feature_setter(1, mid, duan.features, duan.direction.reversal(), observer)
         Duan.feature_setter(2, right, duan.features, duan.direction.reversal(), observer)
@@ -1622,10 +1805,7 @@ class Duan(Line):
             if obj.start is fx:
                 elements.append(obj)
         duan.end = fx
-        duan.jump = double_relation(duan.left, duan.mid) in (
-            Direction.JumpUp,
-            Direction.JumpDown,
-        )
+        duan.jump = double_relation(duan.left, duan.mid) in Direction.jumps()
         return elements
 
     @classmethod
@@ -1740,19 +1920,21 @@ class BaseAnalyzer(Observer):
     __slots__ = "symbol", "freq", "ws", "last_raw_bar", "raws", "news", "fxs", "bis", "xds", "bzss", "dzss", "cache", "config"
 
     def __init__(self, symbol: str, freq: SupportsInt, ws: WebSocket = None):
-        self.symbol = symbol
-        self.freq = int(freq)
+        self.symbol: str = symbol
+        self.freq: int = int(freq)
         self.ws = ws
-        self.last_raw_bar = None
-        self.raws = []
-        self.news = []
-        self.fxs = []
-        self.bis = []
-        self.xds = []
-        self.bzss = []
-        self.dzss = []
+        self.last_raw_bar: Optional[RawBar] = None
+        self.raws: list[RawBar] = []
+        self.news: list[NewBar] = []
+        self.fxs: list[FenXing] = []
+        self.bis: list[Bi] = []
+        self.xds: list[Duan] = []
+        self.bzss: list[ZhongShu] = []
+        self.dzss: list[ZhongShu] = []
         self.cache = dict()
         self.config = ChanConfig()
+
+        self.zs = []
 
     def notify(self, obj: Any, cmd: Command):
         if not self.config.ANALYZER_SHON_TV:
@@ -1793,6 +1975,15 @@ class BaseAnalyzer(Observer):
             message["points"] = [{"time": int(obj.start.dt.timestamp()), "price": obj.start.speck}, {"time": int(obj.end.dt.timestamp()), "price": obj.end.speck}]
             message["options"] = {"shape": "trend_line", "text": obj.stamp}
             message["properties"] = {"linecolor": "#F1C40F" if obj.elements[0].stamp == "Bi" else "#00C40F", "linewidth": 3, "title": f"{obj.stamp}-{obj.index}", "text": obj.stamp}
+
+        if type(obj) is Interval:
+            message["type"] = "shape"
+            message["cmd"] = str(cmd)
+            message["id"] = str(id(obj))
+            message["name"] = "rectangle"
+            message["points"] = [{"time": int(obj.elements[0].dt.timestamp()), "price": obj.high}, {"time": int(obj.elements[-1].dt.timestamp()), "price": obj.low}]
+            message["options"] = {"shape": "rectangle", "text": "nb"}
+            message["properties"] = {"color": "#00C40F", "backgroundColor": "#00C40F"}
 
         if type(obj) is ZhongShu:
             message["type"] = "shape"
@@ -1922,6 +2113,8 @@ class BaseAnalyzer(Observer):
             nb = bar.to_new_bar(None)
             self.news.append(nb)
 
+        # Interval.analyzer(self.news, self.zs, self)
+
         self.notify(self.news[-1], Command.Append("NewBar"))
 
         # left, mid, right = None, None, None
@@ -2001,6 +2194,62 @@ class BaseAnalyzer(Observer):
         return obj
 
 
+class Generator(BaseAnalyzer):
+    def __init__(self, symbol: str, freq: int, ws: WebSocket):
+        super().__init__(symbol, freq, ws)
+
+    def save_nb_file(self):
+        with open(f"./templates/{self.symbol}-{self.freq}-{int(self.news[0].dt.timestamp())}-{int(self.news[-1].dt.timestamp())}.nb", "wb") as f:
+            for bar in self.news:
+                f.write(bytes(bar.to_bar()))
+
+    def load_nb_file(self, path: str):
+        with open(path, "rb") as f:
+            buffer = f.read()
+            size = struct.calcsize(">6d")
+            for i in range(len(buffer) // size):
+                bar = RawBar.from_be_bytes(buffer[i * size : i * size + size])
+                self.push(bar)
+
+    def push_new_bar(self, nb: NewBar):
+        self.news.append(nb)
+        # Interval.analyzer(self.news, self.zs, self)
+        self.notify(self.news[-1], Command.Append("NewBar"))
+
+        # left, mid, right = None, None, None
+        try:
+            left, mid, right = self.news[-3:]
+        except ValueError:
+            return
+
+        (shape, _) = triple_relation(left, mid, right)
+        mid.shape = shape
+        fx = FenXing(left, mid, right)
+        if self.ws is not None and self.config.ANALYZER_SHON_TV:
+            time.sleep(self.TIME)
+
+        if not self.config.ANALYZER_CALC_BI:
+            return
+
+        Bi.analyzer(fx, self.fxs, self.bis, self.news, "analyzer", 0, self.config, self)
+        # return
+        if self.bis and self.cache.get("bi", None) is self.bis[-1]:
+            return
+        if self.bis:
+            self.cache["bi"] = self.bis[-1]
+        if self.config.ANALYZER_CALC_BI_ZS:
+            ZhongShu.analyzer(self.bis, self.bzss, self)
+
+        if self.config.ANALYZER_CALC_XD:
+            Duan.analyzer(self.bis, self.xds, self)
+            if self.xds and self.cache.get("xd", None) is self.xds[-1]:
+                return
+            if self.xds:
+                self.cache["xd"] = self.xds[-1]
+            if self.config.ANALYZER_CALC_XD_ZS:
+                ZhongShu.analyzer(self.xds, self.dzss, self)
+
+
 class Bitstamp(BaseAnalyzer):
     def __init__(self, symbol: str, freq: SupportsInt, ws: WebSocket = None):
         super().__init__(symbol, freq, ws)
@@ -2065,10 +2314,22 @@ def main_bitstamp(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 
     return func
 
 
-def test_thread(ws):
+def gen(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = Freq.m5, ws: Optional[WebSocket] = None):
     def func():
-        bitstamp = Bitstamp("btcusd", freq=Freq.m5, ws=ws)
-        bitstamp.notify("test", Command("test", "test"))
+        bitstamp = Generator(symbol, freq=int(freq), ws=ws)
+        bitstamp.config.BI_JUMP = False
+        dt = datetime.datetime.fromtimestamp(randint(1015695500, 1715695500))
+        nb = NewBar(dt, 10000, 9000, Direction.Up, 8.8, 0)
+        bitstamp.push_new_bar(nb)
+        for direction in Direction.generator(int(limit), [Direction.Up, Direction.JumpUp, Direction.NextUp, Direction.Down, Direction.JumpDown, Direction.NextDown]):
+            nb = NewBar.generate(nb, direction, int(freq))
+            print(direction, nb)
+            bitstamp.push_new_bar(nb)
+
+        for duan in bitstamp.xds:
+            if duan.jump:
+                bitstamp.save_nb_file()
+                break
 
     return func
 
