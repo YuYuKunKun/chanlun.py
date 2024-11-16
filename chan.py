@@ -76,9 +76,131 @@ from termcolor import colored
 3433	3449	3457	3461	3463	3467	3469	3491	3499	3511	3517	3527	3529	3533	3539	3541	3547	3557	3559	3571
 """
 
+"""
+一、为引申出基本定义的引子概念与定义
+1、飞吻：短期均线略略走平后继续按原来趋势进行下去。（14课）
+
+2、唇吻：短期均线靠近长期均线但不跌破或升破，然后按原来趋势继续下去。（14课）
+
+3、湿吻：短期均线跌破或升破长期均线甚至出现反复缠绕，如胶似漆。（14课）
+
+4、女上位：短期均线在长期均线之上。（14课）
+
+5、男上位：短期均线在长期均线之下。（14课）
+
+6、第一类买点：用比较形象的语言描述就是由男上位最后一吻后出现的背驰式下跌构成。（14课）
+
+7、第二类买点：女上位第一吻后出现的下跌构成。（14课）
+
+8、上涨：最近一个高点比前一高点高，且最近一个低点比前一低点高。（15课）
+
+9、下跌：最近一个高点比前一高点低，且最近一个低点比前一低点低。（15课）
+
+10、盘整：最近一个高点比前一高点高，且最近一个低点比前一低点低；或者最近一个高点比前一高点低，且最近一个低点比前一低点高。（15课）
+
+11、缠中说禅趋势力度：前一“吻”的结束与后一“吻”开始由短线均线与长期均线相交所形成的面积。在前后两个同向趋势中,当缠中说禅趋势力度比上一次缠中说禅趋势力度要弱，就形成“背驰”。 （15课）
+
+12、缠中说禅趋势平均力度：当下与前一“吻”的结束时短线均线与长期均线形成的面积除以时间。（15课）
+
+二、基本定义
+1、走势：打开走势图看到的就是走势。走势分不同级别。（17课回复、18课）
+
+2、走势类型：上涨、下跌、盘整。（17课回复、18课）
+
+3、趋势：上涨、下跌。（17课回复、18课）
+
+4、缠中说禅走势中枢：某级别走势类型中，被至少三个连续次级别走势类型所重叠的部分，称为缠中说禅走势中枢。换言之，缠中说禅走势中枢就是至少三个连续次级别走势类型重叠部分所构成。（18课）
+
+在实际之中，对最后不能分解的级别，其缠中说禅走势中枢就不能用“至少三个连续次级别走势类型所重叠”定义，而定义为至少三个该级别单位K线重叠部分。（17课）
+
+5、缠中说禅盘整：在任何级别的任何走势中，某完成的走势类型只包含一个缠中说禅走势中枢，就称为该级别的缠中说禅盘整。（17课）
+
+6、缠中说禅趋势：在任何级别的任何走势中，某完成的走势类型至少包含两个以上依次同向的缠中说禅走势中枢，就称为该级别的缠中说禅趋势。该方向向上就称为上涨，向下就称为下跌。（17课）
+
+在趋势里，同级别的前后缠中说禅走势中枢是不能有任何重叠的，这包括任何围绕走势中枢产生的任何瞬间波动之间的重叠。（20课）
+
+三、技术分析基本原理
+1、缠中说禅技术分析基本原理一：任何级别的任何走势类型终要完成。（17课）
+
+2、缠中说禅技术分析基本原理二：任何级别任何完成的走势类型，必然包含一个以上的缠中说禅走势中枢。（17课）
+
+四、走势分解定理、原则
+1、缠中说禅走势分解定理一：任何级别的任何走势，都可以分解成同级别“盘整”、“下跌”与“上涨”三种走势类型的连接。（17课）
+
+2、缠中说禅走势分解定理二：任何级别的任何走势类型，都至少由三段以上次级别走势类型构成。（17课）
+
+3、缠中说禅走势类型分解原则：一个某级别的走势类型中，不可能出现比该级别更大的中枢，一旦出现，就证明这不是一个某级别的走势类型，而是更大级别走势类型的一部分或几个该级别走势类型的连接。（43课）
+
+4、缠中说禅线段分解定理：线段被破坏，当且仅当至少被有重叠部分的连续三笔的其中一笔破坏。而只要构成有重叠部分的前三笔，那么必然会形成一线段，换言之，线段破坏的充要条件，就是被另一个线段破坏。（65课）
+
+5、缠中说禅笔定理：任何的当下，在任何时间周期的K线图中，走势必然落在一确定的具有明确方向的笔当中（向上笔或向下笔），而在笔当中的位置，必然只有两种情况：一、在分型构造中。二、分型构造确认后延伸为笔的过程中。（91课）
+
+五、走势中枢、走势中枢中心相关定理
+1、缠中说禅走势中枢定理一：在趋势中，连接两个同级别“缠中说禅走势中枢”的必然是次级别以下级别的走势类型。（18课）
+
+2、缠中说禅走势中枢定理二：在盘整中，无论是离开还是返回“缠中说禅走势中枢”的走势类型必然是次级别以下的。（18课）
+
+3、缠中说禅走势中枢定理三：某级别“缠中说禅走势中枢”的破坏，当且仅当一个次级别走势离开该“缠中说禅走势中枢”后，其后的次级别回抽走势不重新回到该“缠中说禅走势中枢”内。（18课）
+
+4、缠中说禅走势中枢中心定理一：走势中枢的延伸等价于任意区间[dn，gn]与[ZD，ZG]有重叠。换言之，若有Zn，使得dn>ZG或gn<ZD，则必然产生高级别的走势中枢或趋势及延续。其中GG=max(gn)，G=min(gn)，D=max(dn)，DD=min(dn)，ZG=min(g1，g2)，ZD=max(d1，d2)。（20课）
+
+5、缠中说禅走势中枢中心定理二：前后同级别的两个缠中说禅走势中枢，后GG<前DD等价于下跌及其延续；后DD>前GG等价于上涨及其延续。后ZG<前ZD且后GG≥前DD，或后ZD>前ZG且后DD≤前GG，则等价于形成高级别的走势中枢。（20课）
+
+六、走势级别延续定理
+1、缠中说禅走势级别延续定理一：在更大级别缠中说禅走势中枢产生前，该级别走势类型将延续。也就是说，只能是只具有该级别缠中说禅走势中枢的盘整或趋势的延续。（20课）
+
+2、缠中说禅走势级别延续定理二：更大级别缠中说禅走势中枢产生，当且仅当围绕连续两个同级别缠中说禅走势中枢产生的波动区间产生重叠。（20课）
+
+七、买卖点相关定理、定律和程序
+1、缠中说禅短差程序：大级别买点介入的，在次级别第一类卖点出现时，可以先减仓，其后在次级别第一类买点出现时回补。（14课）
+
+2、缠中说禅买卖点定律一：任何级别的第二类买卖点都由次级别相应走势的第一类买卖点构成。（17课）
+
+3、第三类买卖点定理：一个次级别走势类型向上离开缠中说禅走势中枢，然后以一个次级别走势类型回试，其低点不跌破ZG，则构成了第三类买点；
+
+一个次级别走势类型向下离开缠中说禅走势中枢，然后以一个次级别走势类型回抽，其高点不升破ZD，则构成第三类卖点。（20课）
+
+（而对于第三类买卖点，其意义就是对付中枢结束的，一个级别的中枢结束，无非面对两种情况，转成更大的中枢或上涨下跌直到形成新的该级别中枢。第三类买卖点就是告诉什么时候发生这种事情的，而在第二、三买卖点之间，都是中枢震荡，这时候，是不会有该级别的买卖点的，因此，如果参与其中的买卖，用的都是低级别的买卖点。）（53课）
+
+4、缠中说禅买卖点的完备性定理：市场必然产生赢利的买卖点，只有第一、二、三类。（21课）
+
+5、缠中说禅升跌完备性定理：市场中的任何向上与下跌，都必然从三类缠中说禅买卖点中的某一类开始以及结束。换言之，市场走势完全由这样的线段构成，线段的端点是某级别三类缠中说禅买卖点中的某一类。（21课）
+
+6、缠中说禅买卖点级别定理：大级别的买卖点必然是次级别以下某一级别的买卖点。（35课）
+
+7、缠中说禅背驰-买卖点定理：任一背驰都必然制造某级别的买卖点，任一级别的买卖点都必然源自某级别走势的背驰。（24课）
+
+8、缠中说禅精确大转折点寻找程序定理：某大级别的转折点，可以通过不同级别背驰段的逐级收缩范围而确定。（27课）
+
+9、缠中说禅趋势转折定律：任何级别的上涨转折都是由某级别的第一类卖点构成的；任何级别的下跌转折都是由某级别的第一类买点构成的。（17课）
+
+10、缠中说禅背驰-转折定理：某级别趋势的背驰将导致该趋势最后一个中枢的级别扩展、该级别更大级别的盘整或该级别以上级别的反趋势。（29课）
+
+11、缠中说禅小背驰-大转折定理：小级别顶背驰引发大级别向下的必要条件是该级别走势的最后一个次级别中枢出现第三类卖点；小级别底背驰引发大级别向上的必要条件是该级别走势的最后一个次级别中枢出现第三类买点。（44课）
+
+12、缠中说禅第一利润最大定理：对于任何固定交易品种，在确定的操作级别下，以上缠中说禅操作模式的利润率最大。
+
+（该模式的关键只参与确定操作级别的盘整与上涨，对盘整用中枢震荡方法处理，保证成本降低以及筹码不丢失（成本为0后是筹码增加，当然，对于小级别的操作，不会出现成本为0的情况），在中枢第三类买点后持股直到新中枢出现继续中枢震荡操作，中途不参与短差。最后，在中枢完成的向上移动出现背驰后抛出所有筹码，完成一次该级别的买卖操作，等待下一个买点出现。）（49课）
+
+13、缠中说禅第二利润最大定理：对于不同交易品种交易中，在确定的操作级别下，以上激进的缠中说禅操作模式的利润率最大。
+
+（还有一种更激进的操作方法，就是不断换股，也就是不参与中枢震荡，只在第三类买点买入，一旦形成新中枢就退出。例如操作级别是30分钟，那么中枢完成向上时一旦出现一个5分钟向下级别后下一个向上的5分钟级别走势不能创新高或出现背驰或盘整背驰，那么一定要抛出，为什么？因为后面一定会出现一个新的30分钟中枢，用这种方法，往往会抛在该级别向上走势的最高点区间。当然，实际上能否达到，那是技术精度的问题，是需要干多了才能干好的。）（49课）
+
+八、补充回复中的定律
+1、缠中说禅定律：任何非盘整性的转折性上涨，都是在某一级别的“下跌+盘整+下跌”后形成的。下跌反之。（16课回复）
+
+2、缠中说缠的MACD定律：第一类买点都是在0轴之下背驰形成的，第二类买点都是第一次上0轴后回抽确认形成的。卖点的情况就反过来。
+
+3、上升趋势形成的最精确定义，就是在第一中枢后出现第三类买点并形成非背驰类向上。（107课）
+
+ 版权归属： v林羽
+ 本文链接： https://blog.vlinyu.com/archives/chanlunjiexi-gainian-dingyi-yuanli-dingli
+ 许可协议： 本文使用《署名-非商业性使用-相同方式共享 4.0 国际 (CC BY-NC-SA 4.0)》协议授权
+
+"""
 
 # __all__ = ["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
-SupportsHL = Union["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Bar", "Interval"]
+SupportsHL = Union["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Bar", "Interval", "Pillar"]
 
 
 def timer(func):
@@ -123,6 +245,13 @@ class Freq(Enum):
 
     def __int__(self):
         return self.value
+
+
+class Pillar:
+    def __init__(self, high: float, low: float):
+        assert high > low
+        self.high = high
+        self.low = low
 
 
 class Shape(Enum):
@@ -194,21 +323,33 @@ class Direction(Enum):
             case Direction.Right:
                 return Direction.Left
 
-    @staticmethod
-    def includes() -> tuple:
-        return Direction.Left, Direction.Right
+    def is_down(self) -> bool:
+        match self:
+            case Direction.Down | Direction.JumpDown | Direction.NextDown:
+                return True
+            case _:
+                return False
 
-    @staticmethod
-    def jumps() -> tuple:
-        return Direction.JumpUp, Direction.JumpDown
+    def is_up(self) -> bool:
+        match self:
+            case Direction.Up | Direction.JumpUp | Direction.NextUp:
+                return True
+            case _:
+                return False
 
-    @staticmethod
-    def ups() -> tuple:
-        return Direction.Up, Direction.JumpUp, Direction.NextUp
+    def is_jump(self) -> bool:
+        match self:
+            case Direction.JumpDown | Direction.JumpUp:
+                return True
+            case _:
+                return False
 
-    @staticmethod
-    def downs() -> tuple:
-        return Direction.Down, Direction.JumpDown, Direction.NextDown
+    def is_include(self) -> bool:
+        match self:
+            case Direction.Left | Direction.Right:
+                return True
+            case _:
+                return False
 
     @staticmethod
     def generator(obj: int | list, directions):
@@ -310,7 +451,7 @@ def double_relation(left: SupportsHL, right: SupportsHL) -> Direction:
     return relation
 
 
-def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_right: bool = False) -> tuple[Optional[Shape], tuple[Direction, Direction]]:
+def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_right: bool = False, ignore: bool = False) -> tuple[Optional[Shape], tuple[Direction, Direction]]:
     """
     三棵缠论k线的所有关系#, 允许逆序包含存在。
     顶分型: 中间高点为三棵最高点。
@@ -329,9 +470,15 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
     # lr = double_relation(left, right)
     match (lm, mr):
         case (Direction.Left, _):
-            raise ChanException("顺序包含 lm")
+            if ignore:
+                print("顺序包含 lm", left, mid)
+            else:
+                raise ChanException("顺序包含 lm", left, mid)
         case (_, Direction.Left):
-            raise ChanException("顺序包含 mr")
+            if ignore:
+                print("顺序包含 mr", mid, right)
+            else:
+                raise ChanException("顺序包含 mr", mid, right)
 
         case (Direction.Up | Direction.JumpUp | Direction.NextUp, Direction.Up | Direction.JumpUp | Direction.NextUp):
             shape = Shape.S
@@ -353,6 +500,8 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
             shape = Shape.G
         case (Direction.Right, Direction.Right) if use_right:
             shape = Shape.T
+        case _:
+            print("未匹配的关系", use_right, lm, mr)
 
     if shape is None:
         print(colored("triple_relation: ", "red"), shape, (lm, mr), left, mid, right)
@@ -401,9 +550,17 @@ class BSPoint:
         self.stamp = stamp
 
 
+class ZShuCondition(Enum):
+    """中枢的三种情况"""
+
+    New: str = "新生"
+    Continue: str = "延续"
+    Expand: str = "扩张"
+
+
 @final
 class ChanConfig:
-    __slots__ = "ANALYZER_CALC_BI", "ANALYZER_CALC_BI_ZS", "ANALYZER_CALC_XD", "ANALYZER_CALC_XD_ZS", "ANALYZER_SHON_TV", "BI_EQUAL", "BI_FENGXING", "BI_JUMP", "BI_LENGTH", "MACD_FAST_PERIOD", "MACD_SIGNAL_PERIOD", "MACD_SLOW_PERIOD"
+    __slots__ = "ANALYZER_CALC_BI", "ANALYZER_CALC_BI_ZS", "ANALYZER_CALC_XD", "ANALYZER_CALC_XD_ZS", "ANALYZER_SHON_TV", "BI_EQUAL", "BI_FENGXING", "BI_JUMP", "BI_LENGTH", "MACD_FAST_PERIOD", "MACD_SIGNAL_PERIOD", "MACD_SLOW_PERIOD", "ANALYZER_CALC_MACD"
 
     def __init__(self):
         self.BI_LENGTH = 5  # 成BI最低长度
@@ -415,6 +572,7 @@ class ChanConfig:
         self.ANALYZER_CALC_XD = True  # 是否计算XD
         self.ANALYZER_CALC_BI_ZS = True  # 是否计算BI中枢
         self.ANALYZER_CALC_XD_ZS = True  # 是否计算XD中枢
+        self.ANALYZER_CALC_MACD = True  # 是否计算MACD
         self.ANALYZER_SHON_TV = True
         self.MACD_FAST_PERIOD = 12.0
         self.MACD_SLOW_PERIOD = 26.0
@@ -435,13 +593,15 @@ class MACD:
         self.signalperiod = signalperiod
 
     @classmethod
-    def calc(cls, pre: "Bar", bar: "Bar") -> Self:
+    def calc(cls, pre: "RawBar", bar: "RawBar") -> Self:
         value = bar.close
         _fast_ema = (2.0 * value + (pre.macd.fastperiod - 1.0) * pre.macd.fast_ema) / (pre.macd.fastperiod + 1.0)
         _slow_ema = (2.0 * value + (pre.macd.slowperiod - 1.0) * pre.macd.slow_ema) / (pre.macd.slowperiod + 1.0)
         _dif = _fast_ema - _slow_ema
         _dea = (2.0 * _dif + (pre.macd.signalperiod - 1.0) * pre.macd.DEA) / (pre.macd.signalperiod + 1.0)
-        return MACD(_fast_ema, _slow_ema, _dif, _dea, fastperiod=pre.macd.fastperiod, slowperiod=pre.macd.slowperiod, signalperiod=pre.macd.signalperiod)
+        macd = MACD(_fast_ema, _slow_ema, _dif, _dea, fastperiod=pre.macd.fastperiod, slowperiod=pre.macd.slowperiod, signalperiod=pre.macd.signalperiod)
+        bar.macd = macd
+        return macd
 
 
 class Observer(metaclass=ABCMeta):
@@ -449,7 +609,7 @@ class Observer(metaclass=ABCMeta):
     queue = asyncio.Queue()
     loop = asyncio.get_event_loop()
 
-    TIME = 0.05
+    TIME = 0.03
 
     @abstractmethod
     def notify(self, obj: Any, cmd: Command): ...
@@ -486,7 +646,7 @@ class Interval:
         if tmp:
             for i in range(3, len(self.elements) - 1):
                 hl = self.elements[i]
-                if double_relation(self, hl) in Direction.jumps():
+                if double_relation(self, hl).is_jump():
                     if i != len(self.elements) - 1:
                         self.elements = self.elements[:i]
                     return None
@@ -499,15 +659,15 @@ class Interval:
             return
 
         lr = double_relation(elements[0], elements[2])
-        if lr in Direction.jumps():
+        if lr.is_jump():
             return
 
         lm = double_relation(elements[0], elements[1])
-        if lm in Direction.jumps():
+        if lm.is_jump():
             return
 
         mr = double_relation(elements[1], elements[2])
-        if mr in Direction.jumps():
+        if mr.is_jump():
             return
 
         high = min([hl.high for hl in elements[:3]])
@@ -553,7 +713,7 @@ class Interval:
 
             elements = []
             for hl in hls[index:]:
-                if double_relation(last, hl) in Direction.jumps():
+                if double_relation(last, hl).is_jump():
                     if not elements:
                         elements.append(last.elements[-1])
                     elements.append(hl)
@@ -577,96 +737,34 @@ class Interval:
                         elements.clear()
 
 
-class Bar:
-    __slots__ = "index", "macd", "__timestamp", "__high", "__low", "__volume", "__direction"
+class RawBar:
+    __slots__ = "__open", "high", "low", "__close", "volume", "dt", "index", "macd"
 
-    def __init__(self, ts: int, o: float, h: float, low: float, c: float, v: float, i: int):
-        self.__timestamp = ts
-        self.__high = h
-        self.__low = low
-        self.__volume = v
-        self.__direction = Direction.Up if o < c else Direction.Down
-        self.index = i
+    def __init__(self, dt: datetime, o: float, h: float, low: float, c: float, v: float, i: int):
+        self.dt: datetime = dt
+        self.__open: float = o
+        self.high: float = h
+        self.low: float = low
+        self.__close: float = c
+        self.volume: float = v
+        self.index: int = i
         self.macd = MACD(c, c, 0.0, 0.0)
 
     @property
     def open(self) -> float:
-        return self.low if self.direction is Direction.Up else self.high
-
-    @property
-    def high(self) -> float:
-        return self.__high
-
-    @property
-    def low(self) -> float:
-        return self.__low
+        return self.__open
 
     @property
     def close(self) -> float:
-        return self.high if self.direction is Direction.Up else self.low
+        return self.__close
 
-    @property
-    def volume(self) -> float:
-        return self.__volume
+    @open.setter
+    def open(self, v: float):
+        self.__open = v
 
-    @property
-    def timestamp(self) -> int:
-        return self.__timestamp
-
-    @property
-    def direction(self) -> Direction:
-        return self.__direction
-
-    @property
-    def dt(self) -> datetime:
-        return datetime.datetime.fromtimestamp(self.timestamp)
-
-    def __str__(self):
-        return f"{self.__class__.__name__}({self.dt}, {self.high}, {self.low}, index={self.index})"
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.dt}, {self.high}, {self.low}, index={self.index})"
-
-    def __bytes__(self) -> bytes:
-        return self.to_be_bytes()
-
-    def to_be_bytes(self) -> bytes:
-        return struct.pack(
-            ">6d",
-            int(self.dt.timestamp()),
-            round(self.open, 8),
-            round(self.high, 8),
-            round(self.low, 8),
-            round(self.close, 8),
-            round(self.volume, 8),
-        )
-
-    @classmethod
-    def from_be_bytes(cls, bs: bytes) -> "Bar":
-        timestamp, _open, high, low, close, vol = struct.unpack(">6d", bs[: struct.calcsize(">6d")])
-        return cls(
-            ts=timestamp,
-            o=_open,
-            h=high,
-            low=low,
-            c=close,
-            v=vol,
-            i=0,
-        )
-
-
-class RawBar:
-    __slots__ = "open", "high", "low", "close", "volume", "dt", "index", "macd"
-
-    def __init__(self, dt: datetime, o: float, h: float, low: float, c: float, v: float, i: int):
-        self.dt: datetime = dt
-        self.open: float = o
-        self.high: float = h
-        self.low: float = low
-        self.close: float = c
-        self.volume: float = v
-        self.index: int = i
-        self.macd = MACD(c, c, 0.0, 0.0)
+    @close.setter
+    def close(self, v: float):
+        self.__close = v
 
     @property
     def direction(self):
@@ -704,6 +802,13 @@ class RawBar:
         )
 
     @classmethod
+    def bars_save_as_dat(cls, path: str, bars: List):
+        with open(path, "wb") as f:
+            for bar in bars:
+                f.write(bytes(bar))
+        print(f"Saved {len(bars)} bars to {path}")
+
+    @classmethod
     def from_be_bytes(cls, buf: bytes) -> "RawBar":
         timestamp, open_, high, low, close, vol = struct.unpack(">6d", buf[: struct.calcsize(">6d")])
         return cls(
@@ -717,8 +822,8 @@ class RawBar:
         )
 
 
-class NewBar:
-    __slots__ = "index", "dt", "high", "low", "__shape", "__raw_start_index", "raw_end_index", "__direction", "volume", "macd"
+class NewBar(RawBar):
+    __slots__ = "__shape", "__raw_start_index", "raw_end_index", "__direction"
 
     def __init__(
         self,
@@ -730,10 +835,14 @@ class NewBar:
         raw_index: int,
         pre: Optional["NewBar"] = None,
     ):
-        self.index: int = 0
-        self.dt: datetime = dt  # raw.dt
-        self.high: float = high  # raw.high
-        self.low: float = low  # raw.low
+        assert high > low
+        if direction == Direction.Down:
+            close = low
+            _open = high
+        else:
+            close = high
+            _open = low
+        super().__init__(dt, _open, high, low, close, volume, 0)
         self.__shape: Shape = Shape.S
 
         if direction is Direction.Up:
@@ -744,13 +853,11 @@ class NewBar:
         self.__raw_start_index: int = raw_index
         self.raw_end_index: int = raw_index
         self.__direction: Direction = direction
-        self.volume: float = volume
-        self.macd = MACD(self.close, self.close, 0.0, 0.0)
 
         if pre is not None:
             self.index = pre.index + 1
 
-            if double_relation(pre, self) in (Direction.Left, Direction.Right):
+            if double_relation(pre, self).is_include():
                 raise ChanException(f"\n    {double_relation(pre, self)}\n    {pre},\n    {self}")
 
     def __str__(self):
@@ -801,11 +908,8 @@ class NewBar:
     def close(self) -> float:
         return self.low if self.direction == Direction.Down else self.high
 
-    def to_bar(self) -> Bar:
-        return Bar(self.dt.timestamp(), self.open, self.high, self.low, self.close, self.volume, self.index)
-
     @classmethod
-    def generate(cls, bar: "NewBar", direction: Direction, seconds: int) -> Self:
+    def generate(cls, bar: "NewBar", direction: Direction, seconds: int, half: bool = False) -> Self:
         offset = datetime.timedelta(seconds=seconds)
         dt: datetime = bar.dt + offset
         volume: float = 998
@@ -815,19 +919,19 @@ class NewBar:
         d = bar.high - bar.low
         match direction:
             case Direction.Up:
-                i = randint(int(d * 0.1279), int(d * 0.883))
+                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
                 low: float = bar.low + i
                 high: float = bar.high + i
             case Direction.Down:
-                i = randint(int(d * 0.1279), int(d * 0.883))
+                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
                 low: float = bar.low - i
                 high: float = bar.high - i
             case Direction.JumpUp:
-                i = randint(int(d * 1.1279), int(d * 1.883))
+                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
                 low: float = bar.low + i
                 high: float = bar.high + i
             case Direction.JumpDown:
-                i = randint(int(d * 1.1279), int(d * 1.883))
+                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
                 low: float = bar.low - i
                 high: float = bar.high - i
             case Direction.NextUp:
@@ -838,9 +942,9 @@ class NewBar:
                 i = bar.high - bar.low
                 high: float = bar.low
                 low: float = bar.low - i
-        nb = NewBar(dt, high, low, Direction.Up if direction in Direction.ups() else Direction.Down, volume, raw_index, bar)
+        nb = NewBar(dt, high, low, Direction.Up if direction.is_up() else Direction.Down, volume, raw_index, bar)
         nb.index = bar.index + 1
-        assert double_relation(bar, nb) is direction
+        assert double_relation(bar, nb) is direction, (direction, double_relation(bar, nb))
         return nb
 
     @classmethod
@@ -850,8 +954,7 @@ class NewBar:
 
     @classmethod
     def merger(cls, pre: Optional["NewBar"], bar: "NewBar", next_bar: RawBar) -> Optional["NewBar"]:
-        relation = double_relation(bar, next_bar)
-        if relation in (Direction.JumpUp, Direction.JumpDown, Direction.Up, Direction.Down):
+        if not double_relation(bar, next_bar).is_include():
             nb = next_bar.to_new_bar(bar)
             nb.index = bar.index + 1
             return nb
@@ -861,7 +964,7 @@ class NewBar:
 
         direction = Direction.Up
         if pre is not None:
-            if double_relation(pre, bar) in (Direction.Down, Direction.JumpDown):
+            if double_relation(pre, bar).is_down():
                 direction = Direction.Down
 
         func = max
@@ -873,7 +976,6 @@ class NewBar:
 
         if pre is not None:
             bar.index = pre.index + 1
-
         return None
 
 
@@ -973,7 +1075,7 @@ class Line(metaclass=ABCMeta):
 
     @property
     @final
-    def elements(self) -> List | Set:
+    def elements(self) -> List["line"] | Set["line"]:
         return self.__elements
 
     @elements.setter
@@ -1040,13 +1142,13 @@ class Line(metaclass=ABCMeta):
     def get_line(self) -> "Line":
         return Line(self.start, self.end, self.index, self.elements, self.stamp)
 
-    def get_bars(self, bars: list) -> List[Bar]:
+    def get_bars(self, bars: list) -> List[NewBar]:
         return bars[bars.index(self.start.mid) : bars.index(self.end.mid) + 1]
 
     @classmethod
     def append(cls, lines: List["Line"], line: "Line"):
         if lines and not lines[-1].is_next(line):
-            raise ChanException("Line.append 不连续")
+            raise ChanException("Line.append 不连续", lines[-1], line)
 
         if lines:
             line.index = lines[-1].index + 1
@@ -1062,17 +1164,77 @@ class Line(metaclass=ABCMeta):
             return
 
         if lines[-1] is line:
-            return lines.pop()
+            drop = lines.pop()
+            return drop
         raise ChanException("Line.pop 弹出数据不在列表中")
 
     @classmethod
     @final
     def create(cls, obj: List | "Line", stamp: str) -> "Line":
         if type(obj) is list:
-            lines: List["Line"] = obj
-            return Line(lines[0].start, lines[-1].end, 0, lines[:], stamp)
+            lines: List["Line"] = obj[:]
+            return Line(lines[0].start, lines[-1].end, 0, lines, stamp)
         line: "Line" = obj
         return Line(line.start, line.end, 0, [line], stamp)
+
+
+class Lines:
+    def __init__(self, elements: List[Line]):
+        self.__elements = elements
+
+    def __len__(self):
+        return len(self.__elements)
+
+    def __iter__(self):
+        return iter(self.__elements)
+
+    def __next__(self):
+        return next(self)
+
+    def __getitem__(self, index):
+        return self.__elements[index]
+
+    def __setitem__(self, index, value):
+        self.__elements[index] = value
+
+    def __delitem__(self, index):
+        del self.__elements[index]
+
+    def append(self, element: Line):
+        length = len(self.__elements)
+        if length > 0:
+            last = self.__elements[-1]
+            assert last.end is element.start
+            if last.index + 1 != element.index:
+                element.index = last.index + 1
+                element.pre = last
+                if length > 1:
+                    pre = self.__elements[-2]
+                    pre.next = last
+
+        self.__elements.append(element)
+
+    def pop(self, index=-1):
+        return self.__elements.pop(index)
+
+    def index(self, element: Line):
+        return self.__elements.index(element)
+
+    def clear(self):
+        self.__elements.clear()
+
+    def reset_line_index(self):
+        """reset line index"""
+        for index, element in enumerate(self.__elements):
+            element.index = index
+        print("Lines reset line index done!", len(self.__elements))
+
+    def reset_line_next_and_pre(self):
+        for i in range(1, len(self.__elements)):
+            if hasattr(__elements[i - 1], "next"):
+                self.__elements[i - 1].next = self.__elements[i]
+            if hasattr(__elements[i - 1], "pre"):
+                self.__elements[i].pre = self.__elements[i - 1]
 
 
 @final
@@ -1083,10 +1245,10 @@ class FeatureSequence(Line):
         super().__init__(start, end, 0, elements, f"FeatureSequence<{tuple(elements)[0].stamp if len(elements) > 0 else None}>")
 
     def __str__(self):
-        return f"特征序列({self.direction}, {self.start.dt}, {self.end.dt}, {len(self.elements)})"
+        return f"特征序列({self.direction}, {self.start.dt}, {self.end.dt}, {len(self.elements)}, {self.stamp})"
 
     def __repr__(self):
-        return f"特征序列({self.direction}, {self.start.dt}, {self.end.dt}, {len(self.elements)})"
+        return f"特征序列({self.direction}, {self.start.dt}, {self.end.dt}, {len(self.elements)}, {self.stamp})"
 
     @property
     def start(self) -> FenXing:
@@ -1135,13 +1297,25 @@ class FeatureSequence(Line):
             print(self)
             raise e
 
-    @staticmethod
-    def analyzer(lines: List[Line], direction: Direction, combines: Tuple[Direction] = (Direction.Left,)) -> Tuple[Optional["FeatureSequence"], Optional["FeatureSequence"], Optional["FeatureSequence"]]:
+    @classmethod
+    def analyzer(cls, lines: List[Line], direction: Direction, combines: Tuple[Direction] = (Direction.Left,)) -> Tuple[Optional["FeatureSequence"], Optional["FeatureSequence"], Optional["FeatureSequence"]]:
         if combines is None:
             combines = (Direction.Left,)
         features: List[FeatureSequence] = []
         for obj in lines:
             if obj.direction is direction:
+                if len(features) >= 3:
+                    l, m, r = features[-3], features[-2], features[-1]
+                    shape, (lm, mr) = triple_relation(l, m, r, use_right=True, ignore=True)
+                    if (direction is Direction.Up and shape is Shape.G and obj.high > m.high) or (direction is Direction.Down and shape is Shape.D and obj.low < m.low):
+                        start = min(m.elements, key=lambda o: o.index)
+                        end = max(r.elements, key=lambda o: o.index)
+                        elements = lines[lines.index(start) : lines.index(end) + 1]
+                        fake = Line(start.start, end.end, 0, elements, f"Fake-{start.stamp}")
+                        feature = FeatureSequence({fake})
+                        features.pop()
+                        features[-1] = feature
+
                 continue
             if features:
                 last = features[-1]
@@ -1161,12 +1335,12 @@ class FeatureSequence(Line):
         if length >= 3:
             relation = double_relation(features[-2], features[-1])
             if direction is Direction.Up:
-                if relation in (Direction.Down, Direction.JumpDown):
+                if relation.is_down():
                     return features[-3], features[-2], features[-1]
                 else:
                     return features[-2], features[-1], None
             else:
-                if relation in (Direction.Up, Direction.JumpUp):
+                if relation.is_up():
                     return features[-3], features[-2], features[-1]
                 else:
                     return features[-2], features[-1], None
@@ -1301,6 +1475,9 @@ class ZhongShu:
                 left, mid, right = lines[i - 1], lines[i], lines[i + 1]
                 new = cls.new([left, mid, right])
                 if new is not None:
+                    if left.index == 0:
+                        continue  # 方便计算走势
+
                     cls.append(zss, new, observer)
                     return cls.analyzer(lines, zss, observer)
 
@@ -1318,7 +1495,7 @@ class ZhongShu:
                     return cls.analyzer(lines, zss, observer)
 
             if last.third is not None:
-                if double_relation(last, last.third) not in (Direction.JumpDown, Direction.JumpUp):
+                if not double_relation(last, last.third).is_jump():
                     last.elements.append(last.third)
                     last.third = None
                     observer.notify(last, Command.Modify(last.stamp))
@@ -1337,7 +1514,7 @@ class ZhongShu:
 
             elements = []
             for hl in lines[index:]:
-                if double_relation(last, hl) in Direction.jumps():
+                if double_relation(last, hl).is_jump():
                     elements.append(hl)
                     if last.elements[-1].is_next(hl):
                         last.third = hl
@@ -1353,35 +1530,21 @@ class ZhongShu:
                     if new is None:
                         elements.pop(0)
                     else:
-                        if double_relation(last, new) in Direction.ups():
+                        relation = double_relation(last, new)
+                        if relation.is_up():
                             if elements[0].direction == Direction.Up:
                                 elements.pop(0)
                                 continue
-                        elif double_relation(last, new) in Direction.downs():
+                        elif relation.is_down():
                             if elements[0].direction == Direction.Down:
                                 elements.pop(0)
                                 continue
                         else:
-                            print(colored(f"{double_relation(last, new)}", "red"))
+                            print(colored(f"{relation}", "red"))
 
                         cls.append(zss, new, observer)
                         last = new
                         elements = []
-
-
-class ZouShi(Line):
-    PANZHENG: Final[str] = "盘整"
-    SHANGZHANG: Final[str] = "上涨"
-    XIADIE: Final[str] = "下跌"
-
-    def __init__(self, elements: List[Union[Line, ZhongShu]], config: ChanConfig):
-        super().__init__(elements[0].start, elements[-1].end, 0, elements, "ZouShi")
-        self.config = config
-
-    @classmethod
-    def analyzer(cls, lines: List[Line], zss: List["ZouShi"], config: ChanConfig):
-        if len(lines) < 3:
-            return
 
 
 @final
@@ -1424,7 +1587,7 @@ class Bi(Line):
                 right.index,
             )
             relation = double_relation(left, right)
-            if self.config.BI_JUMP and relation in Direction.jumps():
+            if self.config.BI_JUMP and relation.is_jump():
                 size += 1
             size += 1
         if not self.config.BI_JUMP:
@@ -1476,11 +1639,8 @@ class Bi(Line):
             relation = double_relation(start, self.end)
 
         if self.direction is Direction.Down:
-            return relation in (
-                Direction.Down,
-                Direction.JumpDown,
-            )
-        return relation in (Direction.Up, Direction.JumpUp)
+            return relation.is_down()
+        return relation.is_jump()
 
     def check(self) -> bool:
         if len(self.elements) >= self.config.BI_FENGXING:
@@ -1683,30 +1843,34 @@ class Bi(Line):
 
 @final
 class Duan(Line):
-    __slots__ = "features", "jump"
+    __slots__ = "features", "observer"
 
     def __init__(
         self,
-        pre: Optional[Self],
         start: FenXing,
         end: FenXing,
         elements: List[Line],
         stamp: str = "Duan",
+        *,
+        observer: Optional[Observer] = None,
     ):
         super().__init__(start, end, 0, elements, stamp)
-        self.jump: bool = False  # 特征序列是否有缺口
+        self.observer: Optional[Observer] = observer
         self.features: list[Optional[FeatureSequence]] = [None, None, None]
-        self.pre = pre
-
-        if pre is not None:
-            assert pre.end is start
-            self.index = pre.index + 1
 
     def __str__(self):
-        return f"{self.stamp}({self.index}, {self.direction}, {self.pre is not None}, done: {self.done}, {self.state}, {self.start}, {self.end}, size={len(self.elements)})"
+        return f"{self.stamp}({self.index}, {self.direction}, has pre: {self.pre is not None}, done: {self.done}, {self.state}, {self.start}, {self.end}, size={len(self.elements)})"
 
     def __repr__(self):
         return str(self)
+
+    @property
+    def gap(self) -> Optional[Pillar]:
+        if not self.mid:
+            return
+        if double_relation(self.left, self.mid).is_jump():
+            hl = [self.left.start.speck, self.mid.start.speck]
+            return Pillar(max(*hl), min(*hl))
 
     @property
     def done(self) -> bool:
@@ -1718,7 +1882,7 @@ class Duan(Line):
 
     @property
     def state(self) -> Optional[str]:
-        if self.pre is not None and self.pre.jump:
+        if self.pre is not None and self.pre.gap:
             return "老阳" if self.direction is Direction.Up else "老阴"
         return "小阳" if self.direction is Direction.Up else "少阴"
 
@@ -1728,7 +1892,7 @@ class Duan(Line):
 
     @left.setter
     def left(self, feature: FeatureSequence):
-        self.features[0] = feature
+        self.__feature_setter(0, feature)
 
     @property
     def mid(self) -> FeatureSequence:
@@ -1736,7 +1900,7 @@ class Duan(Line):
 
     @mid.setter
     def mid(self, feature: FeatureSequence):
-        self.features[1] = feature
+        self.__feature_setter(1, feature)
 
     @property
     def right(self) -> FeatureSequence:
@@ -1744,9 +1908,71 @@ class Duan(Line):
 
     @right.setter
     def right(self, feature: FeatureSequence):
-        self.features[2] = feature
+        self.__feature_setter(2, feature)
+
+    def __feature_setter(self, offset: int, feature: Optional[FeatureSequence]):
+        if feature and feature.direction == self.direction:
+            raise ChanException("特征序列方向不匹配")
+        features: List = self.features
+        observer: Optional[Observer] = self.observer
+        old = features[offset]
+        features[offset] = feature
+
+        old and observer and observer.notify(old, Command.Remove(old.stamp))
+        feature and observer and observer.notify(feature, Command.Append(feature.stamp))
+
+    def clear_features(self):
+        for feature in self.features:
+            if feature is not None:
+                if self.observer is not None:
+                    self.observer.notify(feature, Command.Remove(feature.stamp))
+
+    def update(self, lines: List[Line]) -> bool:
+        assert self.done is True, (self, self.features)
+        size = len(self.elements)
+        i = self.elements[-1].index
+        while 1:
+            try:
+                lines.index(self.elements[-1])
+                break
+            except ValueError:
+                self.pop_element(self.elements[-1])
+
+        for line in lines:
+            if self.elements[-1].is_next(line):
+                self.add_element(line)
+                if line.index == i:
+                    break
+        # assert size == len(self.elements)
+        return self.done
+
+    def get_next_elements(self) -> List[Line]:
+        assert self.elements[0].start is self.start, (self.elements[0].start, self.start)
+        elements = []
+        for line in self.elements:
+            if elements:
+                elements.append(line)
+            if line.start is self.end:
+                elements.append(line)
+        return elements
+
+    def set_elements(self, elements: List[Line]):
+        assert elements[0].start is self.start, (elements[0].start, self.start)
+        self.clear_features()
+        self.elements.clear()
+        last = None
+        for i in range(1, len(elements) - 1):
+            pre = elements[i - 1]
+            last = elements[i]
+            assert last.is_previous(pre) is True
+            self.add_element(pre)
+            if self.done:
+                print("set_elements done", i, len(elements))
+        if last:
+            self.add_element(last)
 
     def get_elements(self) -> List[Line]:
+        assert self.elements[0].start is self.start, (self.elements[0].start, self.start)
         elements = []
         for obj in self.elements:
             elements.append(obj)
@@ -1754,59 +1980,43 @@ class Duan(Line):
                 break
         return elements
 
+    def pop_element(self, line: Line) -> Line:
+        duan = self
+        drop = Line.pop(duan.elements, line)
+        duan.left, duan.mid, duan.right = FeatureSequence.analyzer(duan.elements, duan.direction)
+        return drop
+
+    def add_element(self, line: Line):
+        duan = self
+        Line.append(duan.elements, line)
+        if self.done:
+            ...
+
+        duan.left, duan.mid, duan.right = FeatureSequence.analyzer(duan.elements, duan.direction)
+        if duan.mid is not None:
+            duan.end = duan.mid.start
+
+        if duan.direction == line.direction:
+            if duan.mid is not None:
+                if duan.direction == Direction.Up:
+                    if duan.high < line.high:
+                        duan.end = line.end
+                    else:
+                        duan.end = duan.mid.start
+                else:
+                    if duan.low > line.low:
+                        duan.end = line.end
+                    else:
+                        duan.end = duan.mid.start
+            else:
+                duan.end = line.end
+
     @classmethod
-    def new(cls, line: Line | List[Line], stamp: str) -> "Duan":
+    def new(cls, line: Line | List[Line], observer: Optional[Observer]) -> "Duan":
         if type(line) is list:
-            return Duan(None, line[0].start, line[-1].end, line, stamp)
-        return Duan(None, line.start, line.end, [line], stamp)
-
-    @classmethod
-    def feature_setter(cls, offset: int, feature: Optional[FeatureSequence], features: List[Optional[FeatureSequence]], direction: Direction, observer: Observer):
-        if feature and feature.direction != direction:
-            raise ChanException("特征序列方向不匹配")
-
-        if feature is None:
-            if old := features[offset]:
-                observer.notify(old, Command.Remove(old.stamp))
-            features[offset] = feature
-            return
-
-        if features[offset] is None:
-            features[offset] = feature
-            observer.notify(feature, Command.Append(feature.stamp))
-
-        else:
-            observer.notify(features[offset], Command.Remove(features[offset].stamp))
-            observer.notify(feature, Command.Append(feature.stamp))
-            features[offset] = feature
-
-    @classmethod
-    def set_features(cls, duan: "Duan", observer: Observer):
-        (left, mid, right) = FeatureSequence.analyzer(duan.elements, duan.direction, Direction.includes() if duan.state in ("老阴", "老阳") else None)
-        Duan.feature_setter(0, left, duan.features, duan.direction.reversal(), observer)
-        Duan.feature_setter(1, mid, duan.features, duan.direction.reversal(), observer)
-        Duan.feature_setter(2, right, duan.features, duan.direction.reversal(), observer)
-
-    @classmethod
-    def clear_features(cls, duan: "Duan", observer: Observer):
-        (left, mid, right) = (None, None, None)
-        Duan.feature_setter(0, left, duan.features, duan.direction.reversal(), observer)
-        Duan.feature_setter(1, mid, duan.features, duan.direction.reversal(), observer)
-        Duan.feature_setter(2, right, duan.features, duan.direction.reversal(), observer)
-
-    @classmethod
-    def set_done(cls, duan: "Duan", fx: FenXing, observer: Observer):
-        assert fx is duan.mid.start
-
-        elements = []
-        for obj in duan.elements:
-            if elements:
-                elements.append(obj)
-            if obj.start is fx:
-                elements.append(obj)
-        duan.end = fx
-        duan.jump = double_relation(duan.left, duan.mid) in Direction.jumps()
-        return elements
+            lines = line[:]
+            return Duan(line[0].start, line[2].end, lines, "Duan" if lines[0].stamp == "Bi" else lines[0].stamp + "Duan", observer=observer)
+        return Duan(line.start, line.end, [line], "Duan" if line.stamp == "Bi" else line.stamp + "Duan", observer=observer)
 
     @classmethod
     def analyzer(cls, lines: List[Line], xds: List["Duan"], observer: Observer):
@@ -1820,9 +2030,9 @@ class Duan(Line):
         if not xds:
             for i in range(1, len(lines) - 1):
                 left, mid, right = lines[i - 1], lines[i], lines[i + 1]
-                if double_relation(left, right) in Direction.jumps():
+                if double_relation(left, right).is_jump():
                     continue
-                duan = Duan.new([left, mid, right], "Duan" if mid.stamp == "Bi" else mid.stamp + "Duan")
+                duan = Duan.new([left, mid, right], observer)
                 Line.append(xds, duan)
                 observer.notify(duan, Command.Append(duan.stamp))
                 return Duan.analyzer(lines, xds, observer)
@@ -1832,88 +2042,75 @@ class Duan(Line):
             elements = last.get_elements()
             while 1:
                 try:
-                    index = lines.index(elements[-1]) + 1
+                    index = lines.index(last.elements[-1]) + 1
                     break
                 except ValueError:
-                    line = elements.pop()
+                    line = last.pop_element(last.elements[-1])
                     ddp("Duan.analyzer 弹出", line)
-                    if last.done:
-                        if line in last.right:
-                            if len(last.right) == 1:
-                                if line in last.right:
-                                    Duan.feature_setter(2, None, last.features, last.direction.reversal(), observer)
-                                else:
-                                    raise ChanException
-                            else:
-                                last.right.remove(line)
-                                Duan.feature_setter(2, last.right, last.features, last.direction.reversal(), observer)
 
-                    if not elements:
+                    if not last.elements:
                         print("Duan.analyzer 无法找到", last)
                         if Line.pop(xds, last) is not None:
                             observer.notify(last, Command.Remove(last.stamp))
-                            # Duan.clear_features(duan, observer)
+                            last.clear_features()
                         return Duan.analyzer(lines, xds, observer)
-            last.elements = elements[:]
-            Duan.set_features(last, observer)
-
             duan = last
-            for line in lines[index:]:
-                Line.append(duan.elements, line)
-                if duan.direction == line.direction:
-                    if duan.mid is not None:
-                        if duan.direction == Direction.Up:
-                            if duan.high < line.high:
-                                duan.end = line.end
-                            else:
-                                duan.end = duan.mid.start
-                        else:
-                            if duan.low > line.low:
-                                duan.end = line.end
-                            else:
-                                duan.end = duan.mid.start
+
+            # for line in lines[index:]:
+            for i in range(index, len(lines)):
+                line = lines[i]
+                last = duan.pre
+                if last and last.elements[-1] not in lines:
+                    if not last.update(lines):
+                        # print("异常", last)
+                        Line.pop(xds, duan)
+                        observer.notify(duan, Command.Remove(duan.stamp))
+                        duan.clear_features()
+                        return Duan.analyzer(lines, xds, observer)
+
+                if last and last.gap and len(duan.elements) == 3:
+                    if (last.direction is Direction.Up and line.high > last.high) or (last.direction is Direction.Down and line.low < last.low):
+                        Line.pop(xds, duan)
+                        observer.notify(duan, Command.Remove(duan.stamp))
+                        duan.clear_features()
+                        last.add_element(line)
+                        observer.notify(last, Command.Modify(last.stamp))
+                        # print("修正")
+                        duan = last
+                        continue
+
+                duan.add_element(line)
+                observer.notify(duan, Command.Modify(duan.stamp))
+                if duan.done:
+                    elements = duan.get_next_elements()
+                    duan.clear_features()
+                    for feature in duan.features:
+                        if feature is not None:
+                            observer.notify(feature, Command.Append(feature.stamp))
+
+                    if duan.direction is Direction.Up:
+                        fx = "顶分型"
                     else:
-                        duan.end = line.end
-                    observer.notify(duan, Command.Modify(duan.stamp))
-                else:
-                    Duan.set_features(duan, observer)
-                    if duan.right is not None:
-                        elements = Duan.set_done(duan, duan.mid.start, observer)
-                        observer.notify(duan, Command.Modify(duan.stamp))
-                        if duan.jump:
-                            pre = duan
-                        else:
-                            pre = None
+                        fx = "底分型"
 
-                        if xds:
-                            if duan is not xds[-1]:
-                                Line.append(xds, duan)
-                                observer.notify(duan, Command.Append(duan.stamp))
-                                for feature in duan.features:
-                                    if feature is not None:
-                                        observer.notify(feature, Command.Append(feature.stamp))
-                            else:
-                                ...
-                        else:
-                            Line.append(xds, duan)
-                            observer.notify(duan, Command.Append(duan.stamp))
-                            for feature in duan.features:
-                                if feature is not None:
-                                    observer.notify(feature, Command.Append(feature.stamp))
-
-                        if duan.direction is Direction.Up:
-                            fx = "顶分型"
-                        else:
-                            fx = "底分型"
-
-                        ddp("    ", f"{fx}终结, 缺口: {duan.jump}")
-                        duan = Duan.new(elements, "Duan" if line.stamp == "Bi" else line.stamp + "Duan")
-                        duan.pre = pre
+                    ddp("    ", f"{fx}终结, 缺口: {duan.gap}")
+                    size = len(elements)
+                    if size >= 3:
+                        duan = Duan.new(elements[:3], observer)
                         Line.append(xds, duan)
                         observer.notify(duan, Command.Append(duan.stamp))
                         for feature in duan.features:
                             if feature is not None:
                                 observer.notify(feature, Command.Append(feature.stamp))
+
+                        return Duan.analyzer(lines, xds, observer)
+
+                    duan = Duan.new(elements, observer)
+                    Line.append(xds, duan)
+                    observer.notify(duan, Command.Append(duan.stamp))
+                    for feature in duan.features:
+                        if feature is not None:
+                            observer.notify(feature, Command.Append(feature.stamp))
 
 
 class BaseAnalyzer(Observer):
@@ -1974,7 +2171,7 @@ class BaseAnalyzer(Observer):
             message["name"] = "trend_line"
             message["points"] = [{"time": int(obj.start.dt.timestamp()), "price": obj.start.speck}, {"time": int(obj.end.dt.timestamp()), "price": obj.end.speck}]
             message["options"] = {"shape": "trend_line", "text": obj.stamp}
-            message["properties"] = {"linecolor": "#F1C40F" if obj.elements[0].stamp == "Bi" else "#00C40F", "linewidth": 3, "title": f"{obj.stamp}-{obj.index}", "text": obj.stamp}
+            message["properties"] = {"linecolor": "#F1C40F" if obj.stamp == "Duan" else "#00C40F", "linewidth": 3, "title": f"{obj.stamp}-{obj.index}", "text": obj.stamp}
 
         if type(obj) is Interval:
             message["type"] = "shape"
@@ -2035,7 +2232,7 @@ class BaseAnalyzer(Observer):
             message["points"] = [{"time": int(start.timestamp()), "price": obj.start.speck}, {"time": int(end.timestamp()), "price": obj.end.speck}]
             message["options"] = {"shape": "trend_line", "text": obj.stamp}
             message["properties"] = {
-                "linecolor": "#FFFFFF" if obj.direction.reversal() is Direction.Down else "#000000",
+                "linecolor": "#FFFFFF" if obj.direction.reversal() is Direction.Down else "#fbc02d",
                 "linewidth": 4,
                 "linestyle": 1,
                 # "showLabel": True,
@@ -2108,9 +2305,15 @@ class BaseAnalyzer(Observer):
                 pass
             nb = NewBar.merger(pre, self.news[-1], bar)
             if nb is not None:
+                if self.config.ANALYZER_CALC_MACD:
+                    MACD.calc(self.news[-1], nb)
                 self.news.append(nb)
+            else:
+                if self.config.ANALYZER_CALC_MACD and pre:
+                    MACD.calc(pre, self.news[-1])
         else:
             nb = bar.to_new_bar(None)
+            nb.macd = MACD(fast_ema=nb.close, slow_ema=nb.close, dif=0.0, dea=0.0, fastperiod=self.config.MACD_FAST_PERIOD, slowperiod=self.config.MACD_SLOW_PERIOD, signalperiod=self.config.MACD_SIGNAL_PERIOD)
             self.news.append(nb)
 
         # Interval.analyzer(self.news, self.zs, self)
@@ -2142,7 +2345,14 @@ class BaseAnalyzer(Observer):
             ZhongShu.analyzer(self.bis, self.bzss, self)
 
         if self.config.ANALYZER_CALC_XD:
-            Duan.analyzer(self.bis, self.xds, self)
+            try:
+                Duan.analyzer(self.bis, self.xds, self)
+            except Exception as e:
+                traceback.print_exc()
+                xds = self.xds[-3:]
+                news = self.news[xds[0].start.left.index :]
+                RawBar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
+                raise e
             if self.xds and self.cache.get("xd", None) is self.xds[-1]:
                 return
             if self.xds:
@@ -2199,9 +2409,7 @@ class Generator(BaseAnalyzer):
         super().__init__(symbol, freq, ws)
 
     def save_nb_file(self):
-        with open(f"./templates/{self.symbol}-{self.freq}-{int(self.news[0].dt.timestamp())}-{int(self.news[-1].dt.timestamp())}.nb", "wb") as f:
-            for bar in self.news:
-                f.write(bytes(bar.to_bar()))
+        RawBar.bars_save_as_dat(f"./templates/{self.symbol}-{self.freq}-{int(self.news[0].dt.timestamp())}-{int(self.news[-1].dt.timestamp())}.nb", self.news)
 
     def load_nb_file(self, path: str):
         with open(path, "rb") as f:
@@ -2215,7 +2423,7 @@ class Generator(BaseAnalyzer):
         self.news.append(nb)
         # Interval.analyzer(self.news, self.zs, self)
         self.notify(self.news[-1], Command.Append("NewBar"))
-
+        # return
         # left, mid, right = None, None, None
         try:
             left, mid, right = self.news[-3:]
@@ -2241,13 +2449,72 @@ class Generator(BaseAnalyzer):
             ZhongShu.analyzer(self.bis, self.bzss, self)
 
         if self.config.ANALYZER_CALC_XD:
-            Duan.analyzer(self.bis, self.xds, self)
+            try:
+                Duan.analyzer(self.bis, self.xds, self)
+            except Exception as e:
+                traceback.print_exc()
+                xds = self.xds[-3:]
+                news = self.news[xds[0].start.left.index :]
+                RawBar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception_byGenerator-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
+                raise e
             if self.xds and self.cache.get("xd", None) is self.xds[-1]:
                 return
             if self.xds:
                 self.cache["xd"] = self.xds[-1]
             if self.config.ANALYZER_CALC_XD_ZS:
                 ZhongShu.analyzer(self.xds, self.dzss, self)
+
+    @classmethod
+    def generator(cls, points: List[int | dict], seconds=300):
+        news = []
+
+        def append(array, new):
+            if not array:
+                array.append(new)
+                return
+            if double_relation(array[-1], new) is Direction.Left:
+                array[-1] = new
+            elif double_relation(array[-1], new) is Direction.Right:
+                print(array[-1], new)
+            else:
+                print(double_relation(array[-1], new))
+                array.append(new)
+
+        dt = datetime.datetime(2008, 8, 8)
+        offset = datetime.timedelta(seconds=seconds)
+        index = 0
+        for i in range(1, len(points)):
+            if type(points[i]) is dict:
+                o = int(points[i - 1]["price"])
+                c = int(points[i]["price"])
+            else:
+                o = int(points[i - 1])
+                c = int(points[i])
+            direction = Direction.Up if o < c else Direction.Down
+            h = max(o, c)
+            l = min(o, c)
+            d = h - l
+            m = d / 5
+            if direction == Direction.Up:
+                nb = NewBar(dt, l + m, l, direction, 8, index, None)
+                append(news, nb)
+                dt = dt + offset
+                for dd in [Direction.NextUp] * 4:
+                    nb = NewBar.generate(nb, dd, seconds, True)
+                    append(news, nb)
+                    dt = dt + offset
+            else:
+                nb = NewBar(dt, h, l + m * 4, direction, 8, index, None)
+                append(news, nb)
+                dt = dt + offset
+                for dd in [Direction.NextDown] * 4:
+                    nb = NewBar.generate(nb, dd, seconds, True)
+                    append(news, nb)
+                    dt = dt + offset
+
+        lines = Lines(news)
+        lines.reset_line_index()
+        return news
 
 
 class Bitstamp(BaseAnalyzer):
@@ -2318,16 +2585,43 @@ def gen(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = Freq.m5, w
     def func():
         bitstamp = Generator(symbol, freq=int(freq), ws=ws)
         bitstamp.config.BI_JUMP = False
-        dt = datetime.datetime.fromtimestamp(randint(1015695500, 1715695500))
-        nb = NewBar(dt, 10000, 9000, Direction.Up, 8.8, 0)
+        dt = datetime.datetime(2008, 8, 8)
+        nb = NewBar(dt, 10000, 9900, Direction.Up, 8.8, 0)
         bitstamp.push_new_bar(nb)
         for direction in Direction.generator(int(limit), [Direction.Up, Direction.JumpUp, Direction.NextUp, Direction.Down, Direction.JumpDown, Direction.NextDown]):
             nb = NewBar.generate(nb, direction, int(freq))
-            print(direction, nb)
+            # print(direction, nb)
             bitstamp.push_new_bar(nb)
 
         for duan in bitstamp.xds:
-            if duan.jump:
+            if duan.gap:
+                bitstamp.save_nb_file()
+                break
+
+    return func
+
+
+def gen2(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = Freq.m5, ws: Optional[WebSocket] = None):
+    def func():
+        bitstamp = Generator(symbol, freq=int(freq), ws=ws)
+        bitstamp.config.BI_JUMP = False
+        a = [
+            {"price": 11070.490547079706, "time": 1218098700},
+            {"price": 11477.076230434637, "time": 1218100200},
+            {"price": 10311.530604817166, "time": 1218102000},
+            {"price": 10728.958573061562, "time": 1218103200},
+            {"price": 9856.15463945964, "time": 1218104700},
+            {"price": 10132.632904140995, "time": 1218105900},
+            {"price": 9969.998630799022, "time": 1218107700},
+            {"price": 10224.792325701446, "time": 1218109200},
+            {"price": 9682.168101337797, "time": 1218111900},
+            {"price": 9891.448028901257, "time": 1218114000},
+        ]
+        for nb in Generator.generator(a, int(freq)):
+            bitstamp.push_new_bar(nb)
+
+        for duan in bitstamp.xds:
+            if duan.gap:
                 bitstamp.save_nb_file()
                 break
 
@@ -2365,7 +2659,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     tmp.join(1)
                     time.sleep(1)
 
-                Observer.thread = Thread(target=main_bitstamp(symbol=symbol, freq=freq, limit=limit, ws=websocket))  # 使用线程来运行main函数
+                if message["generator"] == "True":
+                    Observer.thread = Thread(target=gen(symbol=symbol, freq=freq, limit=limit, ws=websocket))  # 使用线程来运行main函数
+                else:
+                    Observer.thread = Thread(target=main_bitstamp(symbol=symbol, freq=freq, limit=limit, ws=websocket))  # 使用线程来运行main函数
                 Observer.thread.start()
     except WebSocketDisconnect:
         ...
@@ -2379,6 +2676,7 @@ async def main_page(
     symbol: str = "btcusd",
     step: int = 300,
     limit: int = 500,
+    generator: bool = False,
 ):
     resolutions = {
         60: "1",
@@ -2398,7 +2696,7 @@ async def main_page(
         return resolutions
 
     # Observer.CAN = True
-    return templates.TemplateResponse("index.html", {"request": request, "exchange": exchange, "symbol": symbol, "interval": resolutions.get(step), "limit": str(limit), "step": str(step)})
+    return templates.TemplateResponse("index.html", {"request": request, "exchange": exchange, "symbol": symbol, "interval": resolutions.get(step), "limit": str(limit), "step": str(step), "generator": generator})
 
 
 if __name__ == "__main__":

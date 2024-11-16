@@ -17,6 +17,7 @@
         const interval = "{{ interval }}";
         const step = "{{ step }}";
         const limit = "{{ limit }}";
+        const generator = "{{ generator }}";
         const socket = new WebSocket("ws://" + window.location.host + "/ws");
         //const socket = new WebSocket("ws://"+window.location.hostname+":8080/ws");
 
@@ -349,7 +350,8 @@
                         exchange: exchange,
                         symbol: name,
                         freq: step,
-                        limit: limit
+                        limit: limit,
+                        generator: generator
                     }));
 
                     widget.subscribe("onTimescaleMarkClick", function (clientX, clientY, pageX, pageY, screenX, screenY) {
@@ -360,11 +362,18 @@
                         if (debug) console.log("[drawing_event]", "id:", sourceId, "event type:", drawingEventType)
                         if (drawingEventType.indexOf("click") === 0) {
                             const shape = widget.activeChart().getShapeById(sourceId);
+                            console.info(shape);
                             const properties = shape.getProperties();
                             const points = shape.getPoints();
                             const toolname = shape._source.toolname;
                             if (toolname === "LineToolTrendLine") {
                                 shape.setProperties({showLabel: !properties.showLabel})
+                            }
+                            if (toolname === "LineToolPath") {
+                                socket.send(JSON.stringify({
+                                    type: "points",
+                                    points: points,
+                                }));
                             }
                             console.log(toolname, points, properties);
                         }
