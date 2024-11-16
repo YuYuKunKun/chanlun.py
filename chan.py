@@ -200,7 +200,7 @@ from termcolor import colored
 """
 
 # __all__ = ["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
-SupportsHL = Union["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Bar", "Interval", "Pillar"]
+SupportsHL = Union["Line", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Interval", "Pillar"]
 
 
 def timer(func):
@@ -523,15 +523,15 @@ class Command:
         return f"{self.cmd.upper()}"
 
     @classmethod
-    def Append(cls, stamp: str) -> "Command":
+    def Append(cls, stamp: str) -> Self:
         return Command(cls.APPEND, stamp)
 
     @classmethod
-    def Modify(cls, stamp: str) -> "Command":
+    def Modify(cls, stamp: str) -> Self:
         return Command(cls.MODIFY, stamp)
 
     @classmethod
-    def Remove(cls, stamp: str) -> "Command":
+    def Remove(cls, stamp: str) -> Self:
         return Command(cls.REMOVE, stamp)
 
 
@@ -609,7 +609,7 @@ class Observer(metaclass=ABCMeta):
     queue = asyncio.Queue()
     loop = asyncio.get_event_loop()
 
-    TIME = 0.03
+    TIME = 0.01
 
     @abstractmethod
     def notify(self, obj: Any, cmd: Command): ...
@@ -686,7 +686,6 @@ class Interval:
 
         else:
             last = intervals[-1]
-            index = -1
             flag: Optional[bool] = last.check()
             if flag is None:
                 index = hls.index(last.elements[2]) + 1
@@ -820,6 +819,26 @@ class RawBar:
             v=vol,
             i=0,
         )
+
+    @classmethod
+    def from_csv_file(cls, path: str) -> List["RawBar"]:
+        raws: List["RawBar"] = []
+        with open(path, "r") as f:
+            stamps = f.readline().split(",")
+            ts = stamps.index("timestamp")
+            o = stamps.index("open")
+            h = stamps.index("high")
+            low = stamps.index("low")
+            c = stamps.index("close")
+            v = stamps.index("volume")
+            i = 0
+            for line in f.readlines():
+                info = line.split(",")
+                rb = RawBar(datetime.datetime.strptime(info[ts], "%Y-%m-%d %H:%M:%S"), float(info[o]), float(info[h]), float(info[low]), float(info[c]), float(info[v]), i)
+                raws.append(rb)
+                i += 1
+
+        return raws
 
 
 class NewBar(RawBar):
@@ -1075,7 +1094,7 @@ class Line(metaclass=ABCMeta):
 
     @property
     @final
-    def elements(self) -> List["line"] | Set["line"]:
+    def elements(self) -> List:
         return self.__elements
 
     @elements.setter
@@ -1231,9 +1250,9 @@ class Lines:
 
     def reset_line_next_and_pre(self):
         for i in range(1, len(self.__elements)):
-            if hasattr(__elements[i - 1], "next"):
+            if hasattr(self.__elements[i - 1], "next"):
                 self.__elements[i - 1].next = self.__elements[i]
-            if hasattr(__elements[i - 1], "pre"):
+            if hasattr(self.__elements[i - 1], "pre"):
                 self.__elements[i].pre = self.__elements[i - 1]
 
 
@@ -1305,11 +1324,11 @@ class FeatureSequence(Line):
         for obj in lines:
             if obj.direction is direction:
                 if len(features) >= 3:
-                    l, m, r = features[-3], features[-2], features[-1]
-                    shape, (lm, mr) = triple_relation(l, m, r, use_right=True, ignore=True)
-                    if (direction is Direction.Up and shape is Shape.G and obj.high > m.high) or (direction is Direction.Down and shape is Shape.D and obj.low < m.low):
-                        start = min(m.elements, key=lambda o: o.index)
-                        end = max(r.elements, key=lambda o: o.index)
+                    left, mid, right = features[-3], features[-2], features[-1]
+                    shape, (_, _) = triple_relation(left, mid, right, use_right=True, ignore=True)
+                    if (direction is Direction.Up and shape is Shape.G and obj.high > mid.high) or (direction is Direction.Down and shape is Shape.D and obj.low < mid.low):
+                        start = min(mid.elements, key=lambda o: o.index)
+                        end = max(right.elements, key=lambda o: o.index)
                         elements = lines[lines.index(start) : lines.index(end) + 1]
                         fake = Line(start.start, end.end, 0, elements, f"Fake-{start.stamp}")
                         feature = FeatureSequence({fake})
@@ -1929,7 +1948,6 @@ class Duan(Line):
 
     def update(self, lines: List[Line]) -> bool:
         assert self.done is True, (self, self.features)
-        size = len(self.elements)
         i = self.elements[-1].index
         while 1:
             try:
@@ -2039,7 +2057,6 @@ class Duan(Line):
 
         else:
             last = xds[-1]
-            elements = last.get_elements()
             while 1:
                 try:
                     index = lines.index(last.elements[-1]) + 1
