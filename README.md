@@ -11,6 +11,7 @@ uvicorn chan:app --reload --port 8080
 
 ![image](output.gif)
 随机数据 http://127.0.0.1:8080/?step=300&limit=5500&symbol=btcusd&generator=True
+
 远程邮局 数据 http://127.0.0.1:8080/?step=300&limit=5500&symbol=btcusd
 #### 💌 支持作者
 
