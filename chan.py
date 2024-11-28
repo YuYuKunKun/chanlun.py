@@ -351,6 +351,13 @@ class Direction(Enum):
             case _:
                 return False
 
+    def is_nexts(self):
+        match self:
+            case Direction.NextUp | Direction.NextDown:
+                return True
+            case _:
+                return False
+
     @staticmethod
     def generator(obj: int | list, directions):
         if type(obj) is int:
@@ -471,12 +478,12 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
     match (lm, mr):
         case (Direction.Left, _):
             if ignore:
-                print("顺序包含 lm", left, mid)
+                ...  # print("顺序包含 lm", left, mid)
             else:
                 raise ChanException("顺序包含 lm", left, mid)
         case (_, Direction.Left):
             if ignore:
-                print("顺序包含 mr", mid, right)
+                ...  # print("顺序包含 mr", mid, right)
             else:
                 raise ChanException("顺序包含 mr", mid, right)
 
@@ -504,7 +511,7 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
             print("未匹配的关系", use_right, lm, mr)
 
     if shape is None:
-        print(colored("triple_relation: ", "red"), shape, (lm, mr), left, mid, right)
+        ...  # print(colored("triple_relation: ", "red"), shape, (lm, mr), left, mid, right)
 
     return shape, (lm, mr)
 
@@ -854,7 +861,7 @@ class NewBar(RawBar):
         raw_index: int,
         pre: Optional["NewBar"] = None,
     ):
-        assert high > low
+        assert high >= low
         if direction == Direction.Down:
             close = low
             _open = high
@@ -1444,6 +1451,29 @@ class ZhongShu:
     def end(self) -> FenXing:
         return self.elements[-1].end
 
+    @property
+    def last(self) -> Line:
+        return self.elements[-1]
+
+    def update(self, lines: List[Line]) -> bool:
+        i = self.elements[-1].index
+
+        while 1:
+            try:
+                lines.index(self.elements[-1])
+                break
+            except ValueError:
+                drop = Line.pop(self.elements, self.elements[-1])
+
+        fixed = False
+        for line in lines:
+            if self.elements[-1].is_next(line):
+                self.elements.append(line)
+                fixed = True
+                if line.index == i:
+                    break
+        return fixed
+
     def check(self) -> bool:
         return double_relation(self.left, self.right) in (
             Direction.Down,
@@ -1466,8 +1496,7 @@ class ZhongShu:
                 raise ChanException()
         zss.append(zs)
         zsdp(f"ZhongShu.append: {zs}")
-        if observer:
-            observer.notify(zs, Command.Append(zs.stamp + "_zs"))
+        observer and observer.notify(zs, Command.Append(zs.stamp + "_zs"))
 
     @classmethod
     def pop(cls, zss: List["ZhongShu"], zs: "ZhongShu", observer: Observer) -> Optional["ZhongShu"]:
@@ -1475,8 +1504,7 @@ class ZhongShu:
             return
         if zss[-1] is zs:
             zsdp(f"ZhongShu.pop: {zs}")
-            if observer:
-                observer.notify(zs, Command.Remove(zs.stamp + "_zs"))
+            observer and observer.notify(zs, Command.Remove(zs.stamp + "_zs"))
             return zss.pop()
 
     @classmethod
@@ -1485,7 +1513,7 @@ class ZhongShu:
             return ZhongShu(elements[1], elements)
 
     @classmethod
-    def analyzer(cls, lines: List[Line], zss: List["ZhongShu"], observer: Observer):
+    def analyzer(cls, lines: List[Line], zss: List["ZhongShu"], observer: Optional[Observer]):
         if not lines:
             return
 
@@ -1517,7 +1545,7 @@ class ZhongShu:
                 if not double_relation(last, last.third).is_jump():
                     last.elements.append(last.third)
                     last.third = None
-                    observer.notify(last, Command.Modify(last.stamp))
+                    observer and observer.notify(last, Command.Modify(last.stamp))
 
             while 1:
                 try:
@@ -1526,7 +1554,7 @@ class ZhongShu:
                 except ValueError:
                     if len(last.elements) > 3:
                         last.elements.pop()
-                        observer.notify(last, Command.Modify(last.stamp))
+                        observer and observer.notify(last, Command.Modify(last.stamp))
                     else:
                         cls.pop(zss, last, observer)
                         return cls.analyzer(lines, zss, observer)
@@ -1540,7 +1568,7 @@ class ZhongShu:
                 else:
                     if not elements:
                         last.elements.append(hl)
-                        observer.notify(last, Command.Modify(last.stamp))
+                        observer and observer.notify(last, Command.Modify(last.stamp))
                     else:
                         elements.append(hl)
 
@@ -1699,8 +1727,7 @@ class Bi(Line):
                 assert bi_.end is tmp_, "最后一笔终点错误"
                 if _from == "analyzer":
                     bdp(f"Bi. pop: {bi_}")
-                    if observer:
-                        observer.notify(bi_, Command.Remove("Bi"))
+                    observer and observer.notify(bi_, Command.Remove("Bi"))
 
         last = fxs[-1]
 
@@ -1740,8 +1767,7 @@ class Bi(Line):
                     Line.append(bis, bi)
                     if _from == "analyzer":
                         bdp(f"Bi. append: {bi}")
-                        if observer:
-                            observer.notify(bi, Command.Append("Bi"))
+                        observer and observer.notify(bi, Command.Append("Bi"))
                 else:
                     # 2024 05 21 修正
                     if len(fxs) < 3:
@@ -1830,8 +1856,7 @@ class Bi(Line):
                 Line.append(bis, bi)
                 if _from == "analyzer":
                     bdp(f"Bi. append: {bi}")
-                    if observer:
-                        observer.notify(bi, Command.Append("Bi"))
+                    observer and observer.notify(bi, Command.Append("Bi"))
 
         elif (last.shape is Shape.G and fx.shape is Shape.X) or (last.shape is Shape.D and fx.shape is Shape.S):
             ...
@@ -1943,8 +1968,7 @@ class Duan(Line):
     def clear_features(self):
         for feature in self.features:
             if feature is not None:
-                if self.observer is not None:
-                    self.observer.notify(feature, Command.Remove(feature.stamp))
+                self.observer and self.observer.notify(feature, Command.Remove(feature.stamp))
 
     def update(self, lines: List[Line]) -> bool:
         assert self.done is True, (self, self.features)
@@ -2052,7 +2076,7 @@ class Duan(Line):
                     continue
                 duan = Duan.new([left, mid, right], observer)
                 Line.append(xds, duan)
-                observer.notify(duan, Command.Append(duan.stamp))
+                observer and observer.notify(duan, Command.Append(duan.stamp))
                 return Duan.analyzer(lines, xds, observer)
 
         else:
@@ -2068,7 +2092,7 @@ class Duan(Line):
                     if not last.elements:
                         print("Duan.analyzer 无法找到", last)
                         if Line.pop(xds, last) is not None:
-                            observer.notify(last, Command.Remove(last.stamp))
+                            observer and observer.notify(last, Command.Remove(last.stamp))
                             last.clear_features()
                         return Duan.analyzer(lines, xds, observer)
             duan = last
@@ -2081,29 +2105,29 @@ class Duan(Line):
                     if not last.update(lines):
                         # print("异常", last)
                         Line.pop(xds, duan)
-                        observer.notify(duan, Command.Remove(duan.stamp))
+                        observer and observer.notify(duan, Command.Remove(duan.stamp))
                         duan.clear_features()
                         return Duan.analyzer(lines, xds, observer)
 
                 if last and last.gap and len(duan.elements) == 3:
                     if (last.direction is Direction.Up and line.high > last.high) or (last.direction is Direction.Down and line.low < last.low):
                         Line.pop(xds, duan)
-                        observer.notify(duan, Command.Remove(duan.stamp))
+                        observer and observer.notify(duan, Command.Remove(duan.stamp))
                         duan.clear_features()
                         last.add_element(line)
-                        observer.notify(last, Command.Modify(last.stamp))
+                        observer and observer.notify(last, Command.Modify(last.stamp))
                         # print("修正")
                         duan = last
                         continue
 
                 duan.add_element(line)
-                observer.notify(duan, Command.Modify(duan.stamp))
+                observer and observer.notify(duan, Command.Modify(duan.stamp))
                 if duan.done:
                     elements = duan.get_next_elements()
                     duan.clear_features()
                     for feature in duan.features:
                         if feature is not None:
-                            observer.notify(feature, Command.Append(feature.stamp))
+                            observer and observer.notify(feature, Command.Append(feature.stamp))
 
                     if duan.direction is Direction.Up:
                         fx = "顶分型"
@@ -2115,19 +2139,19 @@ class Duan(Line):
                     if size >= 3:
                         duan = Duan.new(elements[:3], observer)
                         Line.append(xds, duan)
-                        observer.notify(duan, Command.Append(duan.stamp))
+                        observer and observer.notify(duan, Command.Append(duan.stamp))
                         for feature in duan.features:
                             if feature is not None:
-                                observer.notify(feature, Command.Append(feature.stamp))
+                                observer and observer.notify(feature, Command.Append(feature.stamp))
 
                         return Duan.analyzer(lines, xds, observer)
 
                     duan = Duan.new(elements, observer)
                     Line.append(xds, duan)
-                    observer.notify(duan, Command.Append(duan.stamp))
+                    observer and observer.notify(duan, Command.Append(duan.stamp))
                     for feature in duan.features:
                         if feature is not None:
-                            observer.notify(feature, Command.Append(feature.stamp))
+                            observer and observer.notify(feature, Command.Append(feature.stamp))
 
 
 class BaseAnalyzer(Observer):
