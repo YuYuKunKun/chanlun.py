@@ -98,9 +98,9 @@ from termcolor import colored
 
 10、盘整：最近一个高点比前一高点高，且最近一个低点比前一低点低；或者最近一个高点比前一高点低，且最近一个低点比前一低点高。（15课）
 
-11、缠中说禅趋势力度：前一“吻”的结束与后一“吻”开始由短线均线与长期均线相交所形成的面积。在前后两个同向趋势中,当缠中说禅趋势力度比上一次缠中说禅趋势力度要弱，就形成“背驰”。 （15课）
+11、缠中说禅趋势力度：前一"吻"的结束与后一"吻"开始由短线均线与长期均线相交所形成的面积。在前后两个同向趋势中,当缠中说禅趋势力度比上一次缠中说禅趋势力度要弱，就形成"背驰"。 （15课）
 
-12、缠中说禅趋势平均力度：当下与前一“吻”的结束时短线均线与长期均线形成的面积除以时间。（15课）
+12、缠中说禅趋势平均力度：当下与前一"吻"的结束时短线均线与长期均线形成的面积除以时间。（15课）
 
 二、基本定义
 1、走势：打开走势图看到的就是走势。走势分不同级别。（17课回复、18课）
@@ -111,7 +111,7 @@ from termcolor import colored
 
 4、缠中说禅走势中枢：某级别走势类型中，被至少三个连续次级别走势类型所重叠的部分，称为缠中说禅走势中枢。换言之，缠中说禅走势中枢就是至少三个连续次级别走势类型重叠部分所构成。（18课）
 
-在实际之中，对最后不能分解的级别，其缠中说禅走势中枢就不能用“至少三个连续次级别走势类型所重叠”定义，而定义为至少三个该级别单位K线重叠部分。（17课）
+在实际之中，对最后不能分解的级别，其缠中说禅走势中枢就不能用"至少三个连续次级别走势类型所重叠"定义，而定义为至少三个该级别单位K线重叠部分。（17课）
 
 5、缠中说禅盘整：在任何级别的任何走势中，某完成的走势类型只包含一个缠中说禅走势中枢，就称为该级别的缠中说禅盘整。（17课）
 
@@ -125,7 +125,7 @@ from termcolor import colored
 2、缠中说禅技术分析基本原理二：任何级别任何完成的走势类型，必然包含一个以上的缠中说禅走势中枢。（17课）
 
 四、走势分解定理、原则
-1、缠中说禅走势分解定理一：任何级别的任何走势，都可以分解成同级别“盘整”、“下跌”与“上涨”三种走势类型的连接。（17课）
+1、缠中说禅走势分解定理一：任何级别的任何走势，都可以分解成同级别"盘整"、"下跌"与"上涨"三种走势类型的连接。（17课）
 
 2、缠中说禅走势分解定理二：任何级别的任何走势类型，都至少由三段以上次级别走势类型构成。（17课）
 
@@ -136,11 +136,11 @@ from termcolor import colored
 5、缠中说禅笔定理：任何的当下，在任何时间周期的K线图中，走势必然落在一确定的具有明确方向的笔当中（向上笔或向下笔），而在笔当中的位置，必然只有两种情况：一、在分型构造中。二、分型构造确认后延伸为笔的过程中。（91课）
 
 五、走势中枢、走势中枢中心相关定理
-1、缠中说禅走势中枢定理一：在趋势中，连接两个同级别“缠中说禅走势中枢”的必然是次级别以下级别的走势类型。（18课）
+1、缠中说禅走势中枢定理一：在趋势中，连接两个同级别"缠中说禅走势中枢"的必然是次级别以下级别的走势类型。（18课）
 
-2、缠中说禅走势中枢定理二：在盘整中，无论是离开还是返回“缠中说禅走势中枢”的走势类型必然是次级别以下的。（18课）
+2、缠中说禅走势中枢定理二：在盘整中，无论是离开还是返回"缠中说禅走势中枢"的走势类型必然是次级别以下的。（18课）
 
-3、缠中说禅走势中枢定理三：某级别“缠中说禅走势中枢”的破坏，当且仅当一个次级别走势离开该“缠中说禅走势中枢”后，其后的次级别回抽走势不重新回到该“缠中说禅走势中枢”内。（18课）
+3、缠中说禅走势中枢定理三：某级别"缠中说禅走势中枢"的破坏，当且仅当一个次级别走势离开该"缠中说禅走势中枢"后，其后的次级别回抽走势不重新回到该"缠中说禅走势中枢"内。（18课）
 
 4、缠中说禅走势中枢中心定理一：走势中枢的延伸等价于任意区间[dn，gn]与[ZD，ZG]有重叠。换言之，若有Zn，使得dn>ZG或gn<ZD，则必然产生高级别的走势中枢或趋势及延续。其中GG=max(gn)，G=min(gn)，D=max(dn)，DD=min(dn)，ZG=min(g1，g2)，ZD=max(d1，d2)。（20课）
 
@@ -187,7 +187,7 @@ from termcolor import colored
 （还有一种更激进的操作方法，就是不断换股，也就是不参与中枢震荡，只在第三类买点买入，一旦形成新中枢就退出。例如操作级别是30分钟，那么中枢完成向上时一旦出现一个5分钟向下级别后下一个向上的5分钟级别走势不能创新高或出现背驰或盘整背驰，那么一定要抛出，为什么？因为后面一定会出现一个新的30分钟中枢，用这种方法，往往会抛在该级别向上走势的最高点区间。当然，实际上能否达到，那是技术精度的问题，是需要干多了才能干好的。）（49课）
 
 八、补充回复中的定律
-1、缠中说禅定律：任何非盘整性的转折性上涨，都是在某一级别的“下跌+盘整+下跌”后形成的。下跌反之。（16课回复）
+1、缠中说禅定律：任何非盘整性的转折性上涨，都是在某一级别的"下跌+盘整+下跌"后形成的。下跌反之。（16课��复）
 
 2、缠中说缠的MACD定律：第一类买点都是在0轴之下背驰形成的，第二类买点都是第一次上0轴后回抽确认形成的。卖点的情况就反过来。
 
@@ -458,7 +458,7 @@ def double_relation(left: SupportsHL, right: SupportsHL) -> Direction:
     return relation
 
 
-def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_right: bool = False, ignore: bool = False) -> tuple[Optional[Shape], tuple[Direction, Direction]]:
+def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_right: bool = False, ignore: bool = False) -> tuple[Optional[Shape], tuple[Direction, Direction], Optional[Pillar]]:
     """
     三棵缠论k线的所有关系#, 允许逆序包含存在。
     顶分型: 中间高点为三棵最高点。
@@ -470,6 +470,13 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
     """
     if any((left == mid, mid == right, left == right)):
         raise ChanException("相同对象无法比较")
+
+    zg = min(left.high, mid.high, right.high)
+    zd = max(left.low, mid.low, right.low)
+    if zg > zd:
+        pillar = Pillar(high=zg, low=zd)
+    else:
+        pillar = None
 
     shape = None
     lm = double_relation(left, mid)
@@ -513,7 +520,7 @@ def triple_relation(left: SupportsHL, mid: SupportsHL, right: SupportsHL, use_ri
     if shape is None:
         ...  # print(colored("triple_relation: ", "red"), shape, (lm, mr), left, mid, right)
 
-    return shape, (lm, mr)
+    return shape, (lm, mr), pillar
 
 
 class Command:
@@ -1041,11 +1048,11 @@ class FenXing:
         return f"FenXing({self.shape}, {self.speck}, {self.dt})"
 
     def get_shape(self) -> Shape:
-        shape, (_, _) = triple_relation(self.left, self.mid, self.right)
+        shape, (_, _), _ = triple_relation(self.left, self.mid, self.right)
         return shape
 
     def get_relations(self) -> (Direction, Direction):
-        _, (lm, mr) = triple_relation(self.left, self.mid, self.right)
+        _, (lm, mr), _ = triple_relation(self.left, self.mid, self.right)
         return lm, mr
 
     @staticmethod
@@ -1332,7 +1339,7 @@ class FeatureSequence(Line):
             if obj.direction is direction:
                 if len(features) >= 3:
                     left, mid, right = features[-3], features[-2], features[-1]
-                    shape, (_, _) = triple_relation(left, mid, right, use_right=True, ignore=True)
+                    shape, (_, _), _ = triple_relation(left, mid, right, use_right=True, ignore=True)
                     if (direction is Direction.Up and shape is Shape.G and obj.high > mid.high) or (direction is Direction.Down and shape is Shape.D and obj.low < mid.low):
                         start = min(mid.elements, key=lambda o: o.index)
                         end = max(right.elements, key=lambda o: o.index)
@@ -1463,7 +1470,7 @@ class ZhongShu:
                 lines.index(self.elements[-1])
                 break
             except ValueError:
-                drop = Line.pop(self.elements, self.elements[-1])
+                _ = Line.pop(self.elements, self.elements[-1])
 
         fixed = False
         for line in lines:
@@ -1508,9 +1515,9 @@ class ZhongShu:
             return zss.pop()
 
     @classmethod
-    def new(cls, elements: List) -> Optional["ZhongShu"]:
+    def new(cls, elements: List[Line]) -> Optional["ZhongShu"]:
         if Interval.new(elements) is not None:
-            return ZhongShu(elements[1], elements)
+            return ZhongShu(elements[1].direction, elements)
 
     @classmethod
     def analyzer(cls, lines: List[Line], zss: List["ZhongShu"], observer: Optional[Observer]):
@@ -2367,7 +2374,7 @@ class BaseAnalyzer(Observer):
         except ValueError:
             return
 
-        (shape, _) = triple_relation(left, mid, right)
+        (shape, _, _) = triple_relation(left, mid, right)
         mid.shape = shape
         fx = FenXing(left, mid, right)
         if self.ws is not None and self.config.ANALYZER_SHON_TV:
@@ -2471,7 +2478,7 @@ class Generator(BaseAnalyzer):
         except ValueError:
             return
 
-        (shape, _) = triple_relation(left, mid, right)
+        (shape, _, _) = triple_relation(left, mid, right)
         mid.shape = shape
         fx = FenXing(left, mid, right)
         if self.ws is not None and self.config.ANALYZER_SHON_TV:
