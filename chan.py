@@ -38,7 +38,7 @@ from enum import Enum
 from random import randint, choice
 from pathlib import Path
 from threading import Thread
-from functools import wraps
+from functools import wraps, lru_cache
 from typing import List, Self, Optional, Tuple, final, Dict, Any, Set, Final, SupportsInt, Union
 from abc import ABCMeta, abstractmethod
 
@@ -48,159 +48,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from termcolor import colored
 
-"""
-2	3	5	7	11	13	17	19	23	29	31	37	41	43	47	53	59	61	67	71
-73	79	83	89	97	101	103	107	109	113	127	131	137	139	149	151	157	163	167	173
-179	181	191	193	197	199	211	223	227	229	233	239	241	251	257	263	269	271	277	281
-283	293	307	311	313	317	331	337	347	349	353	359	367	373	379	383	389	397	401	409
-419	421	431	433	439	443	449	457	461	463	467	479	487	491	499	503	509	521	523	541
-547	557	563	569	571	577	587	593	599	601	607	613	617	619	631	641	643	647	653	659
-661	673	677	683	691	701	709	719	727	733	739	743	751	757	761	769	773	787	797	809
-811	821	823	827	829	839	853	857	859	863	877	881	883	887	907	911	919	929	937	941
-947	953	967	971	977	983	991	997	1009	1013	1019	1021	1031	1033	1039	1049	1051	1061	1063	1069
-1087	1091	1093	1097	1103	1109	1117	1123	1129	1151	1153	1163	1171	1181	1187	1193	1201	1213	1217	1223
-1229	1231	1237	1249	1259	1277	1279	1283	1289	1291	1297	1301	1303	1307	1319	1321	1327	1361	1367	1373
-1381	1399	1409	1423	1427	1429	1433	1439	1447	1451	1453	1459	1471	1481	1483	1487	1489	1493	1499	1511
-1523	1531	1543	1549	1553	1559	1567	1571	1579	1583	1597	1601	1607	1609	1613	1619	1621	1627	1637	1657
-1663	1667	1669	1693	1697	1699	1709	1721	1723	1733	1741	1747	1753	1759	1777	1783	1787	1789	1801	1811
-1823	1831	1847	1861	1867	1871	1873	1877	1879	1889	1901	1907	1913	1931	1933	1949	1951	1973	1979	1987
-1993	1997	1999	2003	2011	2017	2027	2029	2039	2053	2063	2069	2081	2083	2087	2089	2099	2111	2113	2129
-2131	2137	2141	2143	2153	2161	2179	2203	2207	2213	2221	2237	2239	2243	2251	2267	2269	2273	2281	2287
-2293	2297	2309	2311	2333	2339	2341	2347	2351	2357	2371	2377	2381	2383	2389	2393	2399	2411	2417	2423
-2437	2441	2447	2459	2467	2473	2477	2503	2521	2531	2539	2543	2549	2551	2557	2579	2591	2593	2609	2617
-2621	2633	2647	2657	2659	2663	2671	2677	2683	2687	2689	2693	2699	2707	2711	2713	2719	2729	2731	2741
-2749	2753	2767	2777	2789	2791	2797	2801	2803	2819	2833	2837	2843	2851	2857	2861	2879	2887	2897	2903
-2909	2917	2927	2939	2953	2957	2963	2969	2971	2999	3001	3011	3019	3023	3037	3041	3049	3061	3067	3079
-3083	3089	3109	3119	3121	3137	3163	3167	3169	3181	3187	3191	3203	3209	3217	3221	3229	3251	3253	3257
-3259	3271	3299	3301	3307	3313	3319	3323	3329	3331	3343	3347	3359	3361	3371	3373	3389	3391	3407	3413
-3433	3449	3457	3461	3463	3467	3469	3491	3499	3511	3517	3527	3529	3533	3539	3541	3547	3557	3559	3571
-"""
 
-"""
-一、为引申出基本定义的引子概念与定义
-1、飞吻：短期均线略略走平后继续按原来趋势进行下去。（14课）
-
-2、唇吻：短期均线靠近长期均线但不跌破或升破，然后按原来趋势继续下去。（14课）
-
-3、湿吻：短期均线跌破或升破长期均线甚至出现反复缠绕，如胶似漆。（14课）
-
-4、女上位：短期均线在长期均线之上。（14课）
-
-5、男上位：短期均线在长期均线之下。（14课）
-
-6、第一类买点：用比较形象的语言描述就是由男上位最后一吻后出现的背驰式下跌构成。（14课）
-
-7、第二类买点：女上位第一吻后出现的下跌构成。（14课）
-
-8、上涨：最近一个高点比前一高点高，且最近一个低点比前一低点高。（15课）
-
-9、下跌：最近一个高点比前一高点低，且最近一个低点比前一低点低。（15课）
-
-10、盘整：最近一个高点比前一高点高，且最近一个低点比前一低点低；或者最近一个高点比前一高点低，且最近一个低点比前一低点高。（15课）
-
-11、缠中说禅趋势力度：前一"吻"的结束与后一"吻"开始由短线均线与长期均线相交所形成的面积。在前后两个同向趋势中,当缠中说禅趋势力度比上一次缠中说禅趋势力度要弱，就形成"背驰"。 （15课）
-
-12、缠中说禅趋势平均力度：当下与前一"吻"的结束时短线均线与长期均线形成的面积除以时间。（15课）
-
-二、基本定义
-1、走势：打开走势图看到的就是走势。走势分不同级别。（17课回复、18课）
-
-2、走势类型：上涨、下跌、盘整。（17课回复、18课）
-
-3、趋势：上涨、下跌。（17课回复、18课）
-
-4、缠中说禅走势中枢：某级别走势类型中，被至少三个连续次级别走势类型所重叠的部分，称为缠中说禅走势中枢。换言之，缠中说禅走势中枢就是至少三个连续次级别走势类型重叠部分所构成。（18课）
-
-在实际之中，对最后不能分解的级别，其缠中说禅走势中枢就不能用"至少三个连续次级别走势类型所重叠"定义，而定义为至少三个该级别单位K线重叠部分。（17课）
-
-5、缠中说禅盘整：在任何级别的任何走势中，某完成的走势类型只包含一个缠中说禅走势中枢，就称为该级别的缠中说禅盘整。（17课）
-
-6、缠中说禅趋势：在任何级别的任何走势中，某完成的走势类型至少包含两个以上依次同向的缠中说禅走势中枢，就称为该级别的缠中说禅趋势。该方向向上就称为上涨，向下就称为下跌。（17课）
-
-在趋势里，同级别的前后缠中说禅走势中枢是不能有任何重叠的，这包括任何围绕走势中枢产生的任何瞬间波动之间的重叠。（20课）
-
-三、技术分析基本原理
-1、缠中说禅技术分析基本原理一：任何级别的任何走势类型终要完成。（17课）
-
-2、缠中说禅技术分析基本原理二：任何级别任何完成的走势类型，必然包含一个以上的缠中说禅走势中枢。（17课）
-
-四、走势分解定理、原则
-1、缠中说禅走势分解定理一：任何级别的任何走势，都可以分解成同级别"盘整"、"下跌"与"上涨"三种走势类型的连接。（17课）
-
-2、缠中说禅走势分解定理二：任何级别的任何走势类型，都至少由三段以上次级别走势类型构成。（17课）
-
-3、缠中说禅走势类型分解原则：一个某级别的走势类型中，不可能出现比该级别更大的中枢，一旦出现，就证明这不是一个某级别的走势类型，而是更大级别走势类型的一部分或几个该级别走势类型的连接。（43课）
-
-4、缠中说禅线段分解定理：线段被破坏，当且仅当至少被有重叠部分的连续三笔的其中一笔破坏。而只要构成有重叠部分的前三笔，那么必然会形成一线段，换言之，线段破坏的充要条件，就是被另一个线段破坏。（65课）
-
-5、缠中说禅笔定理：任何的当下，在任何时间周期的K线图中，走势必然落在一确定的具有明确方向的笔当中（向上笔或向下笔），而在笔当中的位置，必然只有两种情况：一、在分型构造中。二、分型构造确认后延伸为笔的过程中。（91课）
-
-五、走势中枢、走势中枢中心相关定理
-1、缠中说禅走势中枢定理一：在趋势中，连接两个同级别"缠中说禅走势中枢"的必然是次级别以下级别的走势类型。（18课）
-
-2、缠中说禅走势中枢定理二：在盘整中，无论是离开还是返回"缠中说禅走势中枢"的走势类型必然是次级别以下的。（18课）
-
-3、缠中说禅走势中枢定理三：某级别"缠中说禅走势中枢"的破坏，当且仅当一个次级别走势离开该"缠中说禅走势中枢"后，其后的次级别回抽走势不重新回到该"缠中说禅走势中枢"内。（18课）
-
-4、缠中说禅走势中枢中心定理一：走势中枢的延伸等价于任意区间[dn，gn]与[ZD，ZG]有重叠。换言之，若有Zn，使得dn>ZG或gn<ZD，则必然产生高级别的走势中枢或趋势及延续。其中GG=max(gn)，G=min(gn)，D=max(dn)，DD=min(dn)，ZG=min(g1，g2)，ZD=max(d1，d2)。（20课）
-
-5、缠中说禅走势中枢中心定理二：前后同级别的两个缠中说禅走势中枢，后GG<前DD等价于下跌及其延续；后DD>前GG等价于上涨及其延续。后ZG<前ZD且后GG≥前DD，或后ZD>前ZG且后DD≤前GG，则等价于形成高级别的走势中枢。（20课）
-
-六、走势级别延续定理
-1、缠中说禅走势级别延续定理一：在更大级别缠中说禅走势中枢产生前，该级别走势类型将延续。也就是说，只能是只具有该级别缠中说禅走势中枢的盘整或趋势的延续。（20课）
-
-2、缠中说禅走势级别延续定理二：更大级别缠中说禅走势中枢产生，当且仅当围绕连续两个同级别缠中说禅走势中枢产生的波动区间产生重叠。（20课）
-
-七、买卖点相关定理、定律和程序
-1、缠中说禅短差程序：大级别买点介入的，在次级别第一类卖点出现时，可以先减仓，其后在次级别第一类买点出现时回补。（14课）
-
-2、缠中说禅买卖点定律一：任何级别的第二类买卖点都由次级别相应走势的第一类买卖点构成。（17课）
-
-3、第三类买卖点定理：一个次级别走势类型向上离开缠中说禅走势中枢，然后以一个次级别走势类型回试，其低点不跌破ZG，则构成了第三类买点；
-
-一个次级别走势类型向下离开缠中说禅走势中枢，然后以一个次级别走势类型回抽，其高点不升破ZD，则构成第三类卖点。（20课）
-
-（而对于第三类买卖点，其意义就是对付中枢结束的，一个级别的中枢结束，无非面对两种情况，转成更大的中枢或上涨下跌直到形成新的该级别中枢。第三类买卖点就是告诉什么时候发生这种事情的，而在第二、三买卖点之间，都是中枢震荡，这时候，是不会有该级别的买卖点的，因此，如果参与其中的买卖，用的都是低级别的买卖点。）（53课）
-
-4、缠中说禅买卖点的完备性定理：市场必然产生赢利的买卖点，只有第一、二、三类。（21课）
-
-5、缠中说禅升跌完备性定理：市场中的任何向上与下跌，都必然从三类缠中说禅买卖点中的某一类开始以及结束。换言之，市场走势完全由这样的线段构成，线段的端点是某级别三类缠中说禅买卖点中的某一类。（21课）
-
-6、缠中说禅买卖点级别定理：大级别的买卖点必然是次级别以下某一级别的买卖点。（35课）
-
-7、缠中说禅背驰-买卖点定理：任一背驰都必然制造某级别的买卖点，任一级别的买卖点都必然源自某级别走势的背驰。（24课）
-
-8、缠中说禅精确大转折点寻找程序定理：某大级别的转折点，可以通过不同级别背驰段的逐级收缩范围而确定。（27课）
-
-9、缠中说禅趋势转折定律：任何级别的上涨转折都是由某级别的第一类卖点构成的；任何级别的下跌转折都是由某级别的第一类买点构成的。（17课）
-
-10、缠中说禅背驰-转折定理：某级别趋势的背驰将导致该趋势最后一个中枢的级别扩展、该级别更大级别的盘整或该级别以上级别的反趋势。（29课）
-
-11、缠中说禅小背驰-大转折定理：小级别顶背驰引发大级别向下的必要条件是该级别走势的最后一个次级别中枢出现第三类卖点；小级别底背驰引发大级别向上的必要条件是该级别走势的最后一个次级别中枢出现第三类买点。（44课）
-
-12、缠中说禅第一利润最大定理：对于任何固定交易品种，在确定的操作级别下，以上缠中说禅操作模式的利润率最大。
-
-（该模式的关键只参与确定操作级别的盘整与上涨，对盘整用中枢震荡方法处理，保证成本降低以及筹码不丢失（成本为0后是筹码增加，当然，对于小级别的操作，不会出现成本为0的情况），在中枢第三类买点后持股直到新中枢出现继续中枢震荡操作，中途不参与短差。最后，在中枢完成的向上移动出现背驰后抛出所有筹码，完成一次该级别的买卖操作，等待下一个买点出现。）（49课）
-
-13、缠中说禅第二利润最大定理：对于不同交易品种交易中，在确定的操作级别下，以上激进的缠中说禅操作模式的利润率最大。
-
-（还有一种更激进的操作方法，就是不断换股，也就是不参与中枢震荡，只在第三类买点买入，一旦形成新中枢就退出。例如操作级别是30分钟，那么中枢完成向上时一旦出现一个5分钟向下级别后下一个向上的5分钟级别走势不能创新高或出现背驰或盘整背驰，那么一定要抛出，为什么？因为后面一定会出现一个新的30分钟中枢，用这种方法，往往会抛在该级别向上走势的最高点区间。当然，实际上能否达到，那是技术精度的问题，是需要干多了才能干好的。）（49课）
-
-八、补充回复中的定律
-1、缠中说禅定律：任何非盘整性的转折性上涨，都是在某一级别的"下跌+盘整+下跌"后形成的。下跌反之。（16课��复）
-
-2、缠中说缠的MACD定律：第一类买点都是在0轴之下背驰形成的，第二类买点都是第一次上0轴后回抽确认形成的。卖点的情况就反过来。
-
-3、上升趋势形成的最精确定义，就是在第一中枢后出现第三类买点并形成非背驰类向上。（107课）
-
- 版权归属： v林羽
- 本文链接： https://blog.vlinyu.com/archives/chanlunjiexi-gainian-dingyi-yuanli-dingli
- 许可协议： 本文使用《署名-非商业性使用-相同方式共享 4.0 国际 (CC BY-NC-SA 4.0)》协议授权
-
-"""
-
-# __all__ = ["Line", "Bar", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
-SupportsHL = Union["Line", "NewBar", "RawBar", "Bi", "Duan", "ZhongShu", "FenXing", "Interval", "Pillar"]
+# __all__ = ["Line", "Bar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
+SupportsHL = Union["Line", "Bar", "Bi", "Duan", "ZhongShu", "FenXing", "Interval", "Pillar"]
 
 
 def timer(func):
@@ -248,6 +98,8 @@ class Freq(Enum):
 
 
 class Pillar:
+    __slots__ = "high", "low"
+
     def __init__(self, high: float, low: float):
         assert high > low
         self.high = high
@@ -351,7 +203,7 @@ class Direction(Enum):
             case _:
                 return False
 
-    def is_nexts(self):
+    def is_next(self):
         match self:
             case Direction.NextUp | Direction.NextDown:
                 return True
@@ -359,16 +211,11 @@ class Direction(Enum):
                 return False
 
     @staticmethod
-    def generator(obj: int | list, directions):
-        if type(obj) is int:
-            print(obj)
-            i: int = obj
-            while i >= 0:
-                yield choice(directions)
-                i -= 1
-        else:
-            for direction in obj:
-                yield direction
+    def generator(obj: int, directions):
+        i: int = obj
+        while i >= 0:
+            yield choice(directions)
+            i -= 1
 
 
 class ChanException(Exception):
@@ -427,6 +274,7 @@ def zsdp(*args, **kwargs):
         dp(*args, **kwargs)
 
 
+@lru_cache(maxsize=128)
 def double_relation(left: SupportsHL, right: SupportsHL) -> Direction:
     """
     两个带有[low, high]对象的所有关系
@@ -574,12 +422,28 @@ class ZShuCondition(Enum):
 
 @final
 class ChanConfig:
-    __slots__ = "ANALYZER_CALC_BI", "ANALYZER_CALC_BI_ZS", "ANALYZER_CALC_XD", "ANALYZER_CALC_XD_ZS", "ANALYZER_SHON_TV", "BI_EQUAL", "BI_FENGXING", "BI_JUMP", "BI_LENGTH", "MACD_FAST_PERIOD", "MACD_SIGNAL_PERIOD", "MACD_SLOW_PERIOD", "ANALYZER_CALC_MACD"
+    __slots__ = (
+        "ANALYZER_CALC_BI",
+        "ANALYZER_CALC_BI_ZS",
+        "ANALYZER_CALC_XD",
+        "ANALYZER_CALC_XD_ZS",
+        "ANALYZER_SHON_TV",
+        "BI_LASTorFIRST",
+        "BI_FENGXING",
+        "BI_JUMP",
+        "BI_JUMP_SCALE",
+        "BI_LENGTH",
+        "MACD_FAST_PERIOD",
+        "MACD_SIGNAL_PERIOD",
+        "MACD_SLOW_PERIOD",
+        "ANALYZER_CALC_MACD",
+    )
 
     def __init__(self):
         self.BI_LENGTH = 5  # 成BI最低长度
         self.BI_JUMP = True  # 跳空是否判定为 NewBar
-        self.BI_EQUAL = True  # True: 一笔终点存在多个终点时，取最后一个, False: 用max/min时只会取第一个值，会有这个情况 当首个出现时 小于[BI_LENGTH]而后个则大于[BI_LENGTH]但max/min函数不会取后一个. 例子: bitstamp btcusd 30m [2024-06-03 17:00]至[2024-06-05 01:00] 中 [NewBar(63, 2024-06-03 22:30:00, 69318.0, 68553.0, D, 2), NewBar(94, 2024-06-04 17:30:00, 68768.0, 68553.0, D, 1)]
+        self.BI_JUMP_SCALE = 0.15  # 当跳空是否判定为 NewBar时, 此值大于0时按照缺口所占比例判定是否为NewBar，等于0时直接判定为NerBar
+        self.BI_LASTorFIRST = True  # 一笔终点存在多个终点时 True: last, False: first
         self.BI_FENGXING = False  # True: 一笔起始分型高低包含整支笔对象则不成笔, False: 只判断分型中间数据是否包含
 
         self.ANALYZER_CALC_BI = True  # 是否计算BI
@@ -607,7 +471,7 @@ class MACD:
         self.signalperiod = signalperiod
 
     @classmethod
-    def calc(cls, pre: "RawBar", bar: "RawBar") -> Self:
+    def calc(cls, pre: "Bar", bar: "Bar") -> Self:
         value = bar.close
         _fast_ema = (2.0 * value + (pre.macd.fastperiod - 1.0) * pre.macd.fast_ema) / (pre.macd.fastperiod + 1.0)
         _slow_ema = (2.0 * value + (pre.macd.slowperiod - 1.0) * pre.macd.slow_ema) / (pre.macd.slowperiod + 1.0)
@@ -627,6 +491,422 @@ class Observer(metaclass=ABCMeta):
 
     @abstractmethod
     def notify(self, obj: Any, cmd: Command): ...
+
+
+class Bar:
+    __slots__ = "index", "dt", "open", "high", "low", "close", "volume", "direction", "__stamp", "macd", "shape", "_raw_start_index", "raw_end_index"
+
+    def __init__(self, dt: datetime, o: float, high: float, low: float, c: float, v: float, i: int, stamp: str):
+        self.index: int = i
+        self.dt: datetime = dt
+        self.open: float = o
+        self.high: float = high
+        self.low: float = low
+        self.close: float = c
+        self.volume: float = v
+        if self.open > self.close:
+            self.direction = Direction.Down
+        else:
+            self.direction = Direction.Up
+        self.__stamp = stamp
+        self.macd = MACD(c, c, 0.0, 0.0)
+
+        self.shape: Optional[Shape] = None
+        self._raw_start_index: int = i
+        self.raw_end_index: int = i
+
+    @property
+    def stamp(self) -> str:
+        return self.__stamp
+
+    @property
+    def speck(self) -> float:
+        if self.shape is Shape.G:
+            return self.high
+        elif self.shape is Shape.S:
+            return self.high
+        elif self.shape is Shape.D:
+            return self.low
+        elif self.shape is Shape.X:
+            return self.low
+        else:
+            print("NewBar.speck: shape is None")
+            return self.high
+
+    def __str__(self):
+        return f"{self.__class__.__name__}<{self.__stamp}>({self.dt}, {self.high}, {self.low}, index={self.index})"
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}<{self.__stamp}>({self.dt}, {self.high}, {self.low}, index={self.index})"
+
+    def __bytes__(self):
+        return struct.pack(
+            ">6d",
+            int(self.dt.timestamp()),
+            round(self.open, 8),
+            round(self.high, 8),
+            round(self.low, 8),
+            round(self.close, 8),
+            round(self.volume, 8),
+        )
+
+    def to_new_bar(self, pre) -> Self:
+        if self.stamp == "NewBar":
+            return self
+        return Bar.creat_new_bar_from_raw(self, pre)
+
+    @classmethod
+    def creat_new_bar_from_raw(cls, bar: Self, pre: Optional[Self] = None):
+        return cls.creat_new_bar(bar.dt, bar.high, bar.low, bar.direction, bar.volume, bar.index, pre=pre)
+
+    @classmethod
+    def creat_new_bar(
+        cls,
+        dt: datetime,
+        high: float,
+        low: float,
+        direction: Direction,
+        volume: float,
+        raw_index: int,
+        pre: Optional[Self] = None,
+    ):
+        assert high >= low
+        if direction == Direction.Down:
+            close = low
+            _open = high
+        else:
+            close = high
+            _open = low
+
+        if direction is Direction.Up:
+            shape = Shape.S
+        else:
+            shape = Shape.X
+
+        index = 0
+        nb = Bar(dt=dt, o=_open, high=high, low=low, c=close, v=volume, i=index, stamp="NewBar")
+        nb._raw_start_index = raw_index
+        nb.raw_end_index = raw_index
+        nb.shape = shape
+
+        if pre is not None:
+            nb.index = pre.index + 1
+
+            if double_relation(pre, nb).is_include():
+                raise ChanException(f"\n    {double_relation(pre, nb)}\n    {pre},\n    {nb}")
+        return nb
+
+    @classmethod
+    def creat_raw_bar(cls, dt: datetime, o: float, h: float, low: float, c: float, v: float, i: int) -> Self:
+        return cls(dt, o, h, low, c, v, i, "RawBar")
+
+    @classmethod
+    def bars_save_as_dat(cls, path: str, bars: List):
+        with open(path, "wb") as f:
+            for bar in bars:
+                f.write(bytes(bar))
+        print(f"Saved {len(bars)} bars to {path}")
+
+    @classmethod
+    def from_be_bytes(cls, buf: bytes, stamp: str = "RawBar") -> Self:
+        timestamp, open_, high, low, close, vol = struct.unpack(">6d", buf[: struct.calcsize(">6d")])
+        return cls(
+            dt=datetime.datetime.fromtimestamp(timestamp),
+            o=open_,
+            high=high,
+            low=low,
+            c=close,
+            v=vol,
+            i=0,
+            stamp=stamp,
+        )
+
+    @classmethod
+    def from_csv_file(cls, path: str, stamp: str = "RawBar") -> List[Self]:
+        raws: List = []
+        with open(path, "r") as f:
+            stamps = f.readline().split(",")
+            ts = stamps.index("timestamp")
+            o = stamps.index("open")
+            h = stamps.index("high")
+            low = stamps.index("low")
+            c = stamps.index("close")
+            v = stamps.index("volume")
+            i = 0
+            for line in f.readlines():
+                info = line.split(",")
+                rb = Bar(datetime.datetime.strptime(info[ts], "%Y-%m-%d %H:%M:%S"), float(info[o]), float(info[h]), float(info[low]), float(info[c]), float(info[v]), i, stamp)
+                raws.append(rb)
+                i += 1
+
+        return raws
+
+    @classmethod
+    def generate(cls, bar: "Bar", direction: Direction, seconds: int, half: bool = False) -> Self:
+        offset = datetime.timedelta(seconds=seconds)
+        dt: datetime = bar.dt + offset
+        volume: float = 998
+        raw_index: int = bar._raw_start_index + 1
+        high: float = 0
+        low: float = 0
+        d = bar.high - bar.low
+        match direction:
+            case Direction.Up:
+                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
+                low: float = bar.low + i
+                high: float = bar.high + i
+            case Direction.Down:
+                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
+                low: float = bar.low - i
+                high: float = bar.high - i
+            case Direction.JumpUp:
+                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
+                low: float = bar.low + i
+                high: float = bar.high + i
+            case Direction.JumpDown:
+                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
+                low: float = bar.low - i
+                high: float = bar.high - i
+            case Direction.NextUp:
+                i = bar.high - bar.low
+                high: float = bar.high + i
+                low: float = bar.high
+            case Direction.NextDown:
+                i = bar.high - bar.low
+                high: float = bar.low
+                low: float = bar.low - i
+
+        nb = Bar.creat_new_bar(dt, high, low, Direction.Up if direction.is_up() else Direction.Down, volume, raw_index, bar)
+        nb.index = bar.index + 1
+        assert double_relation(bar, nb) is direction, (direction, double_relation(bar, nb))
+        return nb
+
+    @classmethod
+    def merger(cls, pre: Optional[Self], bar: Self, next_raw_bar: Self) -> Optional[Self]:
+        if not double_relation(bar, next_raw_bar).is_include():
+            nb = next_raw_bar.to_new_bar(bar)
+            nb.index = bar.index + 1
+            return nb
+
+        if next_raw_bar.index - 1 != bar.raw_end_index:
+            raise ChanException(f"NewBar.merger: 不可追加不连续元素 bar.raw_end_index: {bar.raw_end_index}, next_raw_bar.index: {next_raw_bar.index}.")
+
+        direction = Direction.Up
+        if pre is not None:
+            if double_relation(pre, bar).is_down():
+                direction = Direction.Down
+
+        func = max
+        if direction is Direction.Down:
+            func = min
+        bar.high = func(bar.high, next_raw_bar.high)
+        bar.low = func(bar.low, next_raw_bar.low)
+        bar.open = bar.high if bar.direction is Direction.Down else bar.low
+        bar.close = bar.low if bar.direction is Direction.Down else bar.high
+        bar.raw_end_index = next_raw_bar.index
+
+        if pre is not None:
+            bar.index = pre.index + 1
+        return None
+
+
+class FenXing:
+    __slots__ = "index", "left", "mid", "right"
+
+    def __init__(self, left: Bar, mid: Bar, right: Bar, index: int = 0):
+        self.left = left
+        self.mid = mid
+        self.right = right
+        self.index = index
+
+    @property
+    def dt(self) -> datetime.datetime:
+        return self.mid.dt
+
+    @property
+    def shape(self) -> Shape:
+        return self.mid.shape
+
+    @property
+    def speck(self) -> float:
+        return self.mid.speck
+
+    @property
+    def high(self) -> float:
+        return max(self.left.high, self.mid.high)
+
+    @property
+    def low(self) -> float:
+        return min(self.left.low, self.mid.low)
+
+    def __str__(self):
+        return f"FenXing({self.shape}, {self.speck}, {self.dt})"
+
+    def __repr__(self):
+        return f"FenXing({self.shape}, {self.speck}, {self.dt})"
+
+    def get_shape(self) -> Shape:
+        shape, (_, _), _ = triple_relation(self.left, self.mid, self.right)
+        return shape
+
+    def get_relations(self) -> (Direction, Direction):
+        _, (lm, mr), _ = triple_relation(self.left, self.mid, self.right)
+        return lm, mr
+
+    @staticmethod
+    def get_fenxing(bars: List[Bar], mid: Bar) -> "FenXing":
+        index = bars.index(mid)
+        return FenXing(bars[index - 1], mid, bars[index + 1])
+
+    @staticmethod
+    def append(fxs, fx):
+        if fxs and fxs[-1].shape is fx.shape:
+            raise ChanException("分型相同无法添加", fxs[-1], fx)
+        i = 0
+        if fxs:
+            i = fxs[-1].index + 1
+        fx.index = i
+        fxs.append(fx)
+
+    @staticmethod
+    def pop(fxs, fx):
+        if fxs and fxs[-1] is not fx:
+            raise ChanException("分型相同无法删除", fxs[-1], fx)
+        return fxs.pop()
+
+
+class Line(metaclass=ABCMeta):
+    __slots__ = "pre", "next", "index", "__start", "__end", "__stamp", "__elements"
+
+    def __init__(self, start: FenXing, end: FenXing, index: int, elements: List | Set, stamp: str = "Line"):
+        self.index: int = index
+        self.pre: Optional[Self] = None
+        self.next: Optional[Self] = None
+        self.__start = start
+        self.__end = end
+        self.__stamp = stamp
+        self.__elements = elements
+
+    def __len__(self):
+        return len(self.elements)
+
+    def __iter__(self):
+        return iter(self.elements)
+
+    def __hash__(self):
+        return hash(f"{self.stamp} {self.start.mid}")
+
+    def __eq__(self, other):
+        return type(other) is self and self.stamp == other.stamp and self.start == other.start and self.end == other.end and self.elements == other.elements and self.index == other.index
+
+    @property
+    @final
+    def stamp(self) -> str:
+        return self.__stamp
+
+    @property
+    @final
+    def elements(self) -> List[Self]:
+        return self.__elements
+
+    @elements.setter
+    def elements(self, elements: List[Self]):
+        self.__elements = elements
+
+    @property
+    def start(self) -> FenXing:
+        return self.__start
+
+    @property
+    def end(self) -> FenXing:
+        return self.__end
+
+    @end.setter
+    @final
+    def end(self, end: FenXing):
+        self.__end = end
+
+    @property
+    @final
+    def direction(self) -> Direction:
+        if self.start.shape is Shape.G and self.end.shape is Shape.D:
+            return Direction.Down
+        elif self.start.shape is Shape.D and self.end.shape is Shape.G:
+            return Direction.Up
+        else:
+            raise ChanException(f"{self.stamp}.direction: {self.start.shape}, {self.end.shape}, {self.stamp}")
+
+    @property
+    def high(self) -> float:
+        if self.direction == Direction.Down:
+            return self.start.speck
+        else:
+            return self.end.speck
+
+    @property
+    def low(self) -> float:
+        if self.direction == Direction.Up:
+            return self.start.speck
+        else:
+            return self.end.speck
+
+    @property
+    def open(self) -> float:
+        if self.direction == Direction.Down:
+            return self.high
+        else:
+            return self.low
+
+    @property
+    def close(self) -> float:
+        if self.direction == Direction.Up:
+            return self.high
+        else:
+            return self.low
+
+    def is_previous(self, line: "Line") -> bool:
+        return line.end is self.start
+
+    def is_next(self, line: "Line") -> bool:
+        return self.end is line.start
+
+    def get_line(self) -> "Line":
+        return Line(self.start, self.end, self.index, self.elements, self.stamp)
+
+    def get_bars(self, bars: list) -> List[Bar]:
+        return bars[bars.index(self.start.mid) : bars.index(self.end.mid) + 1]
+
+    @classmethod
+    def append(cls, lines: List["Line"], line: "Line"):
+        if lines and not lines[-1].is_next(line):
+            raise ChanException("Line.append 不连续", lines[-1], line)
+
+        if lines:
+            line.index = lines[-1].index + 1
+            line.pre = lines[-1]
+            if len(lines) > 1:
+                lines[-2].next = lines[-1]
+
+        lines.append(line)
+
+    @classmethod
+    def pop(cls, lines: List["Line"], line: "Line") -> Optional["Line"]:
+        if not lines:
+            return
+
+        if lines[-1] is line:
+            drop = lines.pop()
+            return drop
+        raise ChanException("Line.pop 弹出数据不在列表中")
+
+    @classmethod
+    @final
+    def create(cls, obj: List | "Line", stamp: str) -> "Line":
+        if type(obj) is list:
+            lines: List["Line"] = obj[:]
+            return Line(lines[0].start, lines[-1].end, 0, lines, stamp)
+        line: "Line" = obj
+        return Line(line.start, line.end, 0, [line], stamp)
 
 
 class Interval:
@@ -748,467 +1028,6 @@ class Interval:
                         observer.notify(new, Command.Append("nb"))
                         last = new
                         elements.clear()
-
-
-class RawBar:
-    __slots__ = "__open", "high", "low", "__close", "volume", "dt", "index", "macd"
-
-    def __init__(self, dt: datetime, o: float, h: float, low: float, c: float, v: float, i: int):
-        self.dt: datetime = dt
-        self.__open: float = o
-        self.high: float = h
-        self.low: float = low
-        self.__close: float = c
-        self.volume: float = v
-        self.index: int = i
-        self.macd = MACD(c, c, 0.0, 0.0)
-
-    @property
-    def open(self) -> float:
-        return self.__open
-
-    @property
-    def close(self) -> float:
-        return self.__close
-
-    @open.setter
-    def open(self, v: float):
-        self.__open = v
-
-    @close.setter
-    def close(self, v: float):
-        self.__close = v
-
-    @property
-    def direction(self):
-        if self.open > self.close:
-            return Direction.Down
-        else:
-            return Direction.Up
-
-    def __str__(self):
-        return f"{self.__class__.__name__}({self.dt}, {self.high}, {self.low}, index={self.index})"
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.dt}, {self.high}, {self.low}, index={self.index})"
-
-    def __bytes__(self):
-        return struct.pack(
-            ">6d",
-            int(self.dt.timestamp()),
-            round(self.open, 8),
-            round(self.high, 8),
-            round(self.low, 8),
-            round(self.close, 8),
-            round(self.volume, 8),
-        )
-
-    def to_new_bar(self, pre) -> "NewBar":
-        return NewBar(
-            dt=self.dt,
-            high=self.high,
-            low=self.low,
-            direction=self.direction,
-            volume=self.volume,
-            raw_index=self.index,
-            pre=pre,
-        )
-
-    @classmethod
-    def bars_save_as_dat(cls, path: str, bars: List):
-        with open(path, "wb") as f:
-            for bar in bars:
-                f.write(bytes(bar))
-        print(f"Saved {len(bars)} bars to {path}")
-
-    @classmethod
-    def from_be_bytes(cls, buf: bytes) -> "RawBar":
-        timestamp, open_, high, low, close, vol = struct.unpack(">6d", buf[: struct.calcsize(">6d")])
-        return cls(
-            dt=datetime.datetime.fromtimestamp(timestamp),
-            o=open_,
-            h=high,
-            low=low,
-            c=close,
-            v=vol,
-            i=0,
-        )
-
-    @classmethod
-    def from_csv_file(cls, path: str) -> List["RawBar"]:
-        raws: List["RawBar"] = []
-        with open(path, "r") as f:
-            stamps = f.readline().split(",")
-            ts = stamps.index("timestamp")
-            o = stamps.index("open")
-            h = stamps.index("high")
-            low = stamps.index("low")
-            c = stamps.index("close")
-            v = stamps.index("volume")
-            i = 0
-            for line in f.readlines():
-                info = line.split(",")
-                rb = RawBar(datetime.datetime.strptime(info[ts], "%Y-%m-%d %H:%M:%S"), float(info[o]), float(info[h]), float(info[low]), float(info[c]), float(info[v]), i)
-                raws.append(rb)
-                i += 1
-
-        return raws
-
-
-class NewBar(RawBar):
-    __slots__ = "__shape", "__raw_start_index", "raw_end_index", "__direction"
-
-    def __init__(
-        self,
-        dt: datetime,
-        high: float,
-        low: float,
-        direction: Direction,
-        volume: float,
-        raw_index: int,
-        pre: Optional["NewBar"] = None,
-    ):
-        assert high >= low
-        if direction == Direction.Down:
-            close = low
-            _open = high
-        else:
-            close = high
-            _open = low
-        super().__init__(dt, _open, high, low, close, volume, 0)
-        self.__shape: Shape = Shape.S
-
-        if direction is Direction.Up:
-            self.__shape = Shape.S
-        else:
-            self.__shape = Shape.X
-
-        self.__raw_start_index: int = raw_index
-        self.raw_end_index: int = raw_index
-        self.__direction: Direction = direction
-
-        if pre is not None:
-            self.index = pre.index + 1
-
-            if double_relation(pre, self).is_include():
-                raise ChanException(f"\n    {double_relation(pre, self)}\n    {pre},\n    {self}")
-
-    def __str__(self):
-        return f"{self.__class__.__name__}({self.index}, {self.dt}, {self.high}, {self.low}, {self.shape})"
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.index}, {self.dt}, {self.high}, {self.low}, {self.shape})"
-
-    @property
-    def raw_start_index(self) -> int:
-        return self.__raw_start_index
-
-    @property
-    def timestamp(self) -> int:
-        return int(self.dt.timestamp())
-
-    @property
-    def direction(self) -> Direction:
-        return self.__direction
-
-    @property
-    def speck(self) -> float:
-        if self.shape is Shape.G:
-            return self.high
-        elif self.shape is Shape.S:
-            return self.high
-        elif self.shape is Shape.D:
-            return self.low
-        elif self.shape is Shape.X:
-            return self.low
-        else:
-            print("NewBar.speck: shape is None")
-            return self.high
-
-    @property
-    def shape(self) -> Optional[Shape]:
-        return self.__shape
-
-    @shape.setter
-    def shape(self, shape: Shape):
-        self.__shape = shape
-
-    @property
-    def open(self) -> float:
-        return self.high if self.direction == Direction.Down else self.low
-
-    @property
-    def close(self) -> float:
-        return self.low if self.direction == Direction.Down else self.high
-
-    @classmethod
-    def generate(cls, bar: "NewBar", direction: Direction, seconds: int, half: bool = False) -> Self:
-        offset = datetime.timedelta(seconds=seconds)
-        dt: datetime = bar.dt + offset
-        volume: float = 998
-        raw_index: int = bar.raw_start_index + 1
-        high: float = 0
-        low: float = 0
-        d = bar.high - bar.low
-        match direction:
-            case Direction.Up:
-                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
-                low: float = bar.low + i
-                high: float = bar.high + i
-            case Direction.Down:
-                i = d * 0.5 if half else randint(int(d * 0.1279), int(d * 0.883))
-                low: float = bar.low - i
-                high: float = bar.high - i
-            case Direction.JumpUp:
-                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
-                low: float = bar.low + i
-                high: float = bar.high + i
-            case Direction.JumpDown:
-                i = d * 1.5 if half else randint(int(d * 1.1279), int(d * 1.883))
-                low: float = bar.low - i
-                high: float = bar.high - i
-            case Direction.NextUp:
-                i = bar.high - bar.low
-                high: float = bar.high + i
-                low: float = bar.high
-            case Direction.NextDown:
-                i = bar.high - bar.low
-                high: float = bar.low
-                low: float = bar.low - i
-        nb = NewBar(dt, high, low, Direction.Up if direction.is_up() else Direction.Down, volume, raw_index, bar)
-        nb.index = bar.index + 1
-        assert double_relation(bar, nb) is direction, (direction, double_relation(bar, nb))
-        return nb
-
-    @classmethod
-    def get_fx(cls, bars: List["NewBar"], bar: "NewBar") -> "FenXing":
-        i = bars.index(bar)
-        return FenXing(bars[i - 1], bars[i], bars[i + 1])
-
-    @classmethod
-    def merger(cls, pre: Optional["NewBar"], bar: "NewBar", next_bar: RawBar) -> Optional["NewBar"]:
-        if not double_relation(bar, next_bar).is_include():
-            nb = next_bar.to_new_bar(bar)
-            nb.index = bar.index + 1
-            return nb
-
-        if next_bar.index - 1 != bar.raw_end_index:
-            raise ChanException(f"NewBar.merger: 不可追加不连续元素 bar.raw_end_index: {bar.raw_end_index}, next_bar.index: {next_bar.index}.")
-
-        direction = Direction.Up
-        if pre is not None:
-            if double_relation(pre, bar).is_down():
-                direction = Direction.Down
-
-        func = max
-        if direction is Direction.Down:
-            func = min
-        bar.high = func(bar.high, next_bar.high)
-        bar.low = func(bar.low, next_bar.low)
-        bar.raw_end_index = next_bar.index
-
-        if pre is not None:
-            bar.index = pre.index + 1
-        return None
-
-
-class FenXing:
-    __slots__ = "index", "left", "mid", "right"
-
-    def __init__(self, left: NewBar, mid: NewBar, right: NewBar, index: int = 0):
-        self.left = left
-        self.mid = mid
-        self.right = right
-        self.index = index
-
-    @property
-    def dt(self) -> datetime.datetime:
-        return self.mid.dt
-
-    @property
-    def shape(self) -> Shape:
-        return self.mid.shape
-
-    @property
-    def speck(self) -> float:
-        return self.mid.speck
-
-    @property
-    def high(self) -> float:
-        return max(self.left.high, self.mid.high)
-
-    @property
-    def low(self) -> float:
-        return min(self.left.low, self.mid.low)
-
-    def __str__(self):
-        return f"FenXing({self.shape}, {self.speck}, {self.dt})"
-
-    def __repr__(self):
-        return f"FenXing({self.shape}, {self.speck}, {self.dt})"
-
-    def get_shape(self) -> Shape:
-        shape, (_, _), _ = triple_relation(self.left, self.mid, self.right)
-        return shape
-
-    def get_relations(self) -> (Direction, Direction):
-        _, (lm, mr), _ = triple_relation(self.left, self.mid, self.right)
-        return lm, mr
-
-    @staticmethod
-    def get_fenxing(bars: List[NewBar], mid: NewBar) -> "FenXing":
-        index = bars.index(mid)
-        return FenXing(bars[index - 1], mid, bars[index + 1])
-
-    @staticmethod
-    def append(fxs, fx):
-        if fxs and fxs[-1].shape is fx.shape:
-            raise ChanException("分型相同无法添加", fxs[-1], fx)
-        i = 0
-        if fxs:
-            i = fxs[-1].index + 1
-        fx.index = i
-        fxs.append(fx)
-
-    @staticmethod
-    def pop(fxs, fx):
-        if fxs and fxs[-1] is not fx:
-            raise ChanException("分型相同无法删除", fxs[-1], fx)
-        return fxs.pop()
-
-
-class Line(metaclass=ABCMeta):
-    __slots__ = "pre", "next", "index", "__start", "__end", "__stamp", "__elements"
-
-    def __init__(self, start: FenXing, end: FenXing, index: int, elements: List | Set, stamp: str = "Line"):
-        self.index: int = index
-        self.pre: Optional[Self] = None
-        self.next: Optional[Self] = None
-        self.__start = start
-        self.__end = end
-        self.__stamp = stamp
-        self.__elements = elements
-
-    def __len__(self):
-        return len(self.elements)
-
-    def __iter__(self):
-        return iter(self.elements)
-
-    def __hash__(self):
-        return hash(f"{self.stamp} {self.start.mid}")
-
-    def __eq__(self, other):
-        return type(other) is self and self.stamp == other.stamp and self.start == other.start and self.end == other.end and self.elements == other.elements and self.index == other.index
-
-    @property
-    @final
-    def stamp(self) -> str:
-        return self.__stamp
-
-    @property
-    @final
-    def elements(self) -> List:
-        return self.__elements
-
-    @elements.setter
-    def elements(self, elements: List):
-        self.__elements = elements
-
-    @property
-    def start(self) -> FenXing:
-        return self.__start
-
-    @property
-    def end(self) -> FenXing:
-        return self.__end
-
-    @end.setter
-    @final
-    def end(self, end: FenXing):
-        self.__end = end
-
-    @property
-    @final
-    def direction(self) -> Direction:
-        if self.start.shape is Shape.G and self.end.shape is Shape.D:
-            return Direction.Down
-        elif self.start.shape is Shape.D and self.end.shape is Shape.G:
-            return Direction.Up
-        else:
-            raise ChanException(f"{self.stamp}.direction: {self.start.shape}, {self.end.shape}, {self.stamp}")
-
-    @property
-    def high(self) -> float:
-        if self.direction == Direction.Down:
-            return self.start.speck
-        else:
-            return self.end.speck
-
-    @property
-    def low(self) -> float:
-        if self.direction == Direction.Up:
-            return self.start.speck
-        else:
-            return self.end.speck
-
-    @property
-    def open(self) -> float:
-        if self.direction == Direction.Down:
-            return self.high
-        else:
-            return self.low
-
-    @property
-    def close(self) -> float:
-        if self.direction == Direction.Up:
-            return self.high
-        else:
-            return self.low
-
-    def is_previous(self, line: "Line") -> bool:
-        return line.end is self.start
-
-    def is_next(self, line: "Line") -> bool:
-        return self.end is line.start
-
-    def get_line(self) -> "Line":
-        return Line(self.start, self.end, self.index, self.elements, self.stamp)
-
-    def get_bars(self, bars: list) -> List[NewBar]:
-        return bars[bars.index(self.start.mid) : bars.index(self.end.mid) + 1]
-
-    @classmethod
-    def append(cls, lines: List["Line"], line: "Line"):
-        if lines and not lines[-1].is_next(line):
-            raise ChanException("Line.append 不连续", lines[-1], line)
-
-        if lines:
-            line.index = lines[-1].index + 1
-            line.pre = lines[-1]
-            if len(lines) > 1:
-                lines[-2].next = lines[-1]
-
-        lines.append(line)
-
-    @classmethod
-    def pop(cls, lines: List["Line"], line: "Line") -> Optional["Line"]:
-        if not lines:
-            return
-
-        if lines[-1] is line:
-            drop = lines.pop()
-            return drop
-        raise ChanException("Line.pop 弹出数据不在列表中")
-
-    @classmethod
-    @final
-    def create(cls, obj: List | "Line", stamp: str) -> "Line":
-        if type(obj) is list:
-            lines: List["Line"] = obj[:]
-            return Line(lines[0].start, lines[-1].end, 0, lines, stamp)
-        line: "Line" = obj
-        return Line(line.start, line.end, 0, [line], stamp)
 
 
 class Lines:
@@ -1610,7 +1429,7 @@ class Bi(Line):
         pre: Optional["Self"],
         start: FenXing,
         end: FenXing,
-        elements: List[NewBar],
+        elements: List[Bar],
         fake: bool,
         config: ChanConfig,
     ):
@@ -1642,7 +1461,21 @@ class Bi(Line):
             )
             relation = double_relation(left, right)
             if self.config.BI_JUMP and relation.is_jump():
-                size += 1
+                if self.config.BI_JUMP_SCALE > 0.0:
+                    if relation.is_up():
+                        high = right.low
+                        low = left.high
+                    else:
+                        high = left.low
+                        low = right.high
+
+                    real_high = self.real_high
+                    real_low = self.real_low
+                    if (high - low) / (real_high.high - real_low.low) >= self.config.BI_JUMP_SCALE:
+                        size += 1
+
+                else:
+                    size += 1
             size += 1
         if not self.config.BI_JUMP:
             assert size == len(elements)
@@ -1651,37 +1484,32 @@ class Bi(Line):
         return len(elements)
 
     @property
-    def real_high(self) -> Optional[NewBar]:
+    def real_high(self) -> Optional[Bar]:
         if not self.elements:
             return None
-        if self.config.BI_EQUAL:
-            high = [self.elements[0]]
-            for bar in self.elements[1:]:
-                if bar.high >= high[-1].high:
-                    if bar.high > high[-1].high:
-                        high.clear()
-                    high.append(bar)
-            if len(high) > 1:
-                dp("", high)
-            return high[-1]
-
-        return max(self.elements, key=lambda x: x.high)
+        highs: List[Bar] = [self.elements[0]]
+        for bar in self.elements[1:]:
+            if bar.high >= highs[-1].high:
+                if bar.high > highs[-1].high:
+                    highs.clear()
+                highs.append(bar)
+        if len(highs) > 1:
+            dp("", highs)
+        return highs[-1] if self.config.BI_LASTorFIRST else highs[0]
 
     @property
-    def real_low(self) -> Optional[NewBar]:
+    def real_low(self) -> Optional[Bar]:
         if not self.elements:
             return None
-        if self.config.BI_EQUAL:
-            low = [self.elements[0]]
-            for bar in self.elements[1:]:
-                if bar.low <= low[-1].low:
-                    if bar.low < low[-1].low:
-                        low.clear()
-                    low.append(bar)
-            if len(low) > 1:
-                dp("", low)
-            return low[-1]
-        return min(self.elements, key=lambda x: x.low)
+        lows: List[Bar] = [self.elements[0]]
+        for bar in self.elements[1:]:
+            if bar.low <= lows[-1].low:
+                if bar.low < lows[-1].low:
+                    lows.clear()
+                lows.append(bar)
+        if len(lows) > 1:
+            dp("", lows)
+        return lows[-1] if self.config.BI_LASTorFIRST else lows[0]
 
     @property
     def relation(self) -> bool:
@@ -1707,7 +1535,7 @@ class Bi(Line):
         return False
 
     @staticmethod
-    def get_elements(bars: List[NewBar], start: FenXing, end: FenXing) -> List[NewBar]:
+    def get_elements(bars: List[Bar], start: FenXing, end: FenXing) -> List[Bar]:
         return bars[bars.index(start.mid) : bars.index(end.mid) + 1]
 
     @classmethod
@@ -1716,7 +1544,7 @@ class Bi(Line):
         fx: FenXing,
         fxs: List[FenXing],
         bis: List["Bi"],
-        bars: List[NewBar],
+        bars: List[Bar],
         _from: str,
         level: int,
         config: ChanConfig,
@@ -1744,8 +1572,8 @@ class Bi(Line):
         if (last.shape is Shape.G and fx.shape is Shape.D) or (last.shape is Shape.D and fx.shape is Shape.G):
             bi = Bi(None, last, fx, Bi.get_elements(bars, last, fx), False, config)
             if bi.length > 4:
-                eq = config.BI_EQUAL
-                config.BI_EQUAL = False  # 起始点检测时不考虑相同起始点情况，避免递归
+                eq = config.BI_LASTorFIRST
+                config.BI_LASTorFIRST = False  # 起始点检测时不考虑相同起始点情况，避免递归
 
                 if last.shape is Shape.G and fx.shape is Shape.D:
                     start = bi.real_high
@@ -1760,9 +1588,9 @@ class Bi(Line):
                         assert new.shape is Shape.D, new
                     Bi.analyzer(new, fxs, bis, bars, _from, level + 1, config, observer)  # 处理新顶
                     Bi.analyzer(fx, fxs, bis, bars, _from, level + 1, config, observer)  # 再处理当前底
-                    config.BI_EQUAL = eq
+                    config.BI_LASTorFIRST = eq
                     return
-                config.BI_EQUAL = eq
+                config.BI_LASTorFIRST = eq
 
                 if last.shape is Shape.G and fx.shape is Shape.D:
                     end = bi.real_low
@@ -1872,7 +1700,7 @@ class Bi(Line):
             raise ChanException(last.shape, fx.shape)
 
     @staticmethod
-    def analysis_one(bars: List[NewBar], level: int, config: ChanConfig, observer: Observer) -> tuple[Optional[FenXing], Optional["Bi"]]:
+    def analysis_one(bars: List[Bar], level: int, config: ChanConfig, observer: Observer) -> tuple[Optional[FenXing], Optional["Bi"]]:
         try:
             bars[2]
         except IndexError:
@@ -2168,9 +1996,9 @@ class BaseAnalyzer(Observer):
         self.symbol: str = symbol
         self.freq: int = int(freq)
         self.ws = ws
-        self.last_raw_bar: Optional[RawBar] = None
-        self.raws: list[RawBar] = []
-        self.news: list[NewBar] = []
+        self.last_raw_bar: Optional[Bar] = None
+        self.raws: list[Bar] = []
+        self.news: list[Bar] = []
         self.fxs: list[FenXing] = []
         self.bis: list[Bi] = []
         self.xds: list[Duan] = []
@@ -2187,7 +2015,7 @@ class BaseAnalyzer(Observer):
         message = dict()
         message["stamp"] = obj.stamp if hasattr(obj, "stamp") else obj.__class__.__name__
 
-        if type(obj) is NewBar:
+        if type(obj) is Bar:
             message["type"] = "realtime"
             message["timestamp"] = str(obj.dt)
             message["open"] = obj.open
@@ -2305,13 +2133,13 @@ class BaseAnalyzer(Observer):
     @final
     def step(
         self,
-        dt: datetime.datetime | int | str,
-        open_: float | str,
-        high: float | str,
-        low: float | str,
-        close: float | str,
-        volume: float | str,
-    ):
+        dt: Union[datetime, int, str],
+        open_: Union[float, str],
+        high: Union[float, str],
+        low: Union[float, str],
+        close: Union[float, str],
+        volume: Union[float, str],
+    ) -> None:
         if type(dt) is datetime.datetime:
             ...
         elif isinstance(dt, str):
@@ -2328,7 +2156,7 @@ class BaseAnalyzer(Observer):
 
         index = 0
 
-        last = RawBar(
+        last = Bar.creat_raw_bar(
             dt=dt,
             o=open_,
             h=high,
@@ -2340,7 +2168,7 @@ class BaseAnalyzer(Observer):
         self.push(last)
 
     @final
-    def push(self, bar: RawBar):
+    def push(self, bar: Bar):
         if self.last_raw_bar is not None:
             bar.index = self.last_raw_bar.index + 1
         self.last_raw_bar = bar
@@ -2351,7 +2179,7 @@ class BaseAnalyzer(Observer):
                 pre = self.news[-2]
             except IndexError:
                 pass
-            nb = NewBar.merger(pre, self.news[-1], bar)
+            nb = Bar.merger(pre, self.news[-1], bar)
             if nb is not None:
                 if self.config.ANALYZER_CALC_MACD:
                     MACD.calc(self.news[-1], nb)
@@ -2399,7 +2227,7 @@ class BaseAnalyzer(Observer):
                 traceback.print_exc()
                 xds = self.xds[-3:]
                 news = self.news[xds[0].start.left.index :]
-                RawBar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
+                Bar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
                 raise e
             if self.xds and self.cache.get("xd", None) is self.xds[-1]:
                 return
@@ -2426,7 +2254,7 @@ class BaseAnalyzer(Observer):
                 while buffer := mm.read(size * 10000):
                     try:
                         for i in range(len(buffer) // size):
-                            bar = RawBar.from_be_bytes(buffer[i * size : i * size + size])
+                            bar = Bar.from_be_bytes(buffer[i * size : i * size + size], stamp="RawBar")
                             obj.push(bar)
                             length += 1
                             if length % 100000 == 0:
@@ -2457,17 +2285,17 @@ class Generator(BaseAnalyzer):
         super().__init__(symbol, freq, ws)
 
     def save_nb_file(self):
-        RawBar.bars_save_as_dat(f"./templates/{self.symbol}-{self.freq}-{int(self.news[0].dt.timestamp())}-{int(self.news[-1].dt.timestamp())}.nb", self.news)
+        Bar.bars_save_as_dat(f"./templates/{self.symbol}-{self.freq}-{int(self.news[0].dt.timestamp())}-{int(self.news[-1].dt.timestamp())}.nb", self.news)
 
     def load_nb_file(self, path: str):
         with open(path, "rb") as f:
             buffer = f.read()
             size = struct.calcsize(">6d")
             for i in range(len(buffer) // size):
-                bar = RawBar.from_be_bytes(buffer[i * size : i * size + size])
+                bar = Bar.from_be_bytes(buffer[i * size : i * size + size])
                 self.push(bar)
 
-    def push_new_bar(self, nb: NewBar):
+    def push_new_bar(self, nb: Bar):
         self.news.append(nb)
         # Interval.analyzer(self.news, self.zs, self)
         self.notify(self.news[-1], Command.Append("NewBar"))
@@ -2503,7 +2331,7 @@ class Generator(BaseAnalyzer):
                 traceback.print_exc()
                 xds = self.xds[-3:]
                 news = self.news[xds[0].start.left.index :]
-                RawBar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception_byGenerator-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
+                Bar.bars_save_as_dat(f"./templates/{self.symbol}_duan_exception_byGenerator-{self.freq}-{int(news[0].dt.timestamp())}-{int(news[-1].dt.timestamp())}.nb", news)
                 raise e
             if self.xds and self.cache.get("xd", None) is self.xds[-1]:
                 return
@@ -2539,24 +2367,24 @@ class Generator(BaseAnalyzer):
                 o = int(points[i - 1])
                 c = int(points[i])
             direction = Direction.Up if o < c else Direction.Down
-            h = max(o, c)
-            l = min(o, c)
-            d = h - l
+            high = max(o, c)
+            low = min(o, c)
+            d = high - low
             m = d / 5
             if direction == Direction.Up:
-                nb = NewBar(dt, l + m, l, direction, 8, index, None)
+                nb = Bar.creat_new_bar(dt, low + m, low, direction, 8, index, None)
                 append(news, nb)
                 dt = dt + offset
                 for dd in [Direction.NextUp] * 4:
-                    nb = NewBar.generate(nb, dd, seconds, True)
+                    nb = Bar.generate(nb, dd, seconds, True)
                     append(news, nb)
                     dt = dt + offset
             else:
-                nb = NewBar(dt, h, l + m * 4, direction, 8, index, None)
+                nb = Bar.creat_new_bar(dt, high, low + m * 4, direction, 8, index, None)
                 append(news, nb)
                 dt = dt + offset
                 for dd in [Direction.NextDown] * 4:
-                    nb = NewBar.generate(nb, dd, seconds, True)
+                    nb = Bar.generate(nb, dd, seconds, True)
                     append(news, nb)
                     dt = dt + offset
 
@@ -2631,13 +2459,13 @@ def main_bitstamp(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 
 
 def gen(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = Freq.m5, ws: Optional[WebSocket] = None):
     def func():
-        bitstamp = Generator(symbol, freq=int(freq), ws=ws)
+        bitstamp = Generator(symbol + "_gen", freq=int(freq), ws=ws)
         bitstamp.config.BI_JUMP = False
         dt = datetime.datetime(2008, 8, 8)
-        nb = NewBar(dt, 10000, 9900, Direction.Up, 8.8, 0)
+        nb = Bar.creat_new_bar(dt, 10000, 9900, Direction.Up, 8.8, 0)
         bitstamp.push_new_bar(nb)
         for direction in Direction.generator(int(limit), [Direction.Up, Direction.JumpUp, Direction.NextUp, Direction.Down, Direction.JumpDown, Direction.NextDown]):
-            nb = NewBar.generate(nb, direction, int(freq))
+            nb = Bar.generate(nb, direction, int(freq))
             # print(direction, nb)
             bitstamp.push_new_bar(nb)
 
