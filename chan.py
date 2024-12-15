@@ -27,6 +27,7 @@ SOFTWARE.
 # @File    : chan.py
 
 import json
+import math
 import mmap
 import time
 import struct
@@ -863,6 +864,34 @@ class Line(metaclass=ABCMeta):
             return self.high
         else:
             return self.low
+
+    def calc_angle(self) -> float:
+        # 计算线段的角度
+        dx = self.end.mid.index - self.start.mid.index  # self.end.dt - self.start.dt  # 时间差
+        dy = self.end.speck - self.start.speck  # 价格差
+
+        if dx == 0:
+            return 90.0 if dy > 0 else -90.0
+
+        angle = math.degrees(math.atan2(dy, dx))
+        return angle
+
+    def calc_speed(self) -> float:
+        # 计算线段的速度
+        dx = self.end.mid.index - self.start.mid.index  # self.end.dt - self.start.dt  # 时间差
+        dy = self.end.speck - self.start.speck  # 价格差
+        return dy / dx
+
+    def calc_measure(self) -> float:
+        # 计算线段测度
+        dx = self.end.mid.index - self.start.mid.index  # 时间差
+        dy = abs(self.end.speck - self.start.speck)  # 价格差的绝对值
+        return math.sqrt(dx * dx + dy * dy)  # 返回线段的欧几里得长度作为测度
+
+    def calc_amplitude(self) -> float:
+        # 计算线段振幅比例
+        amplitude = self.end.speck - self.start.speck
+        return amplitude / self.start.speck if self.start.speck != 0 else 0
 
     def is_previous(self, line: "Line") -> bool:
         return line.end is self.start
