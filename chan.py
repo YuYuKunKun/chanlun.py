@@ -46,8 +46,9 @@ from abc import ABCMeta, abstractmethod
 import requests
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
 from termcolor import colored
+from collections import defaultdict
 
 
 # __all__ = ["Line", "Bar", "Bi", "Duan", "ZhongShu", "FenXing", "BaseAnalyzer"]
@@ -867,7 +868,7 @@ class Line(metaclass=ABCMeta):
 
     def calc_angle(self) -> float:
         # 计算线段的角度
-        dx = self.end.mid.index - self.start.mid.index  # self.end.dt - self.start.dt  # 时间差
+        dx = self.end.dt.timestamp() - self.start.dt.timestamp()  # self.end.dt - self.start.dt  # 时间差
         dy = self.end.speck - self.start.speck  # 价格差
 
         if dx == 0:
@@ -884,7 +885,7 @@ class Line(metaclass=ABCMeta):
 
     def calc_measure(self) -> float:
         # 计算线段测度
-        dx = self.end.mid.index - self.start.mid.index  # 时间差
+        dx = self.end.dt.timestamp() - self.start.dt.timestamp()  # 时间差
         dy = abs(self.end.speck - self.start.speck)  # 价格差的绝对值
         return math.sqrt(dx * dx + dy * dy)  # 返回线段的欧几里得长度作为测度
 
@@ -2482,6 +2483,7 @@ def main_bitstamp(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 
     def func():
         bitstamp = Bitstamp(symbol, freq=int(freq), ws=ws)
         bitstamp.init(int(limit))
+        return bitstamp
 
     return func
 
@@ -2495,13 +2497,13 @@ def gen(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = Freq.m5, w
         bitstamp.push_new_bar(nb)
         for direction in Direction.generator(int(limit), [Direction.Up, Direction.JumpUp, Direction.NextUp, Direction.Down, Direction.JumpDown, Direction.NextDown]):
             nb = Bar.generate(nb, direction, int(freq))
-            # print(direction, nb)
             bitstamp.push_new_bar(nb)
 
         for duan in bitstamp.xds:
             if duan.gap:
                 bitstamp.save_nb_file()
                 break
+        return bitstamp
 
     return func
 
@@ -2544,33 +2546,115 @@ app.mount(
 templates = Jinja2Templates(directory="templates")
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.analyzers: Dict[str, BaseAnalyzer] = {}
+
+    async def connect(self, client_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[client_id] = websocket
+
+    def disconnect(self, client_id: str):
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+        if client_id in self.analyzers:
+            del self.analyzers[client_id]
+
+    async def send_message(self, client_id: str, message: dict):
+        if client_id in self.active_connections:
+            await self.active_connections[client_id].send_json(message)
+
+    def get_analyzer(self, client_id: str) -> Optional[BaseAnalyzer]:
+        return self.analyzers.get(client_id)
+
+    def set_analyzer(self, client_id: str, analyzer: BaseAnalyzer):
+        self.analyzers[client_id] = analyzer
+
+
+# 创建连接管理器实例
+manager = ConnectionManager()
+
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    await manager.connect(client_id, websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            print(data)
             message = json.loads(data)
+
             if message["type"] == "ready":
-                # exchange = message["exchange"]
+                # 初始化分析器
                 symbol = message["symbol"]
                 freq = message["freq"]
                 limit = message["limit"]
+
+                # 停止现有线程
                 if Observer.thread is not None:
                     tmp = Observer.thread
                     Observer.thread = None
-
                     tmp.join(1)
                     time.sleep(1)
 
+                # 创建新的analyzer实例并运行
                 if message["generator"] == "True":
-                    Observer.thread = Thread(target=gen(symbol=symbol, freq=freq, limit=limit, ws=websocket))  # 使用线程来运行main函数
+                    analyzer_func = gen(symbol=symbol, freq=freq, limit=limit, ws=websocket)
                 else:
-                    Observer.thread = Thread(target=main_bitstamp(symbol=symbol, freq=freq, limit=limit, ws=websocket))  # 使用线程来运行main函数
+                    analyzer_func = main_bitstamp(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+
+                def thread_func():
+                    analyzer = analyzer_func()
+                    manager.set_analyzer(client_id, analyzer)
+
+                Observer.thread = Thread(target=thread_func)
                 Observer.thread.start()
+
+            elif message["type"] == "query_by_index":
+                analyzer = manager.get_analyzer(client_id)
+                if analyzer:
+                    data_type = message.get("data_type")
+                    index = int(message.get("index").split("-")[-1])
+
+                    try:
+                        if data_type == "Bi":
+                            bi = analyzer.bis[index]
+                            data = {
+                                "index": bi.index,
+                                "start_time": bi.start.dt.timestamp(),
+                                "end_time": bi.end.dt.timestamp(),
+                                "start_price": bi.start.speck,
+                                "end_price": bi.end.speck,
+                                "direction": str(bi.direction),
+                                "angle": bi.calc_angle(),
+                                "speed": bi.calc_speed(),
+                                "measure": bi.calc_measure(),
+                            }
+                        elif data_type == "Duan":
+                            duan = analyzer.xds[index]
+                            data = {
+                                "index": duan.index,
+                                "start_time": duan.start.dt.timestamp(),
+                                "end_time": duan.end.dt.timestamp(),
+                                "start_price": duan.start.speck,
+                                "end_price": duan.end.speck,
+                                "direction": str(duan.direction),
+                                "angle": duan.calc_angle(),
+                                "speed": duan.calc_speed(),
+                                "measure": duan.calc_measure(),
+                            }
+                        else:
+                            raise ValueError(f"不支持的数据类型: {data_type}")
+
+                        await manager.send_message(client_id, {"type": "query_result", "success": True, "data_type": data_type, "data": data})
+
+                    except IndexError:
+                        await manager.send_message(client_id, {"type": "query_result", "success": False, "message": f"索引 {index} 超出范围"})
+                    except Exception as e:
+                        await manager.send_message(client_id, {"type": "query_result", "success": False, "message": str(e)})
+
     except WebSocketDisconnect:
-        ...
+        manager.disconnect(client_id)
 
 
 @app.get("/")

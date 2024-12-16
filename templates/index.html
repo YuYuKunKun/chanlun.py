@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <title>TradingView Chart with WebSocket</title>
     <meta charset="utf-8" name="viewport"
-          content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
+        content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
     <script type="text/javascript"
-            src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
+        src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
 
     <script type="text/javascript">
         const shape_ids = []; // id 映射
@@ -18,8 +19,8 @@
         const step = "{{ step }}";
         const limit = "{{ limit }}";
         const generator = "{{ generator }}";
-        const socket = new WebSocket("ws://" + window.location.host + "/ws");
-        //const socket = new WebSocket("ws://"+window.location.hostname+":8080/ws");
+        const client_id = Math.random().toString(36).substr(2, 9); // 生成随机客户端ID
+        const socket = new WebSocket(`ws://${window.location.host}/ws/${client_id}`);
 
         socket.onopen = () => {
             console.log("WebSocket connection established");
@@ -106,10 +107,10 @@
                 onHistoryCallback,
                 onErrorCallback,
             ) => {
-                const {from, to, firstDataRequest} = periodParams;
+                const { from, to, firstDataRequest } = periodParams;
                 console.log("[Datafeed.getBars]: Method call", symbolInfo, resolution, from, to, firstDataRequest);
                 try {
-                    onHistoryCallback([], {noData: true});
+                    onHistoryCallback([], { noData: true });
 
                 } catch (error) {
                     console.log("[Datafeed.getBars]: Get error", error);
@@ -133,29 +134,33 @@
                 socket.onmessage = function (event) {
                     const message = JSON.parse(event.data);
                     if (debug) console.info(message);
-                    if (message.type === "realtime") {
-                        const bar = {
-                            time: new Date(message.timestamp).getTime(), // Unix timestamp in milliseconds
-                            close: message.close,
-                            open: message.open,
-                            high: message.high,
-                            low: message.low,
-                            volume: message.volume,
-                        };
-                        onRealtimeCallback(bar);
-                    } else if (message.type === "shape") {
-                        if (message.cmd === "APPEND") {
-                            addShapeToChart(message);
-                        } else if (message.cmd === "REMOVE") {
-                            delShapeById(message)
-                        } else if (message.cmd === "MODIFY") {
-                            modifyShape(message)
-                        } else {
-                            console.error("未知", message);
-                        }
-                    } else {
-                        console.log("未知消息", message);
+                    switch (message.type) {
+                        case "realtime":
+                            // 处理实时K线数据
+                            const bar = {
+                                time: new Date(message.timestamp).getTime(),
+                                close: message.close,
+                                open: message.open,
+                                high: message.high,
+                                low: message.low,
+                                volume: message.volume,
+                            };
+                            onRealtimeCallback(bar); //widget.activeChart().update(bar);
+                            break;
+
+                        case "shape":
+                            // 处理图形数据
+                            if (message.cmd === "APPEND") {
+                                addShapeToChart(message);
+                            } else if (message.cmd === "REMOVE") {
+                                delShapeById(message)
+                            } else if (message.cmd === "MODIFY") {
+                                modifyShape(message)
+                            }
+                            break;
+
                     }
+
                 };
             },
 
@@ -172,12 +177,13 @@
         function addShapeToChart(obj) {
             if (window.tvWidget) {
                 const shape_id = window.tvWidget.chart().createMultipointShape(obj.points, obj.options);
-                shape_ids [obj.id] = shape_id;
+                shape_ids[obj.id] = shape_id;
                 const shape = window.tvWidget.chart().getShapeById(shape_id);
                 shape.setProperties(obj.properties);
                 shape.bringToFront();
                 //console.log(obj.id, shape_id);
                 //console.log("add", obj.name, obj.id);
+                return shape_id;
             }
         }
 
@@ -216,7 +222,6 @@
             }
         }
 
-
         function initOnReady() {
             //console.log("init widget");
             const widget = (window.tvWidget = new TradingView.widget({
@@ -248,8 +253,8 @@
                     "go_to_date", // 日期跳转
                 ],
                 time_frames: [
-                    {text: "3d", resolution: "5", description: "3 Days"},
-                    {text: "7d", resolution: "5", description: "7 Days"},
+                    { text: "3d", resolution: "5", description: "3 Days" },
+                    { text: "7d", resolution: "5", description: "7 Days" },
                 ],
             }));
             widget.headerReady().then(function () {
@@ -263,82 +268,82 @@
                 }
 
                 createHeaderButton("笔买卖点", "显示隐藏买卖点", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "arrow_up" || name === "arrow_down") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.title === "BiFirstSell" || properties.title === "BiSecondSell" || properties.title === "BiThirdSell"
                                 || properties.title === "BiFirstBuy" || properties.title === "BiSecondBuy" || properties.title === "BiThirdBuy"
                             )
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("段买卖点", "显示隐藏买卖点", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "arrow_up" || name === "arrow_down") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.title === "DuanFirstSell" || properties.title === "DuanSecondSell" || properties.title === "DuanThirdSell"
                                 || properties.title === "DuanFirstBuy" || properties.title === "DuanSecondBuy" || properties.title === "DuanThirdBuy"
                             )
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("特征序列", "显示隐藏特征序列", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "trend_line") {
                             const shape = window.tvWidget.chart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.text.indexOf("FeatureSequence<Bi>") === 0)
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("笔", "显示隐藏笔", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "trend_line") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.text.indexOf("Bi") === 0)
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("段", "显示隐藏段", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "trend_line") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.text.indexOf("Duan") === 0)
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("笔中枢", "显示隐藏笔中枢", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "rectangle") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.text.indexOf("ZhongShu<Bi>") === 0)
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
 
                 createHeaderButton("段中枢", "显示隐藏段中枢", function () {
-                    widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
                         if (name === "rectangle") {
                             const shape = window.tvWidget.activeChart().getShapeById(id);
                             const properties = shape.getProperties();
                             if (properties.text.indexOf("ZhongShu<Duan>") === 0)
-                                shape.setProperties({visible: !properties.visible})
+                                shape.setProperties({ visible: !properties.visible })
                         }
                     });
                 });
@@ -366,16 +371,19 @@
                             const properties = shape.getProperties();
                             const points = shape.getPoints();
                             const toolname = shape._source.toolname;
+                            console.log(toolname, points, properties);
                             if (toolname === "LineToolTrendLine") {
-                                shape.setProperties({showLabel: !properties.showLabel})
-                            }
-                            if (toolname === "LineToolPath") {
+                                shape.setProperties({ showLabel: !properties.showLabel })
                                 socket.send(JSON.stringify({
-                                    type: "points",
-                                    points: points,
+                                    type: "query_by_index",
+                                    data_type: properties.text, // 全局变量，记录当前查询类型
+                                    index: properties.title
                                 }));
                             }
-                            console.log(toolname, points, properties);
+                            if (toolname === "LineToolPath") {
+
+                            }
+
                         }
                     })
                 });
@@ -385,7 +393,9 @@
         window.addEventListener("DOMContentLoaded", initOnReady, false);
     </script>
 </head>
+
 <body style="margin:0;">
-<div id="tv_chart_container"></div>
+    <div id="tv_chart_container"></div>
 </body>
+
 </html>
