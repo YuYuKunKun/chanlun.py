@@ -123,13 +123,12 @@ class Shape(Enum):
 
 
 class Direction(Enum):
-    Up = "向上"
-    Down = "向下"
-    JumpUp = "缺口向上"
-    JumpDown = "缺口向下"
-    NextUp = "连接向上"  # 高点与后一 低点相同
-    NextDown = "连接向下"  # 低点与后一 高点相同
-
+    Up = "向上"  # 上涨
+    Down = "向下"  # 下跌
+    JumpUp = "缺口向上"  # 向上跳空
+    JumpDown = "缺口向下"  # 向下跳空
+    NextUp = "连接向上"  # 高点与后一低点相同
+    NextDown = "连接向下"  # 低点与后一高点相同
     Left = "左包右"  # 顺序包含
     Right = "右包左"  # 逆序包含
 
@@ -461,8 +460,6 @@ class ChanConfig:
 
 @final
 class MACD:
-    __slots__ = "fast_ema", "slow_ema", "DIF", "DEA", "fastperiod", "slowperiod", "signalperiod"
-
     def __init__(self, fast_ema: float, slow_ema: float, dif: float, dea: float, fastperiod: float = 12.0, slowperiod: float = 26.0, signalperiod: float = 9.0):
         self.fast_ema = fast_ema
         self.slow_ema = slow_ema
@@ -475,13 +472,30 @@ class MACD:
     @classmethod
     def calc(cls, pre: "Bar", bar: "Bar") -> Self:
         value = bar.close
-        _fast_ema = (2.0 * value + (pre.macd.fastperiod - 1.0) * pre.macd.fast_ema) / (pre.macd.fastperiod + 1.0)
-        _slow_ema = (2.0 * value + (pre.macd.slowperiod - 1.0) * pre.macd.slow_ema) / (pre.macd.slowperiod + 1.0)
+
+        # 计算快线EMA
+        k_fast = 2.0 / (pre.macd.fastperiod + 1.0)
+        _fast_ema = value * k_fast + pre.macd.fast_ema * (1.0 - k_fast)
+
+        # 计算慢线EMA
+        k_slow = 2.0 / (pre.macd.slowperiod + 1.0)
+        _slow_ema = value * k_slow + pre.macd.slow_ema * (1.0 - k_slow)
+
+        # 计算DIF
         _dif = _fast_ema - _slow_ema
-        _dea = (2.0 * _dif + (pre.macd.signalperiod - 1.0) * pre.macd.DEA) / (pre.macd.signalperiod + 1.0)
+
+        # 计算DEA
+        k_dea = 2.0 / (pre.macd.signalperiod + 1.0)
+        _dea = _dif * k_dea + pre.macd.DEA * (1.0 - k_dea)
+
         macd = MACD(_fast_ema, _slow_ema, _dif, _dea, fastperiod=pre.macd.fastperiod, slowperiod=pre.macd.slowperiod, signalperiod=pre.macd.signalperiod)
         bar.macd = macd
         return macd
+
+    @property
+    def bar(self) -> float:
+        """MACD柱状图"""
+        return (self.DIF - self.DEA) * 2
 
 
 class Observer(metaclass=ABCMeta):
@@ -868,7 +882,7 @@ class Line(metaclass=ABCMeta):
 
     def calc_angle(self) -> float:
         # 计算线段的角度
-        dx = self.end.dt.timestamp() - self.start.dt.timestamp()  # self.end.dt - self.start.dt  # 时间差
+        dx = self.end.mid.index - self.start.mid.index  # self.end.dt.timestamp() - self.start.dt.timestamp()  # self.end.dt - self.start.dt  # 时间差
         dy = self.end.speck - self.start.speck  # 价格差
 
         if dx == 0:
@@ -885,7 +899,7 @@ class Line(metaclass=ABCMeta):
 
     def calc_measure(self) -> float:
         # 计算线段测度
-        dx = self.end.dt.timestamp() - self.start.dt.timestamp()  # 时间差
+        dx = self.end.mid.index - self.start.mid.index  # self.end.dt.timestamp() - self.start.dt.timestamp()  # 时间差
         dy = abs(self.end.speck - self.start.speck)  # 价格差的绝对值
         return math.sqrt(dx * dx + dy * dy)  # 返回线段的欧几里得长度作为测度
 
@@ -893,6 +907,22 @@ class Line(metaclass=ABCMeta):
         # 计算线段振幅比例
         amplitude = self.end.speck - self.start.speck
         return amplitude / self.start.speck if self.start.speck != 0 else 0
+
+    def calc_macd(self) -> Dict[str, float]:
+        result = {"up": 0.0, "down": 0.0, "sum": 0.0}
+        for element in self.elements:
+            if hasattr(element, "macd"):
+                macd = element.macd
+                key = "up" if macd.bar > 0 else "down"
+                result[key] = result[key] + macd.bar
+
+            else:
+                macd = element.calc_macd()
+                result["up"] = result["up"] + macd["up"]
+                result["down"] = result["down"] + macd["down"]
+
+        result["sum"] = abs(result["up"]) + abs(result["down"])
+        return result
 
     def is_previous(self, line: "Line") -> bool:
         return line.end is self.start
@@ -965,6 +995,31 @@ class Interval:
     def low(self) -> int | float:
         return self.__low
 
+    @property
+    def start(self) -> FenXing:
+        return self.elements[0].start
+
+    @property
+    def end(self) -> FenXing:
+        return self.elements[-1].end
+
+    def is_next(self, element: Any) -> bool:
+        if type(element) is not type(self.elements[-1]):
+            return False
+
+        if element.index - 1 != self.elements[-1].index:
+            return False
+
+        return True
+
+    def extend(self, obj) -> tuple["Interval", bool]:
+        relation = double_relation(self, obj)
+        flag = False
+        if not any((relation.is_next(), relation.is_jump())) and self.is_next(obj):
+            self.elements.append(obj)
+            flag = True
+        return self, flag
+
     def check(self) -> Optional[bool]:
         tmp = Interval.new(self.elements)
         if tmp:
@@ -999,7 +1054,15 @@ class Interval:
         return cls(elements, high, low)
 
     @classmethod
-    def analyzer(cls, hls: List, intervals: List["Interval"], observer: Observer):
+    def analyzer(cls, hls: List, intervals: List["Interval"], observer: Observer, style: str = ""):
+        if style != "":
+            intervals = []
+            for i in range(1, len(hls) - 1):
+                new = cls.new([hls[i - 1], hls[i], hls[i + 1]])
+                if new is not None:
+                    intervals.append(new)
+            return intervals
+
         if not intervals:
             for i in range(1, len(hls) - 1):
                 new = cls.new([hls[i - 1], hls[i], hls[i + 1]])
@@ -1228,6 +1291,23 @@ class FeatureSequence(Line):
                     return features[-2], features[-1], None
 
         return None, None, None
+
+
+class ZhongShuState(Enum):
+    """中枢状态"""
+
+    FORMING = "形成中"  # 初始形成的3段
+    EXTENDING = "延伸中"  # 在原有区间内延伸
+    EXPANDING = "扩张中"  # 与其他中枢发生扩展
+    ENDED = "已完成"  # 中枢结束
+
+
+class ZhongShuType(Enum):
+    """中枢类型"""
+
+    ORIGINAL = "原始中枢"  # 最初形成的中枢
+    EXTENDED = "延伸中枢"  # 延伸后的中枢
+    EXPANDED = "扩张中枢"  # 扩展后的中枢(新的高级别中枢)
 
 
 class ZhongShu:
@@ -2583,6 +2663,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
+            print(message)
 
             if message["type"] == "ready":
                 # 初始化分析器
@@ -2629,6 +2710,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                                 "angle": bi.calc_angle(),
                                 "speed": bi.calc_speed(),
                                 "measure": bi.calc_measure(),
+                                "macd": bi.calc_macd(),
                             }
                         elif data_type == "Duan":
                             duan = analyzer.xds[index]
@@ -2642,6 +2724,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                                 "angle": duan.calc_angle(),
                                 "speed": duan.calc_speed(),
                                 "measure": duan.calc_measure(),
+                                "macd": duan.calc_macd(),
                             }
                         else:
                             raise ValueError(f"不支持的数据类型: {data_type}")
