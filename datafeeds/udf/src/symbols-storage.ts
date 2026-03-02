@@ -1,7 +1,7 @@
 import {
 	LibrarySymbolInfo,
-	SearchSymbolResultItem,
 	ResolutionString,
+	SearchSymbolResultItem,
 	VisiblePlotsSet,
 } from '../../../charting_library/datafeed-api';
 
@@ -21,8 +21,16 @@ interface ExchangeDataResponseSymbolData {
 	'timezone': LibrarySymbolInfo['timezone'];
 	'description': string;
 
+	/**
+	 * @deprecated Use 'exchange_listed_name' instead
+	 */
 	'exchange-listed': string;
+	/**
+	 * @deprecated Use 'exchange_listed_name' instead
+	 */
 	'exchange-traded': string;
+
+	'exchange_listed_name': string;
 
 	'session-regular': string;
 	'corrections'?: string;
@@ -59,7 +67,7 @@ interface ExchangeDataResponseSymbolData {
 
 // Here is some black magic with types to get compile-time checks of names and types
 type PickArrayedObjectFields<T> = Pick<T, {
-	// tslint:disable-next-line:no-any
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	[K in keyof T]-?: NonNullable<T[K]> extends any[] ? K : never;
 }[keyof T]>;
 
@@ -76,7 +84,13 @@ type ExchangeDataResponse =
 
 function extractField<Field extends keyof ExchangeDataResponseNonArrayedSymbolData>(data: ExchangeDataResponse, field: Field, arrayIndex: number): ExchangeDataResponseNonArrayedSymbolData[Field];
 function extractField<Field extends keyof ExchangeDataResponseArrayedSymbolData>(data: ExchangeDataResponse, field: Field, arrayIndex: number, valueIsArray: true): ExchangeDataResponseArrayedSymbolData[Field];
-function extractField<Field extends keyof ExchangeDataResponseSymbolData>(data: ExchangeDataResponse, field: Field, arrayIndex: number, valueIsArray?: boolean): ExchangeDataResponseSymbolData[Field] {
+function extractField<Field extends keyof ExchangeDataResponseSymbolData>(data: ExchangeDataResponse, field: Field, arrayIndex: number, valueIsArray?: boolean): ExchangeDataResponseSymbolData[Field] | undefined {
+	if (!(field in data)) {
+		// eslint-disable-next-line no-console
+		console.warn(`Field "${String(field)}" not present in response`);
+		return undefined;
+	}
+
 	const value: ExchangeDataResponse[keyof ExchangeDataResponseSymbolData] = data[field];
 
 	if (Array.isArray(value) && (!valueIsArray || Array.isArray(value[0]))) {
@@ -107,7 +121,7 @@ export class SymbolsStorage {
 		this._readyPromise = this._init();
 		this._readyPromise.catch((error: Error) => {
 			// seems it is impossible
-			// tslint:disable-next-line:no-console
+			// eslint-disable-next-line no-console
 			console.error(`SymbolsStorage: Cannot init, error=${error.toString()}`);
 		});
 	}
@@ -170,7 +184,7 @@ export class SymbolsStorage {
 					const symbolInfo = item.symbolInfo;
 					return {
 						symbol: symbolInfo.name,
-						full_name: symbolInfo.full_name,
+						full_name: `${symbolInfo.exchange}:${symbolInfo.name}`,
 						description: symbolInfo.description,
 						exchange: symbolInfo.exchange,
 						params: [],
@@ -229,6 +243,7 @@ export class SymbolsStorage {
 
 	private _onExchangeDataReceived(exchange: string, data: ExchangeDataResponse): void {
 		let symbolIndex = 0;
+		let fullName;
 
 		try {
 			const symbolsCount = data.symbol.length;
@@ -236,9 +251,23 @@ export class SymbolsStorage {
 
 			for (; symbolIndex < symbolsCount; ++symbolIndex) {
 				const symbolName = data.symbol[symbolIndex];
+
 				const listedExchange = extractField(data, 'exchange-listed', symbolIndex);
 				const tradedExchange = extractField(data, 'exchange-traded', symbolIndex);
-				const fullName = tradedExchange + ':' + symbolName;
+				if (listedExchange !== undefined || tradedExchange !== undefined) {
+					// eslint-disable-next-line no-console
+					console.warn('Starting from v30, both "exchange-listed" and "exchange-traded" fields are deprecated. Please use "exchange_listed_name" instead.');
+					fullName = tradedExchange + ':' + symbolName;
+				}
+
+				const exchangeListedName = extractField(data, 'exchange_listed_name', symbolIndex);
+				if (exchangeListedName === undefined) {
+					// eslint-disable-next-line no-console
+					console.warn('Starting from v30, both "exchange-listed" and "exchange-traded" fields are deprecated. Please use "exchange_listed_name" instead.');
+				} else {
+					fullName = exchangeListedName + ':' + symbolName;
+				}
+
 				const currencyCode = extractField(data, 'currency-code', symbolIndex);
 				const unitId = extractField(data, 'unit-id', symbolIndex);
 
@@ -248,9 +277,8 @@ export class SymbolsStorage {
 					ticker: ticker,
 					name: symbolName,
 					base_name: [listedExchange + ':' + symbolName],
-					full_name: fullName,
 					listed_exchange: listedExchange,
-					exchange: tradedExchange,
+					exchange: exchangeListedName || listedExchange,
 					currency_code: currencyCode,
 					original_currency_code: extractField(data, 'original-currency-code', symbolIndex),
 					unit_id: unitId,
@@ -279,11 +307,15 @@ export class SymbolsStorage {
 
 				this._symbolsInfo[ticker] = symbolInfo;
 				this._symbolsInfo[symbolName] = symbolInfo;
-				this._symbolsInfo[fullName] = symbolInfo;
+				if (fullName !== undefined) {
+					this._symbolsInfo[fullName] = symbolInfo;
+				}
 				if (currencyCode !== undefined || unitId !== undefined) {
 					this._symbolsInfo[symbolKey(ticker, currencyCode, unitId)] = symbolInfo;
 					this._symbolsInfo[symbolKey(symbolName, currencyCode, unitId)] = symbolInfo;
-					this._symbolsInfo[symbolKey(fullName, currencyCode, unitId)] = symbolInfo;
+					if (fullName !== undefined) {
+						this._symbolsInfo[symbolKey(fullName, currencyCode, unitId)] = symbolInfo;
+					}
 				}
 
 				this._symbolsList.push(symbolName);

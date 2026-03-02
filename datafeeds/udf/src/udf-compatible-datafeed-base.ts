@@ -1,6 +1,6 @@
 import {
 	DatafeedConfiguration,
-	ErrorCallback,
+	DatafeedErrorCallback,
 	GetMarksCallback,
 	HistoryCallback,
 	IDatafeedChartApi,
@@ -16,8 +16,8 @@ import {
 	SearchSymbolsCallback,
 	ServerTimeCallback,
 	SubscribeBarsCallback,
-	TimescaleMark,
 	SymbolResolveExtension,
+	TimescaleMark,
 	VisiblePlotsSet,
 } from '../../../charting_library/datafeed-api';
 
@@ -35,17 +35,15 @@ import {
 	PeriodParamsWithOptionalCountback,
 } from './history-provider';
 
-import { IQuotesProvider } from './iquotes-provider';
 import { DataPulseProvider } from './data-pulse-provider';
+import { IQuotesProvider } from './iquotes-provider';
+import { IRequester } from './irequester';
 import { QuotesPulseProvider } from './quotes-pulse-provider';
 import { SymbolsStorage } from './symbols-storage';
-import { IRequester } from './irequester';
 
 export interface UdfCompatibleConfiguration extends DatafeedConfiguration {
-	// tslint:disable:tv-variable-name
 	supports_search?: boolean;
 	supports_group_request?: boolean;
-	// tslint:enable:tv-variable-name
 }
 
 export interface ResolveSymbolResponse extends LibrarySymbolInfo {
@@ -103,7 +101,7 @@ function extractField<T, TField extends keyof T>(data: T, field: TField, arrayIn
 
 /**
  * This class implements interaction with UDF-compatible datafeed.
- * See [UDF protocol reference](@docs/connecting_data/UDF)
+ * See [UDF protocol reference](@docs/connecting_data/UDF.md)
  */
 export class UDFCompatibleDatafeedBase implements IExternalDatafeed, IDatafeedQuotesApi, IDatafeedChartApi {
 	protected _configuration: UdfCompatibleConfiguration = defaultConfiguration();
@@ -300,7 +298,7 @@ export class UDFCompatibleDatafeedBase implements IExternalDatafeed, IDatafeedQu
 		}
 	}
 
-	public resolveSymbol(symbolName: string, onResolve: ResolveCallback, onError: ErrorCallback, extension?: SymbolResolveExtension): void {
+	public resolveSymbol(symbolName: string, onResolve: ResolveCallback, onError: DatafeedErrorCallback, extension?: SymbolResolveExtension): void {
 		logMessage('Resolve requested');
 
 		const currencyCode = extension && extension.currencyCode;
@@ -331,15 +329,14 @@ export class UDFCompatibleDatafeedBase implements IExternalDatafeed, IDatafeedQu
 						const symbol = response.name;
 						const listedExchange = response.listed_exchange ?? response['exchange-listed'];
 						const tradedExchange = response.exchange ?? response['exchange-traded'];
-						const fullName = response.full_name ?? `${tradedExchange}:${symbol}`;
 
 						const result: LibrarySymbolInfo = {
 							...response,
 							name: symbol,
 							base_name: [listedExchange + ':' + symbol],
-							full_name: fullName,
 							listed_exchange: listedExchange,
 							exchange: tradedExchange,
+							ticker: response.ticker,
 							currency_code: response.currency_code ?? response['currency-code'],
 							original_currency_code: response.original_currency_code ?? response['original-currency-code'],
 							unit_id: response.unit_id ?? response['unit-id'],
@@ -375,7 +372,7 @@ export class UDFCompatibleDatafeedBase implements IExternalDatafeed, IDatafeedQu
 		}
 	}
 
-	public getBars(symbolInfo: LibrarySymbolInfo, resolution: ResolutionString, periodParams: PeriodParamsWithOptionalCountback, onResult: HistoryCallback, onError: ErrorCallback): void {
+	public getBars(symbolInfo: LibrarySymbolInfo, resolution: ResolutionString, periodParams: PeriodParamsWithOptionalCountback, onResult: HistoryCallback, onError: DatafeedErrorCallback): void {
 		this._historyProvider.getBars(symbolInfo, resolution, periodParams)
 			.then((result: GetBarsResult) => {
 				onResult(result.bars, result.meta);

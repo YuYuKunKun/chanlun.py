@@ -2,7 +2,7 @@
     typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
     typeof define === 'function' && define.amd ? define(['exports'], factory) :
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Datafeeds = {}));
-}(this, (function (exports) { 'use strict';
+})(this, (function (exports) { 'use strict';
 
     /**
      * If you want to enable logs from datafeed set it to `true`
@@ -19,6 +19,58 @@
         return error.message;
     }
 
+    class QuotesProvider {
+        constructor(datafeedUrl, requester) {
+            this._datafeedUrl = datafeedUrl;
+            this._requester = requester;
+        }
+        getQuotes(symbols) {
+            return new Promise((resolve, reject) => {
+                this._requester.sendRequest(this._datafeedUrl, 'quotes', { symbols: symbols })
+                    .then((response) => {
+                    if (response.s === 'ok') {
+                        resolve(response.d);
+                    }
+                    else {
+                        reject(response.errmsg);
+                    }
+                })
+                    .catch((error) => {
+                    const errorMessage = getErrorMessage(error);
+                    reject(`network error: ${errorMessage}`);
+                });
+            });
+        }
+    }
+
+    class Requester {
+        constructor(headers) {
+            if (headers) {
+                this._headers = headers;
+            }
+        }
+        sendRequest(datafeedUrl, urlPath, params) {
+            if (params !== undefined) {
+                const paramKeys = Object.keys(params);
+                if (paramKeys.length !== 0) {
+                    urlPath += '?';
+                }
+                urlPath += paramKeys.map((key) => {
+                    return `${encodeURIComponent(key)}=${encodeURIComponent(params[key].toString())}`;
+                }).join('&');
+            }
+            // Send user cookies if the URL is on the same origin as the calling script.
+            const options = { credentials: 'same-origin' };
+            if (this._headers !== undefined) {
+                options.headers = this._headers;
+            }
+            // eslint-disable-next-line no-restricted-globals
+            return fetch(`${datafeedUrl}/${urlPath}`, options)
+                .then((response) => response.text())
+                .then((responseTest) => JSON.parse(responseTest));
+        }
+    }
+
     class HistoryProvider {
         constructor(datafeedUrl, requester, limitedServerResponse) {
             this._datafeedUrl = datafeedUrl;
@@ -28,7 +80,7 @@
         }
         getBars(symbolInfo, resolution, periodParams) {
             const requestParams = {
-                symbol: symbolInfo.ticker || '',
+                symbol: symbolInfo.ticker || "",
                 resolution: resolution,
                 from: periodParams.from,
                 to: periodParams.to,
@@ -47,7 +99,7 @@
             }
             return new Promise(async (resolve, reject) => {
                 try {
-                    const initialResponse = await this._requester.sendRequest(this._datafeedUrl, 'history', requestParams);
+                    const initialResponse = await this._requester.sendRequest(this._datafeedUrl, "history", requestParams);
                     const result = this._processHistoryResponse(initialResponse, requestParams);
                     if (this._limitedServerResponse) {
                         await this._processTruncatedResponse(result, requestParams);
@@ -55,7 +107,7 @@
                     resolve(result);
                 }
                 catch (e) {
-                    if (e instanceof Error || typeof e === 'string') {
+                    if (e instanceof Error || typeof e === "string") {
                         const reasonString = getErrorMessage(e);
                         // tslint:disable-next-line:no-console
                         console.warn(`HistoryProvider: getBars() failed, error=${reasonString}`);
@@ -73,20 +125,22 @@
                     requestParams.from < requestParams.to) {
                     // adjust request parameters for follow-up request
                     if (requestParams.countback) {
-                        requestParams.countback = requestParams.countback - lastResultLength;
+                        requestParams.countback =
+                            requestParams.countback - lastResultLength;
                     }
-                    if (this._limitedServerResponse.expectedOrder === 'earliestFirst') {
+                    if (this._limitedServerResponse.expectedOrder === "earliestFirst") {
                         requestParams.from = Math.round(result.bars[result.bars.length - 1].time / 1000);
                     }
                     else {
                         requestParams.to = Math.round(result.bars[0].time / 1000);
                     }
-                    const followupResponse = await this._requester.sendRequest(this._datafeedUrl, 'history', requestParams);
+                    const followupResponse = await this._requester.sendRequest(this._datafeedUrl, "history", requestParams);
                     const followupResult = this._processHistoryResponse(followupResponse, requestParams);
                     lastResultLength = followupResult.bars.length;
                     // merge result with results collected so far
-                    if (this._limitedServerResponse.expectedOrder === 'earliestFirst') {
-                        if (followupResult.bars[0].time === result.bars[result.bars.length - 1].time) {
+                    if (this._limitedServerResponse.expectedOrder === "earliestFirst") {
+                        if (followupResult.bars[0].time ===
+                            result.bars[result.bars.length - 1].time) {
                             // Datafeed shouldn't include a value exactly matching the `to` timestamp but in case it does
                             // we will remove the duplicate.
                             followupResult.bars.shift();
@@ -94,7 +148,8 @@
                         result.bars.push(...followupResult.bars);
                     }
                     else {
-                        if (followupResult.bars[followupResult.bars.length - 1].time === result.bars[0].time) {
+                        if (followupResult.bars[followupResult.bars.length - 1].time ===
+                            result.bars[0].time) {
                             // Datafeed shouldn't include a value exactly matching the `to` timestamp but in case it does
                             // we will remove the duplicate.
                             followupResult.bars.pop();
@@ -108,7 +163,7 @@
                  * Error occurred during followup request. We won't reject the original promise
                  * because the initial response was valid so we will return what we've got so far.
                  */
-                if (e instanceof Error || typeof e === 'string') {
+                if (e instanceof Error || typeof e === "string") {
                     const reasonString = getErrorMessage(e);
                     // tslint:disable-next-line:no-console
                     console.warn(`HistoryProvider: getBars() warning during followup request, error=${reasonString}`);
@@ -116,93 +171,157 @@
             }
         }
         _processHistoryResponse(response, requestParams) {
-            if (response.s !== 'ok' && response.s !== 'no_data') {
+            if (response.s !== "ok" && response.s !== "no_data") {
                 throw new Error(response.errmsg);
             }
             const bars = [];
             const meta = {
                 noData: false,
             };
-            let fxs = [];
-            let bis = [];
-            let xds = [];
-            let zsds = [];
-            let bi_zss = [];
-            let xd_zss = [];
-            let zsd_zss = [];
-            let bcs = [];
-            let mmds = [];
-            let result = {
-                bars: bars,
-                meta: meta,
-                fxs: fxs,
-                bis: bis,
-                xds: xds,
-                zsds: zsds,
-                bi_zss: bi_zss,
-                xd_zss: xd_zss,
-                zsd_zss: zsd_zss,
-                bcs: bcs,
-                mmds: mmds,
-            };
-            if (response.s === 'no_data') {
+            if (response.s === "no_data") {
                 meta.noData = true;
                 meta.nextTime = response.nextTime;
             }
             else {
                 const volumePresent = response.v !== undefined;
                 const ohlPresent = response.o !== undefined;
-                fxs = response.fxs;
-                bis = response.bis;
-                xds = response.xds;
-                zsds = response.zsds;
-                bi_zss = response.bi_zss;
-                xd_zss = response.xd_zss;
-                zsd_zss = response.zsd_zss;
-                bcs = response.bcs;
-                mmds = response.mmds;
                 for (let i = 0; i < response.t.length; ++i) {
                     const barValue = {
                         time: response.t[i] * 1000,
-                        close: parseFloat(response.c[i]),
-                        open: parseFloat(response.c[i]),
-                        high: parseFloat(response.c[i]),
-                        low: parseFloat(response.c[i]),
+                        close: response.c[i],
+                        open: response.c[i],
+                        high: response.c[i],
+                        low: response.c[i],
                     };
                     if (ohlPresent) {
-                        barValue.open = parseFloat(response.o[i]);
-                        barValue.high = parseFloat(response.h[i]);
-                        barValue.low = parseFloat(response.l[i]);
+                        barValue.open = response.o[i];
+                        barValue.high = response.h[i];
+                        barValue.low = response.l[i];
                     }
                     if (volumePresent) {
-                        barValue.volume = parseFloat(response.v[i]);
+                        barValue.volume = response.v[i];
                     }
                     bars.push(barValue);
                 }
-                let result = {
-                    bars: bars,
-                    meta: meta,
-                    fxs: fxs,
-                    bis: bis,
-                    xds: xds,
-                    zsds: zsds,
-                    bi_zss: bi_zss,
-                    xd_zss: xd_zss,
-                    zsd_zss: zsd_zss,
-                    bcs: bcs,
-                    mmds: mmds,
-                };
-                let obj_res = this.bars_result.get(requestParams['symbol'].toString().toLowerCase());
-                if (obj_res == undefined) {
-                    let obj_res = new Map();
-                    obj_res.set(requestParams['resolution'].toString().toLowerCase(), result);
-                    this.bars_result.set(requestParams['symbol'].toString().toLowerCase(), obj_res);
+                // 设置保存的key
+                const res_key = requestParams["symbol"].toString().toLowerCase() +
+                    requestParams["resolution"].toString().toLowerCase();
+                // 保存数据
+                let obj_res = this.bars_result.get(res_key);
+                if (response.update == false || obj_res == undefined) {
+                    this.bars_result.set(res_key, {
+                        bars: bars,
+                        meta: meta,
+                        fxs: response.fxs,
+                        bis: response.bis,
+                        xds: response.xds,
+                        zsds: response.zsds,
+                        bi_zss: response.bi_zss,
+                        xd_zss: response.xd_zss,
+                        zsd_zss: response.zsd_zss,
+                        bcs: response.bcs,
+                        mmds: response.mmds,
+                        chart_color: response.chart_color,
+                    });
                 }
                 else {
-                    obj_res.set(requestParams['resolution'].toString().toLowerCase(), result);
-                    this.bars_result.set(requestParams['symbol'].toString().toLowerCase(), obj_res);
+                    // 更新存在的数据
+                    // 更新逻辑，找到大于等于返回的第一个时间的所有数据；
+                    // 保留小于返回的第一个时间的所有数据；
+                    // 然后添加返回的数据；
+                    // 最后按时间排序；
+                    // 1. 更新其他数据结构（如分型、笔、线段等）
+                    // 处理TextPoint类型数据（fxs, bcs, mmds）
+                    const updateTextPoints = (existingPoints, newPoints) => {
+                        if (!newPoints || newPoints.length === 0)
+                            return existingPoints || [];
+                        if (!existingPoints || existingPoints.length === 0)
+                            return newPoints;
+                        // 获取点位时间的辅助函数，处理points可能是对象或数组的情况
+                        const getPointTime = (point) => {
+                            if (Array.isArray(point.points)) {
+                                // 如果是数组，取第一个元素的time
+                                return point.points[0].time;
+                            }
+                            else {
+                                // 如果是单个对象，直接取time
+                                return point.points.time;
+                            }
+                        };
+                        const minResponseTime = Math.min(...newPoints.map(getPointTime));
+                        const updatedPoints = [];
+                        // 保留小于最小时间点的数据
+                        for (const point of existingPoints) {
+                            if (getPointTime(point) < minResponseTime) {
+                                updatedPoints.push(point);
+                            }
+                        }
+                        // 添加返回数据中剩余的新点位
+                        for (const point of newPoints) {
+                            updatedPoints.push(point);
+                        }
+                        // 按时间排序，使用getPointTime辅助函数获取时间
+                        return updatedPoints.sort((a, b) => getPointTime(a) - getPointTime(b));
+                    };
+                    // 处理LineSegment类型数据（bis, xds, zsds, bi_zss, xd_zss, zsd_zss）
+                    const updateLineSegments = (existingSegments, newSegments) => {
+                        if (!newSegments || newSegments.length === 0)
+                            return existingSegments || [];
+                        if (!existingSegments || existingSegments.length === 0)
+                            return newSegments;
+                        const minResponseTime = Math.min(...newSegments.map((segment) => segment.points[0].time));
+                        const updatedSegments = [];
+                        // 保留起始时间小于最小时间点的线段
+                        for (const segment of existingSegments) {
+                            if (segment.points.length > 0) {
+                                if (segment.points[0].time < minResponseTime) {
+                                    updatedSegments.push(segment);
+                                }
+                            }
+                        }
+                        // 添加返回数据中剩余的新线段
+                        for (const segment of newSegments) {
+                            updatedSegments.push(segment);
+                        }
+                        // 按起始时间排序
+                        return updatedSegments.sort((a, b) => {
+                            if (a.points.length === 0 && b.points.length === 0)
+                                return 0;
+                            if (a.points.length === 0)
+                                return -1;
+                            if (b.points.length === 0)
+                                return 1;
+                            return a.points[0].time - b.points[0].time;
+                        });
+                    };
+                    // 更新所有数据
+                    obj_res.fxs = updateTextPoints(obj_res.fxs, response.fxs);
+                    obj_res.bis = updateLineSegments(obj_res.bis, response.bis);
+                    obj_res.xds = updateLineSegments(obj_res.xds, response.xds);
+                    obj_res.zsds = updateLineSegments(obj_res.zsds, response.zsds);
+                    obj_res.bi_zss = updateLineSegments(obj_res.bi_zss, response.bi_zss);
+                    obj_res.xd_zss = updateLineSegments(obj_res.xd_zss, response.xd_zss);
+                    obj_res.zsd_zss = updateLineSegments(obj_res.zsd_zss, response.zsd_zss);
+                    obj_res.bcs = updateTextPoints(obj_res.bcs, response.bcs);
+                    obj_res.mmds = updateTextPoints(obj_res.mmds, response.mmds);
+                    obj_res.chart_color = response.chart_color;
+                    this.bars_result.set(res_key, obj_res);
                 }
             }
+            const result = {
+                bars: bars,
+                meta: meta,
+                fxs: response.fxs,
+                bis: response.bis,
+                xds: response.xds,
+                zsds: response.zsds,
+                bi_zss: response.bi_zss,
+                xd_zss: response.xd_zss,
+                zsd_zss: response.zsd_zss,
+                bcs: response.bcs,
+                mmds: response.mmds,
+                chart_color: response.chart_color,
+            };
             return result;
         }
     }
@@ -369,7 +488,12 @@
         }
     }
 
-    function extractField(data, field, arrayIndex, valueIsArray) {
+    function extractField$1(data, field, arrayIndex, valueIsArray) {
+        if (!(field in data)) {
+            // eslint-disable-next-line no-console
+            console.warn(`Field "${String(field)}" not present in response`);
+            return undefined;
+        }
         const value = data[field];
         if (Array.isArray(value) && (!valueIsArray || Array.isArray(value[0]))) {
             return value[arrayIndex];
@@ -391,7 +515,7 @@
             this._readyPromise = this._init();
             this._readyPromise.catch((error) => {
                 // seems it is impossible
-                // tslint:disable-next-line:no-console
+                // eslint-disable-next-line no-console
                 console.error(`SymbolsStorage: Cannot init, error=${error.toString()}`);
             });
         }
@@ -438,7 +562,7 @@
                     const symbolInfo = item.symbolInfo;
                     return {
                         symbol: symbolInfo.name,
-                        full_name: symbolInfo.full_name,
+                        full_name: `${symbolInfo.exchange}:${symbolInfo.name}`,
                         description: symbolInfo.description,
                         exchange: symbolInfo.exchange,
                         params: [],
@@ -485,56 +609,72 @@
         }
         _onExchangeDataReceived(exchange, data) {
             let symbolIndex = 0;
+            let fullName;
             try {
                 const symbolsCount = data.symbol.length;
                 const tickerPresent = data.ticker !== undefined;
                 for (; symbolIndex < symbolsCount; ++symbolIndex) {
                     const symbolName = data.symbol[symbolIndex];
-                    const listedExchange = extractField(data, 'exchange-listed', symbolIndex);
-                    const tradedExchange = extractField(data, 'exchange-traded', symbolIndex);
-                    const fullName = tradedExchange + ':' + symbolName;
-                    const currencyCode = extractField(data, 'currency-code', symbolIndex);
-                    const unitId = extractField(data, 'unit-id', symbolIndex);
-                    const ticker = tickerPresent ? extractField(data, 'ticker', symbolIndex) : symbolName;
+                    const listedExchange = extractField$1(data, 'exchange-listed', symbolIndex);
+                    const tradedExchange = extractField$1(data, 'exchange-traded', symbolIndex);
+                    if (listedExchange !== undefined || tradedExchange !== undefined) {
+                        // eslint-disable-next-line no-console
+                        console.warn('Starting from v30, both "exchange-listed" and "exchange-traded" fields are deprecated. Please use "exchange_listed_name" instead.');
+                        fullName = tradedExchange + ':' + symbolName;
+                    }
+                    const exchangeListedName = extractField$1(data, 'exchange_listed_name', symbolIndex);
+                    if (exchangeListedName === undefined) {
+                        // eslint-disable-next-line no-console
+                        console.warn('Starting from v30, both "exchange-listed" and "exchange-traded" fields are deprecated. Please use "exchange_listed_name" instead.');
+                    }
+                    else {
+                        fullName = exchangeListedName + ':' + symbolName;
+                    }
+                    const currencyCode = extractField$1(data, 'currency-code', symbolIndex);
+                    const unitId = extractField$1(data, 'unit-id', symbolIndex);
+                    const ticker = tickerPresent ? extractField$1(data, 'ticker', symbolIndex) : symbolName;
                     const symbolInfo = {
                         ticker: ticker,
                         name: symbolName,
                         base_name: [listedExchange + ':' + symbolName],
-                        full_name: fullName,
                         listed_exchange: listedExchange,
-                        exchange: tradedExchange,
+                        exchange: exchangeListedName || listedExchange,
                         currency_code: currencyCode,
-                        original_currency_code: extractField(data, 'original-currency-code', symbolIndex),
+                        original_currency_code: extractField$1(data, 'original-currency-code', symbolIndex),
                         unit_id: unitId,
-                        original_unit_id: extractField(data, 'original-unit-id', symbolIndex),
-                        unit_conversion_types: extractField(data, 'unit-conversion-types', symbolIndex, true),
-                        description: extractField(data, 'description', symbolIndex),
-                        has_intraday: definedValueOrDefault(extractField(data, 'has-intraday', symbolIndex), false),
-                        visible_plots_set: definedValueOrDefault(extractField(data, 'visible-plots-set', symbolIndex), undefined),
-                        minmov: extractField(data, 'minmovement', symbolIndex) || extractField(data, 'minmov', symbolIndex) || 0,
-                        minmove2: extractField(data, 'minmove2', symbolIndex) || extractField(data, 'minmov2', symbolIndex),
-                        fractional: extractField(data, 'fractional', symbolIndex),
-                        pricescale: extractField(data, 'pricescale', symbolIndex),
-                        type: extractField(data, 'type', symbolIndex),
-                        session: extractField(data, 'session-regular', symbolIndex),
-                        session_holidays: extractField(data, 'session-holidays', symbolIndex),
-                        corrections: extractField(data, 'corrections', symbolIndex),
-                        timezone: extractField(data, 'timezone', symbolIndex),
-                        supported_resolutions: definedValueOrDefault(extractField(data, 'supported-resolutions', symbolIndex, true), this._datafeedSupportedResolutions),
-                        has_daily: definedValueOrDefault(extractField(data, 'has-daily', symbolIndex), true),
-                        intraday_multipliers: definedValueOrDefault(extractField(data, 'intraday-multipliers', symbolIndex, true), ['1', '5', '15', '30', '60']),
-                        has_weekly_and_monthly: extractField(data, 'has-weekly-and-monthly', symbolIndex),
-                        has_empty_bars: extractField(data, 'has-empty-bars', symbolIndex),
-                        volume_precision: definedValueOrDefault(extractField(data, 'volume-precision', symbolIndex), 0),
+                        original_unit_id: extractField$1(data, 'original-unit-id', symbolIndex),
+                        unit_conversion_types: extractField$1(data, 'unit-conversion-types', symbolIndex, true),
+                        description: extractField$1(data, 'description', symbolIndex),
+                        has_intraday: definedValueOrDefault(extractField$1(data, 'has-intraday', symbolIndex), false),
+                        visible_plots_set: definedValueOrDefault(extractField$1(data, 'visible-plots-set', symbolIndex), undefined),
+                        minmov: extractField$1(data, 'minmovement', symbolIndex) || extractField$1(data, 'minmov', symbolIndex) || 0,
+                        minmove2: extractField$1(data, 'minmove2', symbolIndex) || extractField$1(data, 'minmov2', symbolIndex),
+                        fractional: extractField$1(data, 'fractional', symbolIndex),
+                        pricescale: extractField$1(data, 'pricescale', symbolIndex),
+                        type: extractField$1(data, 'type', symbolIndex),
+                        session: extractField$1(data, 'session-regular', symbolIndex),
+                        session_holidays: extractField$1(data, 'session-holidays', symbolIndex),
+                        corrections: extractField$1(data, 'corrections', symbolIndex),
+                        timezone: extractField$1(data, 'timezone', symbolIndex),
+                        supported_resolutions: definedValueOrDefault(extractField$1(data, 'supported-resolutions', symbolIndex, true), this._datafeedSupportedResolutions),
+                        has_daily: definedValueOrDefault(extractField$1(data, 'has-daily', symbolIndex), true),
+                        intraday_multipliers: definedValueOrDefault(extractField$1(data, 'intraday-multipliers', symbolIndex, true), ['1', '5', '15', '30', '60']),
+                        has_weekly_and_monthly: extractField$1(data, 'has-weekly-and-monthly', symbolIndex),
+                        has_empty_bars: extractField$1(data, 'has-empty-bars', symbolIndex),
+                        volume_precision: definedValueOrDefault(extractField$1(data, 'volume-precision', symbolIndex), 0),
                         format: 'price',
                     };
                     this._symbolsInfo[ticker] = symbolInfo;
                     this._symbolsInfo[symbolName] = symbolInfo;
-                    this._symbolsInfo[fullName] = symbolInfo;
+                    if (fullName !== undefined) {
+                        this._symbolsInfo[fullName] = symbolInfo;
+                    }
                     if (currencyCode !== undefined || unitId !== undefined) {
                         this._symbolsInfo[symbolKey(ticker, currencyCode, unitId)] = symbolInfo;
                         this._symbolsInfo[symbolKey(symbolName, currencyCode, unitId)] = symbolInfo;
-                        this._symbolsInfo[symbolKey(fullName, currencyCode, unitId)] = symbolInfo;
+                        if (fullName !== undefined) {
+                            this._symbolsInfo[symbolKey(fullName, currencyCode, unitId)] = symbolInfo;
+                        }
                     }
                     this._symbolsList.push(symbolName);
                 }
@@ -548,13 +688,13 @@
         return value !== undefined ? value : defaultValue;
     }
 
-    function extractField$1(data, field, arrayIndex) {
+    function extractField(data, field, arrayIndex) {
         const value = data[field];
         return Array.isArray(value) ? value[arrayIndex] : value;
     }
     /**
      * This class implements interaction with UDF-compatible datafeed.
-     * See [UDF protocol reference](@docs/connecting_data/UDF)
+     * See [UDF protocol reference](@docs/connecting_data/UDF.md)
      */
     class UDFCompatibleDatafeedBase {
         constructor(datafeedURL, quotesProvider, requester, updateFrequency = 10 * 1000, limitedServerResponse) {
@@ -604,17 +744,17 @@
                     const result = [];
                     for (let i = 0; i < response.id.length; ++i) {
                         result.push({
-                            id: extractField$1(response, 'id', i),
-                            time: extractField$1(response, 'time', i),
-                            color: extractField$1(response, 'color', i),
-                            text: extractField$1(response, 'text', i),
-                            label: extractField$1(response, 'label', i),
-                            labelFontColor: extractField$1(response, 'labelFontColor', i),
-                            minSize: extractField$1(response, 'minSize', i),
-                            borderWidth: extractField$1(response, 'borderWidth', i),
-                            hoveredBorderWidth: extractField$1(response, 'hoveredBorderWidth', i),
-                            imageUrl: extractField$1(response, 'imageUrl', i),
-                            showLabelWhenImageLoaded: extractField$1(response, 'showLabelWhenImageLoaded', i),
+                            id: extractField(response, 'id', i),
+                            time: extractField(response, 'time', i),
+                            color: extractField(response, 'color', i),
+                            text: extractField(response, 'text', i),
+                            label: extractField(response, 'label', i),
+                            labelFontColor: extractField(response, 'labelFontColor', i),
+                            minSize: extractField(response, 'minSize', i),
+                            borderWidth: extractField(response, 'borderWidth', i),
+                            hoveredBorderWidth: extractField(response, 'hoveredBorderWidth', i),
+                            imageUrl: extractField(response, 'imageUrl', i),
+                            showLabelWhenImageLoaded: extractField(response, 'showLabelWhenImageLoaded', i),
                         });
                     }
                     response = result;
@@ -642,13 +782,13 @@
                     const result = [];
                     for (let i = 0; i < response.id.length; ++i) {
                         result.push({
-                            id: extractField$1(response, 'id', i),
-                            time: extractField$1(response, 'time', i),
-                            color: extractField$1(response, 'color', i),
-                            label: extractField$1(response, 'label', i),
-                            tooltip: extractField$1(response, 'tooltip', i),
-                            imageUrl: extractField$1(response, 'imageUrl', i),
-                            showLabelWhenImageLoaded: extractField$1(response, 'showLabelWhenImageLoaded', i),
+                            id: extractField(response, 'id', i),
+                            time: extractField(response, 'time', i),
+                            color: extractField(response, 'color', i),
+                            label: extractField(response, 'label', i),
+                            tooltip: extractField(response, 'tooltip', i),
+                            imageUrl: extractField(response, 'imageUrl', i),
+                            showLabelWhenImageLoaded: extractField(response, 'showLabelWhenImageLoaded', i),
                         });
                     }
                     response = result;
@@ -724,40 +864,38 @@
                 }
                 this._send('symbols', params)
                     .then((response) => {
-                    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2;
                     if (response.s !== undefined) {
                         onError('unknown_symbol');
                     }
                     else {
                         const symbol = response.name;
-                        const listedExchange = (_a = response.listed_exchange) !== null && _a !== void 0 ? _a : response['exchange-listed'];
-                        const tradedExchange = (_b = response.exchange) !== null && _b !== void 0 ? _b : response['exchange-traded'];
-                        const fullName = (_c = response.full_name) !== null && _c !== void 0 ? _c : `${tradedExchange}:${symbol}`;
+                        const listedExchange = response.listed_exchange ?? response['exchange-listed'];
+                        const tradedExchange = response.exchange ?? response['exchange-traded'];
                         const result = {
                             ...response,
                             name: symbol,
                             base_name: [listedExchange + ':' + symbol],
-                            full_name: fullName,
                             listed_exchange: listedExchange,
                             exchange: tradedExchange,
-                            currency_code: (_d = response.currency_code) !== null && _d !== void 0 ? _d : response['currency-code'],
-                            original_currency_code: (_e = response.original_currency_code) !== null && _e !== void 0 ? _e : response['original-currency-code'],
-                            unit_id: (_f = response.unit_id) !== null && _f !== void 0 ? _f : response['unit-id'],
-                            original_unit_id: (_g = response.original_unit_id) !== null && _g !== void 0 ? _g : response['original-unit-id'],
-                            unit_conversion_types: (_h = response.unit_conversion_types) !== null && _h !== void 0 ? _h : response['unit-conversion-types'],
-                            has_intraday: (_k = (_j = response.has_intraday) !== null && _j !== void 0 ? _j : response['has-intraday']) !== null && _k !== void 0 ? _k : false,
-                            visible_plots_set: (_l = response.visible_plots_set) !== null && _l !== void 0 ? _l : response['visible-plots-set'],
-                            minmov: (_o = (_m = response.minmovement) !== null && _m !== void 0 ? _m : response.minmov) !== null && _o !== void 0 ? _o : 0,
-                            minmove2: (_p = response.minmovement2) !== null && _p !== void 0 ? _p : response.minmove2,
-                            session: (_q = response.session) !== null && _q !== void 0 ? _q : response['session-regular'],
-                            session_holidays: (_r = response.session_holidays) !== null && _r !== void 0 ? _r : response['session-holidays'],
-                            supported_resolutions: (_u = (_t = (_s = response.supported_resolutions) !== null && _s !== void 0 ? _s : response['supported-resolutions']) !== null && _t !== void 0 ? _t : this._configuration.supported_resolutions) !== null && _u !== void 0 ? _u : [],
-                            has_daily: (_w = (_v = response.has_daily) !== null && _v !== void 0 ? _v : response['has-daily']) !== null && _w !== void 0 ? _w : true,
-                            intraday_multipliers: (_y = (_x = response.intraday_multipliers) !== null && _x !== void 0 ? _x : response['intraday-multipliers']) !== null && _y !== void 0 ? _y : ['1', '5', '15', '30', '60'],
-                            has_weekly_and_monthly: (_z = response.has_weekly_and_monthly) !== null && _z !== void 0 ? _z : response['has-weekly-and-monthly'],
-                            has_empty_bars: (_0 = response.has_empty_bars) !== null && _0 !== void 0 ? _0 : response['has-empty-bars'],
-                            volume_precision: (_1 = response.volume_precision) !== null && _1 !== void 0 ? _1 : response['volume-precision'],
-                            format: (_2 = response.format) !== null && _2 !== void 0 ? _2 : 'price',
+                            ticker: response.ticker,
+                            currency_code: response.currency_code ?? response['currency-code'],
+                            original_currency_code: response.original_currency_code ?? response['original-currency-code'],
+                            unit_id: response.unit_id ?? response['unit-id'],
+                            original_unit_id: response.original_unit_id ?? response['original-unit-id'],
+                            unit_conversion_types: response.unit_conversion_types ?? response['unit-conversion-types'],
+                            has_intraday: response.has_intraday ?? response['has-intraday'] ?? false,
+                            visible_plots_set: response.visible_plots_set ?? response['visible-plots-set'],
+                            minmov: response.minmovement ?? response.minmov ?? 0,
+                            minmove2: response.minmovement2 ?? response.minmove2,
+                            session: response.session ?? response['session-regular'],
+                            session_holidays: response.session_holidays ?? response['session-holidays'],
+                            supported_resolutions: response.supported_resolutions ?? response['supported-resolutions'] ?? this._configuration.supported_resolutions ?? [],
+                            has_daily: response.has_daily ?? response['has-daily'] ?? true,
+                            intraday_multipliers: response.intraday_multipliers ?? response['intraday-multipliers'] ?? ['1', '5', '15', '30', '60'],
+                            has_weekly_and_monthly: response.has_weekly_and_monthly ?? response['has-weekly-and-monthly'],
+                            has_empty_bars: response.has_empty_bars ?? response['has-empty-bars'],
+                            volume_precision: response.volume_precision ?? response['volume-precision'],
+                            format: response.format ?? 'price',
                         };
                         onResultReady(result);
                     }
@@ -830,58 +968,6 @@
         };
     }
 
-    class QuotesProvider {
-        constructor(datafeedUrl, requester) {
-            this._datafeedUrl = datafeedUrl;
-            this._requester = requester;
-        }
-        getQuotes(symbols) {
-            return new Promise((resolve, reject) => {
-                this._requester.sendRequest(this._datafeedUrl, 'quotes', { symbols: symbols })
-                    .then((response) => {
-                    if (response.s === 'ok') {
-                        resolve(response.d);
-                    }
-                    else {
-                        reject(response.errmsg);
-                    }
-                })
-                    .catch((error) => {
-                    const errorMessage = getErrorMessage(error);
-                    reject(`network error: ${errorMessage}`);
-                });
-            });
-        }
-    }
-
-    class Requester {
-        constructor(headers) {
-            if (headers) {
-                this._headers = headers;
-            }
-        }
-        sendRequest(datafeedUrl, urlPath, params) {
-            if (params !== undefined) {
-                const paramKeys = Object.keys(params);
-                if (paramKeys.length !== 0) {
-                    urlPath += '?';
-                }
-                urlPath += paramKeys.map((key) => {
-                    return `${encodeURIComponent(key)}=${encodeURIComponent(params[key].toString())}`;
-                }).join('&');
-            }
-            // Send user cookies if the URL is on the same origin as the calling script.
-            const options = { credentials: 'same-origin' };
-            if (this._headers !== undefined) {
-                options.headers = this._headers;
-            }
-            // eslint-disable-next-line no-restricted-globals
-            return fetch(`${datafeedUrl}/${urlPath}`, options)
-                .then((response) => response.text())
-                .then((responseTest) => JSON.parse(responseTest));
-        }
-    }
-
     class UDFCompatibleDatafeed extends UDFCompatibleDatafeedBase {
         constructor(datafeedURL, updateFrequency = 10 * 1000, limitedServerResponse) {
             const requester = new Requester();
@@ -892,6 +978,4 @@
 
     exports.UDFCompatibleDatafeed = UDFCompatibleDatafeed;
 
-    Object.defineProperty(exports, '__esModule', { value: true });
-
-})));
+}));
