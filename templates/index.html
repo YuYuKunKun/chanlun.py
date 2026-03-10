@@ -404,7 +404,13 @@
                 [900, "15"],
                 [1800, "30"],
                 [3600, "1H"],
-                [14400, "4h"]
+                [7200, "2H"],
+                [14400, "4h"],
+                [21600, "6H"],
+                [43200, "12H"],
+                [86400, "1D"],
+                [259200, "3D"]
+
             ]);
             const params = new URLSearchParams(window.location.search);
             const o = params.get('step') || '60';
@@ -765,7 +771,7 @@ print("=== 趋势分析 ===")`
                         visible_plots_set: "ohlcv",
                         has_no_volume: true,
                         has_weekly_and_monthly: false,
-                        supported_resolutions: ["1", "3", "5", "15", "30", "40", "1H", "2H", "4H", "6H", "12H", "1D", "3D"],
+                        supported_resolutions: ["1", "3", "5", "15", "30", "1H", "2H", "4H", "6H", "12H", "1D", "3D"],
                         volume_precision: 1,
                         data_status: "streaming",
                         has_intraday: true,
@@ -946,7 +952,7 @@ print("=== 趋势分析 ===")`
                     const shapeId = this.shapeIds.get(obj.id);
                     if (shapeId) {
                         Utils.error("图形已存在", obj);
-                        return;
+                        //return;
                     }
                     this.widget.chart().createMultipointShape(obj.points, obj.options).then(shapeId => {
                         const shape = this.widget.chart().getShapeById(shapeId);
@@ -1010,8 +1016,10 @@ print("=== 趋势分析 ===")`
                 { text: "特征序列", title: "显示隐藏特征序列", handler: () => this.toggleShapesByText("特征", "trend_line") },
                 { text: "笔", title: "显示隐藏笔", handler: () => this.toggleShapesByText("笔", "trend_line") },
                 { text: "段", title: "显示隐藏段", handler: () => this.toggleShapesByText("线段", "trend_line") },
+                { text: "扩展段", title: "显示隐藏扩展段", handler: () => this.toggleShapesByText("扩展线段", "trend_line") },
                 { text: "笔中枢", title: "显示隐藏笔中枢", handler: () => this.toggleShapesByText("中枢<笔>", "rectangle") },
-                { text: "段中枢", title: "显示隐藏段中枢", handler: () => this.toggleShapesByText("中枢<线段>", "rectangle") }
+                { text: "段中枢", title: "显示隐藏段中枢", handler: () => this.toggleShapesByText("中枢<线段>", "rectangle") },
+                { text: "扩展段中枢", title: "显示隐藏扩展段中枢", handler: () => this.toggleShapesByText("中枢<扩展线段>", "rectangle") }
             ];
 
             buttonConfigs.forEach(config => {
@@ -1193,7 +1201,7 @@ print("=== 趋势分析 ===")`
             this.tradingViewManager = new TradingViewManager(this.websocketManager);
             window.tvWidget = this.tradingViewManager.initWidget();
             window.tvWidget.headerReady().then(() => {
-                window.tvWidget.activeChart().createStudy("MACD");
+                window.tvWidget.activeChart().createStudy("MACD", false, false, {in_0:32, in_1: 64, in_2:9, in_3: "close"});
                 this.tradingViewManager.createHeaderButtons();
                 this.tradingViewManager.setupChartEvents();
             });
