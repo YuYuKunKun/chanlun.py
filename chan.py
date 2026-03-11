@@ -731,8 +731,10 @@ class 缠论配置(BaseModel):
     笔内起始分型包含整笔: bool = False  # True: 一笔起始分型高低包含整支笔对象则不成笔, False: 只判断分型中间数据是否包含
 
     笔次级成笔: bool = False
-    笔强力抖动: bool = False  # False: [买卖点激进识别]生效。所谓的强力抖动是笔序列频繁增删，由于默认识别非完整分型的笔
+    笔强力抖动: bool = True  # False: [买卖点激进识别]生效。所谓的强力抖动是笔序列频繁增删，由于默认识别非完整分型的笔
     基础分析保存原始K线: bool = True  # 是否保存raw bar
+
+    图显线段内部中枢: bool = True
     分析笔: bool = True  # 是否计算BI
     分析线段: bool = True  # 是否计算XD
     分析笔中枢: bool = True  # 是否计算BI中枢
@@ -2321,6 +2323,7 @@ class 笔(虚线):
 
                 if 来源渠道 == "分析":
                     观察员 and 观察员.报信(旧笔, 指令.删除(f"笔{行号}"))
+                    观察员 and 观察员.配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.笔序列, 观察员.线段序列, 观察员.中枢序列, 观察员, 观察员.配置)
 
         def _添加新笔(待添加分型: "分型", 待添加新笔: "笔", 行号):
             分型.向序列中添加(分型序列, 待添加分型)
@@ -2340,6 +2343,7 @@ class 笔(虚线):
             待添加新笔.文.中.笔_以我为起点_计数 += 1
             if 来源渠道 == "分析":
                 观察员 and 观察员.报信(待添加新笔, 指令.添加(f"笔{行号}"))
+                观察员 and 观察员.配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.笔序列, 观察员.线段序列, 观察员.中枢序列, 观察员, 观察员.配置)
 
         之前分型 = 分型序列[-1]
 
@@ -2768,9 +2772,9 @@ class 线段(虚线):
     def 获取内部中枢序列(self) -> Optional[List["中枢"]]:
         # 线段内部如存在中枢则级别比无中枢要大
         实, 虚, _ = self.分割序列()
-        中枢.分析(None, 实, self.实_中枢序列, None, 标识=f"段内<{self.序号}>")  # FIXME 此处需注意观察员
-        中枢.分析(None, 虚, self.虚_中枢序列, None, 标识=f"段后<{self.序号}>")  # FIXME 此处需注意观察员
-        中枢.分析(None, self, self.合_中枢序列, None, 标识=f"段合<{self.序号}>")  # FIXME 此处需注意观察员
+        中枢.分析(None, 实, self.实_中枢序列, self.观察员 if self.配置.图显线段内部中枢 else None, 标识=f"段内<{self.序号}>")  # FIXME 此处需注意观察员
+        中枢.分析(None, 虚, self.虚_中枢序列, self.观察员 if self.配置.图显线段内部中枢 else None, 标识=f"段后<{self.序号}>")  # FIXME 此处需注意观察员
+        中枢.分析(None, self, self.合_中枢序列, self.观察员 if self.配置.图显线段内部中枢 else None, 标识=f"段合<{self.序号}>")  # FIXME 此处需注意观察员
         return self.虚_中枢序列, self.实_中枢序列, self.合_中枢序列  # 阴 阳 合
 
     def 图表添加(self):
@@ -3971,8 +3975,8 @@ class 观察者:
 
         if len(self.笔序列) > 14:
             pass  # raise RuntimeError("手动终止")
-        if 普K.时间戳 > to_datetime("2025-11-22 00:00:33"):
-            pass  # return  # raise RuntimeError("手动终止")
+        if 普K.时间戳 > to_datetime("2022-11-14 00:00:33"):
+            pass  # raise RuntimeError("手动终止")
 
         if self.当前K线 is not None:
             if self.当前K线.时间戳 is 普K.时间戳:
