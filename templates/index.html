@@ -1,239 +1,853 @@
 <!DOCTYPE html>
 <html lang="zh">
-
 <head>
-    <title>TradingView Chart with WebSocket</title>
+    <title>TradingView Chart with Python Terminal</title>
     <meta charset="utf-8" name="viewport"
-        content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
+          content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
     <script type="text/javascript"
-        src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
+            src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
+    <style>
+        /* 全局样式 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+        }
 
-    <script type="text/javascript">
-        const shape_ids = []; // id 映射
-        const debug = false;
-        const exchange = "{{ exchange }}";
-        const ticker = "{{ symbol }}";
-        const name = ticker; // "BTCUSD"
-        const description = ticker; // "Bitcoin/USD"
-        const interval = "{{ interval }}";
-        const step = "{{ step }}";
-        const limit = "{{ limit }}";
-        const generator = "{{ generator }}";
-        const client_id = Math.random().toString(36).substr(2, 9); // 生成随机客户端ID
-        const socket = new WebSocket(`ws://${window.location.host}/ws/${client_id}`);
+        /* 左右分割容器 */
+        .split-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
 
-        socket.onopen = () => {
-            console.log("WebSocket connection established");
-        };
+        /* 左侧终端区域 */
+        .terminal-sidebar {
+            width: 400px;
+            min-width: 200px;
+            max-width: 800px;
+            height: 100%;
+            background: #1e1e1e; /* 经典终端背景色 */
+            color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-right: 1px solid #333;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
 
-        socket.onclose = () => {
-            console.log("WebSocket connection closed");
-        };
+        /* 可拖动分隔条 */
+        .splitter {
+            width: 4px;
+            height: 100%;
+            background: #333;
+            cursor: col-resize;
+            transition: background 0.2s;
+            z-index: 20;
+        }
 
-        socket.onerror = (error) => {
-            console.error("WebSocket error:", error);
-        };
+        .splitter:hover,
+        .splitter.active {
+            background: #007acc;
+        }
 
+        /* 右侧图表区域 */
+        .chart-area {
+            flex: 1;
+            height: 100%;
+            position: relative;
+        }
 
-        let datafeed = {
-            onReady: (callback) => {
-                console.log("[Datafeed.onReady]: Method call");
-                setTimeout(() => callback({
-                    supports_search: false,
-                    supports_group_request: false,
-                    supports_marks: false,
-                    supports_timescale_marks: true,
-                    supports_time: true,
-                    supported_resolutions: [interval,], //["1s", "1", "3", "5", "6", "12", "24", "30", "48", "64", "128", "1H", "2H", "3H", "4H", "6H", "8H", "12H", "36H", "1D", "2D", "3D", "5D", "12D", "1W"],
-                }));
-            },
+        #tv_chart_container {
+            width: 100%;
+            height: 100%;
+        }
 
-            searchSymbols: async (
-                userInput,
-                exchange,
-                symbolType,
-                onResultReadyCallback,
-            ) => {
-                console.log("[Datafeed.searchSymbols]: Method call", userInput, exchange, symbolType);
+        /* 终端内部样式 */
+        .terminal-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
 
-            },
+        .terminal-header {
+            padding: 8px 12px;
+            background: #2d2d2d;
+            border-bottom: 1px solid #3c3c3c;
+            color: #cccccc;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-            resolveSymbol: async (
-                symbolName,
-                onSymbolResolvedCallback,
-                onResolveErrorCallback,
-                extension
-            ) => {
-                console.log("[Datafeed.resolveSymbol]: Method call", symbolName);
-                //return ;
-                const symbolInfo = {
-                    exchange: exchange,
-                    ticker: ticker,
-                    name: name,
-                    description: description,
-                    type: "",
-                    session: "24x7",
-                    timezone: "Asia/Shanghai",
-                    minmov: 1,
-                    pricescale: 100, // 精度 数值越高小数点
-                    visible_plots_set: "ohlcv",
-                    has_no_volume: true,
-                    has_weekly_and_monthly: false, // 周线 月线
-                    supported_resolutions: ["1", "3", "5", "15", "30", "1H", "2H", "4H", "6H", "12H", "1D", "3D"],
-                    volume_precision: 1,
-                    data_status: "streaming",
-                    has_intraday: true,
-                    //intraday_multipliers: [5,], //["1", "3", "5", "15", "30", "60", "120", "240", "360", "720"],
-                    has_seconds: false,
-                    //seconds_multipliers: ["1S",],
-                    has_daily: true,
-                    //daily_multipliers: ["1", "3"],
-                    has_ticks: true,
-                    monthly_multipliers: [],
-                    weekly_multipliers: [],
-                };
+        .terminal-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-title span {
+            color: #569cd6;
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-btn {
+            background: #3c3c3c;
+            color: #d4d4d4;
+            border: none;
+            border-radius: 3px;
+            padding: 4px 10px;
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .terminal-btn:hover {
+            background: #4a4a4a;
+        }
+
+        .terminal-btn.primary {
+            background: #0e639c;
+            color: white;
+        }
+
+        .terminal-btn.primary:hover {
+            background: #1177bb;
+        }
+
+        .terminal-code-area {
+            flex: 1;
+            padding: 8px;
+            background: #1e1e1e;
+            border-bottom: 1px solid #3c3c3c;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-prompt {
+            color: #6a9955;
+            margin-right: 8px;
+            user-select: none;
+        }
+
+        .terminal-input {
+            width: 100%;
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #d4d4d4;
+            font-family: inherit;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            padding: 4px;
+            line-height: 1.5;
+            tab-size: 2;
+        }
+
+        .terminal-input::placeholder {
+            color: #5a5a5a;
+            font-style: italic;
+        }
+
+        .terminal-output-area {
+            height: 200px;
+            background: #1e1e1e;
+            border-top: 1px solid #3c3c3c;
+            overflow-y: auto;
+            padding: 8px;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .output-line {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-left: 3px solid transparent;
+            padding-left: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .output-line.success {
+            border-left-color: #6a9955;
+            color: #9cdcfe;
+        }
+
+        .output-line.error {
+            border-left-color: #f48771;
+            color: #f48771;
+        }
+
+        .output-line.info {
+            border-left-color: #569cd6;
+            color: #9cdcfe;
+        }
+
+        .output-line.warning {
+            border-left-color: #dcdcaa;
+            color: #dcdcaa;
+        }
+
+        .terminal-status-bar {
+            padding: 6px 12px;
+            background: #2d2d2d;
+            border-top: 1px solid #3c3c3c;
+            font-size: 12px;
+            color: #9e9e9e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f48771;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .status-dot.connected {
+            background: #6a9955;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .examples-bar {
+            padding: 6px 12px;
+            background: #2d2d2d;
+            border-top: 1px solid #3c3c3c;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .example-chip {
+            padding: 2px 8px;
+            background: #3c3c3c;
+            border: 1px solid #4a4a4a;
+            border-radius: 3px;
+            color: #9cdcfe;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .example-chip:hover {
+            background: #4a4a4a;
+            color: #d4d4d4;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 800px) {
+            .split-container {
+                flex-direction: column;
+            }
+
+            .terminal-sidebar {
+                width: 100% !important;
+                max-width: 100%;
+                height: 40%;
+                border-right: none;
+                border-bottom: 1px solid #333;
+            }
+
+            .splitter {
+                width: 100%;
+                height: 4px;
+                cursor: row-resize;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="split-container">
+    <!-- 左侧终端区域 -->
+    <div class="chart-area">
+        <div id="tv_chart_container"></div>
+    </div>
+
+    <!-- 可拖动分隔条 -->
+    <div class="splitter" id="splitter"></div>
+
+    <!-- 右侧图表区域 -->
+    <div class="terminal-sidebar" id="terminalSidebar">
+        <div class="terminal-container">
+            <div class="terminal-header">
+                <div class="terminal-title">
+                    <span>🐍</span> Python 终端
+                </div>
+                <div class="terminal-controls">
+                    <button class="terminal-btn" onclick="window.pythonWidget.clearCode()">清空</button>
+                    <button class="terminal-btn primary" onclick="window.pythonWidget.executeCode()" id="executeBtn">执行
+                        (Ctrl+Enter)
+                    </button>
+                </div>
+            </div>
+
+            <div class="terminal-code-area">
+                <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                    <span class="terminal-prompt">>>> </span>
+                </div>
+                <textarea class="terminal-input" id="codeInput" placeholder="# 在这里输入Python代码..."
+                          spellcheck="false"></textarea>
+            </div>
+
+            <div class="examples-bar">
+                <span class="example-chip" onclick="window.pythonWidget.loadExample('basic')">基础</span>
+                <span class="example-chip" onclick="window.pythonWidget.loadExample('chart')">图表分析</span>
+                <span class="example-chip" onclick="window.pythonWidget.loadExample('indicators')">技术指标</span>
+                <span class="example-chip" onclick="window.pythonWidget.loadExample('trend')">趋势分析</span>
+            </div>
+
+            <div class="terminal-output-area" id="outputArea">
+                <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
+            </div>
+
+            <div class="terminal-status-bar">
+                <div>
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">连接中...</span>
+                </div>
+                <div id="connectionInfo">Python 3.x</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script type="text/javascript">
+    // ============ 工具函数 ============
+    function hexToRgba(hex, alpha = 1) {
+        hex = hex.replace(/^#/, '');
+        let r = parseInt(hex.substring(0, 2), 16);
+        let g = parseInt(hex.substring(2, 4), 16);
+        let b = parseInt(hex.substring(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function rgbaToHex(rgbaStr) {
+        const values = rgbaStr.match(/\d+(\.\d+)?/g).map(Number);
+        const [r, g, b] = values.slice(0, 3);
+        const hex = ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+        return `#${hex}`;
+    }
+
+    function invertAlphaToRgba(colorStr) {
+        const hexPattern = /^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+        const rgbaPattern = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([0-9.]+)\s*)?\)$/i;
+
+        let r, g, b, alpha;
+
+        if (hexPattern.test(colorStr)) {
+            let hex = colorStr.slice(1);
+            if (hex.length === 3 || hex.length === 4) {
+                hex = hex.split('').map(c => c + c).join('');
+            }
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+            alpha = hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1;
+        } else if (rgbaPattern.test(colorStr)) {
+            const matches = colorStr.match(rgbaPattern);
+            r = parseInt(matches[1], 10);
+            g = parseInt(matches[2], 10);
+            b = parseInt(matches[3], 10);
+            alpha = matches[4] !== undefined ? parseFloat(matches[4]) : 1;
+        } else {
+            throw new Error('不支持的格式，请输入 HEX 或 RGBA 颜色字符串');
+        }
+
+        let newAlpha = alpha === 0 ? 1 : 0;
+        return `rgba(${r}, ${g}, ${b}, ${newAlpha})`;
+    }
+
+    // ============ 配置 ============
+    class Config {
+        static get debug() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('debug') === 'true';
+        }
+
+        static get theme() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('theme') || "light";
+        }
+
+        static get exchange() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('exchange') || 'bitstamp';
+        }
+
+        static get symbol() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('symbol') || 'btcusd';
+        }
+
+        static get interval() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('interval') || '1';
+        }
+
+        static get cover() {
+            const dict = new Map([
+                [60, "1"],
+                [180, "3"],
+                [300, "5"],
+                [900, "15"],
+                [1800, "30"],
+                [3600, "1H"],
+                [7200, "2H"],
+                [14400, "4h"],
+                [21600, "6H"],
+                [43200, "12H"],
+                [86400, "1D"],
+                [259200, "3D"]
+
+            ]);
+            const params = new URLSearchParams(window.location.search);
+            const val = params.get('step');
+            const step = Number(val);
+            const o = !val || isNaN(step) ? 60 : step;
+            return dict.get(Number(o)) || '5';
+        }
+
+        static get EMA_LENGTH() {
+            const params = new URLSearchParams(window.location.search);
+            return Number(params.get('ema')) || 31;
+        }
+
+        static get step() {
+            const params = new URLSearchParams(window.location.search);
+            const val = params.get('step');
+            const step = Number(val);
+            return !val || isNaN(step) ? 60 : step;
+        }
+
+        static get limit() {
+            const params = new URLSearchParams(window.location.search);
+            const val = params.get('limit');
+            const limit = Number(val);
+            return !val || isNaN(limit) ? 1000 : limit;
+        }
+
+        static get generator() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('generator') || 'False';
+        }
+
+        static get points() {
+            const params = new URLSearchParams(window.location.search);
+            const points = params.get('points');
+            if (!points) return [];
+            return points.split(',').map(Number).filter(n => !isNaN(n));
+        }
+    }
+
+    class Utils {
+        static generateClientId() {
+            return 'client_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        }
+
+        static log(message, data = null) {
+            if (Config.debug) {
+                console.log(message, data || '');
+            }
+        }
+
+        static error(message, error = null) {
+            console.error(message, error || '');
+        }
+
+        static info(message, error = null) {
+            console.info(message, error || '');
+        }
+    }
+
+    // ============ 统一 WebSocket 管理器 ============
+    class UnifiedWebSocketManager {
+        constructor() {
+            this.clientId = Utils.generateClientId();
+            this.socket = null;
+            this.isConnected = false;
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = 5;
+            this.reconnectDelay = 3000;
+            this.handlers = {chart: [], python: []};
+        }
+
+        connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            this.socket = new WebSocket(`${protocol}//${window.location.host}/ws/${this.clientId}`);
+
+            this.socket.onopen = () => {
+                Utils.log("WebSocket统一连接已建立");
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                this.updateConnectionStatus(true);
+            };
+
+            this.socket.onclose = () => {
+                Utils.log("WebSocket连接已关闭");
+                this.isConnected = false;
+                this.updateConnectionStatus(false);
+                this.attemptReconnect();
+            };
+
+            this.socket.onerror = (error) => {
+                Utils.error("WebSocket错误:", error);
+                this.isConnected = false;
+                this.updateConnectionStatus(false);
+            };
+
+            this.socket.onmessage = (event) => {
                 try {
-                    onSymbolResolvedCallback(symbolInfo);
-                } catch (err) {
-                    onResolveErrorCallback(err.message);
-                }
-
-            },
-
-            getBars: async (
-                symbolInfo,
-                resolution,
-                periodParams,
-                onHistoryCallback,
-                onErrorCallback,
-            ) => {
-                const { from, to, firstDataRequest } = periodParams;
-                console.log("[Datafeed.getBars]: Method call", symbolInfo, resolution, from, to, firstDataRequest);
-                try {
-                    onHistoryCallback([], { noData: true });
-
-                } catch (error) {
-                    console.log("[Datafeed.getBars]: Get error", error);
-                    onErrorCallback(error);
-                }
-            },
-
-            subscribeBars: (
-                symbolInfo,
-                resolution,
-                onRealtimeCallback,
-                subscriberUID,
-                onResetCacheNeededCallback,
-            ) => {
-                console.log(
-                    "[Datafeed.subscribeBars]: Method call with subscriberUID:",
-                    symbolInfo,
-                    resolution,
-                    subscriberUID,
-                );
-                socket.onmessage = function (event) {
                     const message = JSON.parse(event.data);
-                    if (debug) console.info(message);
-                    switch (message.type) {
-                        case "realtime":
-                            // 处理实时K线数据
-                            const bar = {
-                                time: new Date(message.timestamp).getTime(),
-                                close: message.close,
-                                open: message.open,
-                                high: message.high,
-                                low: message.low,
-                                volume: message.volume,
-                            };
-                            onRealtimeCallback(bar); //widget.activeChart().update(bar);
-                            break;
+                    this.handleMessage(message);
+                } catch (error) {
+                    Utils.error("解析WebSocket消息失败:", error);
+                }
+            };
+        }
 
-                        case "shape":
-                            // 处理图形数据
-                            if (message.cmd === "APPEND") {
-                                addShapeToChart(message);
-                            } else if (message.cmd === "REMOVE") {
-                                delShapeById(message)
-                            } else if (message.cmd === "MODIFY") {
-                                modifyShape(message)
-                            }
-                            break;
-
-                    }
-
-                };
-            },
-
-            unsubscribeBars: (subscriberUID) => {
-                console.log(
-                    "[Datafeed.unsubscribeBars]: Method call with subscriberUID:",
-                    subscriberUID,
-                );
-                socket.close();
-            }
-        };
-
-
-        function addShapeToChart(obj) {
-            if (window.tvWidget) {
-                const shape_id = window.tvWidget.chart().createMultipointShape(obj.points, obj.options);
-                shape_ids[obj.id] = shape_id;
-                const shape = window.tvWidget.chart().getShapeById(shape_id);
-                shape.setProperties(obj.properties);
-                shape.bringToFront();
-                //console.log(obj.id, shape_id);
-                //console.log("add", obj.name, obj.id);
-                return shape_id;
+        handleMessage(message) {
+            Utils.log("收到消息:", message);
+            const module = message.module || 'chart';
+            if (module === 'python') {
+                this.handlePythonMessage(message);
+            } else {
+                this.handleChartMessage(message);
             }
         }
 
-        function delShapeById(obj) {
-            if (window.tvWidget) {
+        handleChartMessage(message) {
+            this.handlers.chart.forEach(handler => {
                 try {
-                    const id = shape_ids[obj.id];
-                    delete shape_ids[obj.id];
-                    const shape = window.tvWidget.chart().getShapeById(id);
-                    if (debug) console.log(id, shape);
-                    window.tvWidget.chart().removeEntity(id);
-                    console.log("del", id);
-                } catch (e) {
-                    console.log("删除失败", obj, e)
+                    handler(message);
+                } catch (error) {
+                    Utils.error("图表消息处理错误:", error);
                 }
+            });
+        }
 
+        handlePythonMessage(message) {
+            this.handlers.python.forEach(handler => {
+                try {
+                    handler(message);
+                } catch (error) {
+                    Utils.error("Python消息处理错误:", error);
+                }
+            });
+        }
+
+        sendChartMessage(message) {
+            this.send({...message, module: 'chart'});
+        }
+
+        sendPythonMessage(command, data = {}) {
+            this.send({command, ...data, module: 'python'});
+        }
+
+        send(message) {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify(message));
+            } else {
+                Utils.error("WebSocket未连接，消息未发送:", message);
             }
         }
 
-        function modifyShape(obj) {
-            const id = shape_ids[obj.id];
-            try {
-                const shape = window.tvWidget.chart().getShapeById(id);
-                if (shape) {
-                    if (debug) console.log(obj);
-                    //console.log(shape.getProperties());
-                    shape.setPoints(obj.points);
-                    shape.setProperties(obj.properties);
-                    shape.bringToFront();
-
-                } else {
-                    console.log("Shape does not exist.");
-                }
-            } catch (e) {
-                console.log("修改失败", id, obj, e)
+        on(module, handler) {
+            if (this.handlers[module]) {
+                this.handlers[module].push(handler);
             }
         }
 
-        function initOnReady() {
-            //console.log("init widget");
-            const widget = (window.tvWidget = new TradingView.widget({
-                symbol: exchange + ":" + description, // Default symbol
-                interval: interval, // Default interval
+        off(module, handler) {
+            if (this.handlers[module]) {
+                this.handlers[module] = this.handlers[module].filter(h => h !== handler);
+            }
+        }
+
+        updateConnectionStatus(connected) {
+            const event = new CustomEvent('websocket-status', {detail: {connected}});
+            window.dispatchEvent(event);
+        }
+
+        attemptReconnect() {
+            if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                this.reconnectAttempts++;
+                Utils.log(`尝试重新连接 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+                setTimeout(() => this.connect(), this.reconnectDelay);
+            } else {
+                Utils.error("达到最大重连次数");
+            }
+        }
+
+        disconnect() {
+            if (this.socket) {
+                this.socket.close();
+            }
+        }
+    }
+
+    // ============ Python 终端管理器 ============
+    class PythonTerminalManager {
+        constructor(websocketManager) {
+            this.websocketManager = websocketManager;
+            this.outputBuffer = [];
+            this.init();
+        }
+
+        init() {
+            this.bindEvents();
+            this.websocketManager.on('python', (message) => {
+                this.handlePythonMessage(message);
+            });
+            // 暴露接口供按钮调用
+            window.pythonWidget = {
+                executeCode: () => this.executeCode(),
+                clearCode: () => this.clearCode(),
+                loadExample: (name) => this.loadExample(name)
+            };
+        }
+
+        bindEvents() {
+            window.addEventListener('websocket-status', (event) => {
+                this.updateConnectionStatus(event.detail.connected);
+            });
+
+            const input = document.getElementById('codeInput');
+            input.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    this.executeCode();
+                }
+            });
+        }
+
+        updateConnectionStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            const info = document.getElementById('connectionInfo');
+            if (connected) {
+                dot.className = 'status-dot connected';
+                text.textContent = '已连接';
+                info.textContent = 'Python 3.x | 在线';
+            } else {
+                dot.className = 'status-dot';
+                text.textContent = '离线';
+                info.textContent = 'Python 3.x | 连接中...';
+            }
+        }
+
+        executeCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            if (!code) {
+                this.appendOutput('❌ 错误: 请输入代码', 'error');
+                return;
+            }
+
+            const executeBtn = document.getElementById('executeBtn');
+            executeBtn.disabled = true;
+            executeBtn.textContent = '执行中...';
+
+            this.appendOutput(`[${new Date().toLocaleTimeString()}] 开始执行...`, 'info');
+            this.websocketManager.sendPythonMessage('execute', {code});
+        }
+
+        clearCode() {
+            document.getElementById('codeInput').value = '';
+            this.appendOutput('代码已清空', 'info');
+        }
+
+        loadExample(name) {
+            const examples = {
+                'basic': `# 基础示例
+print("Hello TradingView!")
+import math
+print(f"圆周率: {math.pi}")
+print(f"2的平方根: {math.sqrt(2)}")
+numbers = [1, 2, 3, 4, 5]
+print(f"数字列表: {numbers}")
+print(f"总和: {sum(numbers)}")`,
+                'chart': `# 图表分析
+print("=== 图表数据分析 ===")
+# 这里可以访问观察员对象，例如：
+# print(观察员.笔序列)`,
+                'indicators': `# 技术指标计算
+print("=== 技术指标 ===")`,
+                'trend': `# 趋势分析
+print("=== 趋势分析 ===")`
+            };
+            if (examples[name]) {
+                document.getElementById('codeInput').value = examples[name];
+                this.appendOutput(`已加载 ${name} 示例`, 'info');
+            }
+        }
+
+        handlePythonMessage(message) {
+            const executeBtn = document.getElementById('executeBtn');
+            if (executeBtn) {
+                executeBtn.disabled = false;
+                executeBtn.textContent = '执行 (Ctrl+Enter)';
+            }
+
+            switch (message.type) {
+                case 'execution_result':
+                    if (message.success) {
+                        if (message.output) {
+                            this.appendOutput(message.output, 'success');
+                        } else {
+                            this.appendOutput('✅ 执行成功（无输出）', 'success');
+                        }
+                    } else {
+                        let errorMsg = message.error?.message || message.message || '执行错误';
+                        this.appendOutput(`❌ 执行失败: ${errorMsg}`, 'error');
+                        if (message.output) {
+                            this.appendOutput(message.output, 'error');
+                        }
+                    }
+                    break;
+                case 'environment_info':
+                    this.appendOutput(`环境信息: ${message.execution_count} 次执行`, 'info');
+                    break;
+                case 'environment_reset':
+                    this.appendOutput(message.message, 'info');
+                    break;
+                case 'chart_data':
+                    if (message.data.error) {
+                        this.appendOutput(`图表数据错误: ${message.data.error}`, 'error');
+                    } else {
+                        this.appendOutput(`图表数据已更新: ${message.data.symbol}`, 'info');
+                    }
+                    break;
+            }
+        }
+
+        appendOutput(text, type = 'info') {
+            const outputArea = document.getElementById('outputArea');
+            const line = document.createElement('div');
+            line.className = `output-line ${type}`;
+            line.textContent = text;
+            outputArea.appendChild(line);
+            outputArea.scrollTop = outputArea.scrollHeight;
+
+            const lines = outputArea.getElementsByClassName('output-line');
+            if (lines.length > 100) {
+                lines[0].remove();
+            }
+        }
+    }
+
+    // ============ TradingView 图表管理器 ============
+    class TradingViewManager {
+        constructor(websocketManager) {
+            this.websocketManager = websocketManager;
+            this.widget = null;
+            this.shapeIds = new Map();
+            this.onRealtimeCallback = null;
+            this.initDataFeed();
+            this.websocketManager.on('chart', (message) => {
+                this.handleChartMessage(message);
+            });
+        }
+
+        initDataFeed() {
+            this.datafeed = {
+                onReady: (callback) => {
+                    Utils.log("[Datafeed.onReady]");
+                    setTimeout(() => callback({
+                        supports_search: false,
+                        supports_group_request: false,
+                        supports_marks: false,
+                        supports_timescale_marks: true,
+                        supports_time: true,
+                        supported_resolutions: [Config.cover,],
+                    }));
+                },
+                searchSymbols: async (userInput, exchange, symbolType, onResultReadyCallback) => {
+                    Utils.log("[Datafeed.searchSymbols]", userInput, exchange, symbolType);
+                },
+                resolveSymbol: async (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
+                    Utils.log("[Datafeed.resolveSymbol]", symbolName);
+                    const symbolInfo = {
+                        exchange: Config.exchange,
+                        ticker: Config.symbol,
+                        name: Config.symbol,
+                        description: Config.symbol,
+                        type: "",
+                        session: "24x7",
+                        timezone: "Asia/Shanghai",
+                        minmov: 1,
+                        pricescale: 100,
+                        visible_plots_set: "ohlcv",
+                        has_no_volume: true,
+                        has_weekly_and_monthly: false,
+                        supported_resolutions: ["1", "3", "5", "15", "30", "1H", "2H", "4H", "6H", "12H", "1D", "3D"],
+                        volume_precision: 1,
+                        data_status: "streaming",
+                        has_intraday: true,
+                        has_daily: true,
+                        has_ticks: true,
+                        monthly_multipliers: [],
+                        weekly_multipliers: [],
+                    };
+                    onSymbolResolvedCallback(symbolInfo);
+                },
+                getBars: async (symbolInfo, resolution, periodParams, onHistoryCallback, onErrorCallback) => {
+                    const {from, to, firstDataRequest} = periodParams;
+                    Utils.log("[Datafeed.getBars]", {from, to, firstDataRequest});
+                    onHistoryCallback([], {noData: true});
+                },
+                subscribeBars: (symbolInfo, resolution, onRealtimeCallback, subscriberUID, onResetCacheNeededCallback) => {
+                    Utils.log("[Datafeed.subscribeBars] Subscriber UID:", subscriberUID);
+                    this.onRealtimeCallback = onRealtimeCallback;
+                },
+                unsubscribeBars: (subscriberUID) => {
+                    Utils.log("[Datafeed.unsubscribeBars] Subscriber UID:", subscriberUID);
+                }
+            };
+        }
+
+        initWidget() {
+            this.widget = new TradingView.widget({
+                symbol: Config.exchange + ":" + Config.symbol,
+                interval: Config.cover,
                 timezone: "Asia/Shanghai",
-                fullscreen: true, // Displays the chart in the fullscreen mode
-                container: "tv_chart_container", // Reference to an attribute of the DOM element
-                datafeed: datafeed,
+                fullscreen: true,
+                container: "tv_chart_container",
+                datafeed: this.datafeed,
                 library_path: "charting_library/",
                 locale: "zh",
-                theme: "dark",
+                theme: Config.theme,
                 debug: false,
                 timeframe: "3D",
                 user_id: "public_user_id",
@@ -243,159 +857,532 @@
                     drawingTools: ["LineToolPath", "LineToolRectangle", "LineToolTrendLine"],
                 },
                 disabled_features: [
-                    "use_localstorage_for_settings", // 本地设置
-                    "header_symbol_search", // 搜索
-                    "header_undo_redo", // 重做
-                    "header_screenshot", // 截图
-                    //"header_resolutions",// 周期
-                    "header_compare", // 对比叠加
+                    "use_localstorage_for_settings",
+                    "header_symbol_search",
+                    "header_undo_redo",
+                    "header_screenshot",
+                    "header_compare",
                     "header_chart_type",
-                    "go_to_date", // 日期跳转
+                    "go_to_date",
                 ],
                 time_frames: [
-                    { text: "3d", resolution: "5", description: "3 Days" },
-                    { text: "7d", resolution: "5", description: "7 Days" },
+                    {text: "3d", resolution: Config.cover, description: "3 Days"},
+                    {text: "7d", resolution: Config.cover, description: "7 Days"},
+                    {text: "1m", resolution: Config.cover, description: "一个月"},
+                    {text: "64d", resolution: Config.cover, description: "64天"},
                 ],
-            }));
-            widget.headerReady().then(function () {
-                widget.activeChart().createStudy("MACD");
+            });
+            return this.widget;
+        }
 
-                function createHeaderButton(text, title, clickHandler, options) {
-                    const button = widget.createButton(options);
-                    button.setAttribute("title", title);
-                    button.textContent = text;
-                    button.addEventListener("click", clickHandler);
-                }
-
-                createHeaderButton("笔买卖点", "显示隐藏买卖点", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "arrow_up" || name === "arrow_down") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.title === "BiFirstSell" || properties.title === "BiSecondSell" || properties.title === "BiThirdSell"
-                                || properties.title === "BiFirstBuy" || properties.title === "BiSecondBuy" || properties.title === "BiThirdBuy"
-                            )
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
+        setupChartEvents() {
+            this.widget.onChartReady(() => {
+                this.websocketManager.sendChartMessage({
+                    type: 'ready',
+                    exchange: Config.exchange,
+                    symbol: Config.symbol,
+                    freq: Config.step,
+                    limit: Config.limit,
+                    generator: Config.generator,
+                    points: Config.points
                 });
 
-                createHeaderButton("段买卖点", "显示隐藏买卖点", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "arrow_up" || name === "arrow_down") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.title === "DuanFirstSell" || properties.title === "DuanSecondSell" || properties.title === "DuanThirdSell"
-                                || properties.title === "DuanFirstBuy" || properties.title === "DuanSecondBuy" || properties.title === "DuanThirdBuy"
-                            )
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                createHeaderButton("特征序列", "显示隐藏特征序列", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "trend_line") {
-                            const shape = window.tvWidget.chart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.text.indexOf("FeatureSequence<Bi>") === 0)
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                createHeaderButton("笔", "显示隐藏笔", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "trend_line") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.text.indexOf("Bi") === 0)
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                createHeaderButton("段", "显示隐藏段", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "trend_line") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.text.indexOf("Duan") === 0)
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                createHeaderButton("笔中枢", "显示隐藏笔中枢", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "rectangle") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.text.indexOf("ZhongShu<Bi>") === 0)
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                createHeaderButton("段中枢", "显示隐藏段中枢", function () {
-                    widget.activeChart().getAllShapes().forEach(({ name, id }) => {
-                        if (name === "rectangle") {
-                            const shape = window.tvWidget.activeChart().getShapeById(id);
-                            const properties = shape.getProperties();
-                            if (properties.text.indexOf("ZhongShu<Duan>") === 0)
-                                shape.setProperties({ visible: !properties.visible })
-                        }
-                    });
-                });
-
-                widget.onChartReady(function () {
-                    // https://www.tradingview.com/charting-library-docs/v26/api/interfaces/Charting_Library.SubscribeEventsMap/
-                    socket.send(JSON.stringify({
-                        type: "ready",
-                        exchange: exchange,
-                        symbol: name,
-                        freq: step,
-                        limit: limit,
-                        generator: generator
-                    }));
-
-                    widget.subscribe("onTimescaleMarkClick", function (clientX, clientY, pageX, pageY, screenX, screenY) {
-                        console.log("[onTimescaleMarkClick]", clientX, clientY, pageX, pageY, screenX, screenY)
-                    })
-                    widget.subscribe("drawing_event", function (sourceId, drawingEventType) {
-                        // properties_changed, remove, points_changed, click
-                        if (debug) console.log("[drawing_event]", "id:", sourceId, "event type:", drawingEventType)
-                        if (drawingEventType.indexOf("click") === 0) {
-                            const shape = widget.activeChart().getShapeById(sourceId);
-                            console.info(shape);
-                            const properties = shape.getProperties();
-                            const points = shape.getPoints();
-                            const toolname = shape._source.toolname;
-                            console.log(toolname, points, properties);
-                            if (toolname === "LineToolTrendLine") {
-                                shape.setProperties({ showLabel: !properties.showLabel })
-                                socket.send(JSON.stringify({
-                                    type: "query_by_index",
-                                    data_type: properties.text, // 全局变量，记录当前查询类型
-                                    index: properties.title
-                                }));
-                            }
-                            if (toolname === "LineToolPath") {
-
-                            }
-
-                        }
-                    })
+                this.widget.subscribe("drawing_event", (sourceId, drawingEventType) => {
+                    if (drawingEventType.indexOf("click") === 0) {
+                        this.handleDrawingClick(sourceId);
+                    }
                 });
             });
         }
 
-        window.addEventListener("DOMContentLoaded", initOnReady, false);
-    </script>
-</head>
+        handleDrawingClick(sourceId) {
+            try {
+                const shape = this.widget.activeChart().getShapeById(sourceId);
+                if (!shape) return;
 
-<body style="margin:0;">
-    <div id="tv_chart_container"></div>
+                const properties = shape.getProperties();
+                const points = shape.getPoints();
+                const toolName = shape._source.toolname;
+
+                Utils.info("Drawing clicked:", {toolName, properties, points});
+
+                switch (toolName) {
+                    case "LineToolTrendLine":
+                        shape.setProperties({showLabel: !properties.showLabel});
+                        shape.setProperties({textcolor: invertAlphaToRgba(properties.textcolor)});
+                        this.websocketManager.sendChartMessage({
+                            type: "query_by_index",
+                            data_type: properties.title,
+                            index: properties.title
+                        });
+                        break;
+                    case "LineToolRectangle":
+                        shape.setProperties({showLabel: !properties.showLabel});
+                        shape.setProperties({textColor: invertAlphaToRgba(properties.textColor)});
+                        this.websocketManager.sendChartMessage({
+                            type: "query_by_index",
+                            data_type: properties.title,
+                            index: properties.title
+                        });
+                        break;
+                    case "LineToolArrowMarkDown":
+                    case "LineToolArrowMarkUp":
+                        shape.setProperties({showLabel: !properties.showLabel});
+                        shape.setProperties({color: invertAlphaToRgba(properties.color)});
+                        break;
+                    case "LineToolPath":
+                        this.websocketManager.sendChartMessage({
+                            type: "save_path",
+                            data: properties,
+                            points: points,
+                            index: properties.title
+                        });
+                        const prices = points.map(item => Math.round(item.price));
+                        const textToCopy = prices.join(', ');
+                        navigator.clipboard.writeText(textToCopy)
+                                .then(() => Utils.log('数据已复制到剪切板:', textToCopy))
+                                .catch(err => Utils.error('复制失败:', err));
+                        break;
+                }
+            } catch (error) {
+                Utils.error("Error handling drawing click:", error);
+            }
+        }
+
+        handleChartMessage(message) {
+            Utils.log("处理图表消息:", message.type);
+            switch (message.type) {
+                case 'realtime':
+                    if (this.widget && this.onRealtimeCallback) {
+                        const bar = {
+                            time: new Date(message.timestamp).getTime(),
+                            close: message.close,
+                            open: message.open,
+                            high: message.high,
+                            low: message.low,
+                            volume: message.volume,
+                        };
+                        this.onRealtimeCallback(bar);
+                    }
+                    break;
+                case 'shape':
+                    if (message.cmd === "APPEND") {
+                        this.addShape(message.id, message.points, message.options, message.properties);
+                    } else if (message.cmd === "REMOVE") {
+                        this.removeShape(message.id);
+                    } else if (message.cmd === "MODIFY") {
+                        this.updateShape(message.id, message.points, message.properties);
+                    }
+                    break;
+                case 'query_result':
+                    Utils.log("查询结果:", message.data);
+                    break;
+                case 'ready_ack':
+                    Utils.log("图表分析器启动确认:", message);
+                    break;
+                case 'connected':
+                    Utils.log("连接成功:", message);
+                    break;
+            }
+        }
+
+        async addShape(id, points, options, properties) {
+            try {
+                if (!this.widget || !this.widget.chart) {
+                    return;
+                }
+
+                // 重复判断
+                const existShapeId = this.shapeIds.get(id);
+                if (existShapeId) {
+                    Utils.error("图形已存在", {id});
+                    return;
+                }
+
+                // 创建图形
+                const shapeId = await this.widget.chart().createMultipointShape(points, options);
+                const shape = this.widget.chart().getShapeById(shapeId);
+
+                if (!shape) {
+                    Utils.error("添加形状失败：shape 为 null", {id, shapeId});
+                    return;
+                }
+
+                // 设置属性
+                Utils.log("shapeId:", shape.getProperties());
+                shape.setProperties(properties);
+                shape.bringToFront();
+
+                // 保存映射
+                this.shapeIds.set(id, shapeId);
+                Utils.log("添加形状", {id, shapeId});
+
+            } catch (error) {
+                Utils.error("添加形状失败", error);
+            }
+        }
+
+        async removeShape(id) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                const shapeId = this.shapeIds.get(id);
+                if (!shapeId) {
+                    Utils.log("图形不存在，无需删除", {id});
+                    return;
+                }
+
+                const shape = this.widget.chart().getShapeById(shapeId);
+                if (shape) {
+                    await this.widget.chart().removeEntity(shapeId);
+                    this.shapeIds.delete(id);
+                }
+
+                Utils.log("删除形状成功", {id});
+
+            } catch (error) {
+                Utils.error("删除形状失败", error);
+            }
+        }
+
+        async updateShape(id, points, properties) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                const shapeId = this.shapeIds.get(id);
+                if (!shapeId) {
+                    Utils.error("更新失败：图形不存在", {id});
+                    return;
+                }
+
+                const shape = this.widget.chart().getShapeById(shapeId);
+                if (!shape) {
+                    Utils.error("更新失败：未找到图形实例", {id, shapeId});
+                    return;
+                }
+
+                // 更新点位
+                if (points) {
+                    await shape.setPoints(points);
+                }
+
+                // 更新配置与属性
+                if (properties) {
+                    shape.setProperties(properties);
+                }
+
+                shape.bringToFront();
+                Utils.log("更新形状成功", {id});
+
+            } catch (error) {
+                Utils.error("更新形状失败", error);
+            }
+        }
+
+        async hideShapesByType(targetType, shapeType) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    if (name === shapeType) {
+                        const shape = this.widget.activeChart().getShapeById(id);
+                        const properties = shape.getProperties();
+                        const customId = properties.title;
+                        try {
+                            const [flag, period, type, index] = customId.split(':');
+                            if (type === targetType) {
+                                shape.setProperties({visible: !properties.visible});
+                                // Utils.log(`已隐藏图形: ${customId}`);
+                            }
+                        } catch (error) {
+                            Utils.log(`隐藏失败: ${customId}`);
+                            Utils.error("批量隐藏图形失败", error);
+                        }
+                    }
+                });
+            } catch (error) {
+                Utils.error("批量隐藏图形失败", error);
+            }
+        }
+
+        async hideShapesByType_(targetType, shapeType) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    if (name === shapeType) {
+                        const shape = this.widget.activeChart().getShapeById(id);
+                        const properties = shape.getProperties();
+                        const customId = properties.title;
+                        try {
+                            const [flag, period, type, index] = customId.split(':');
+                            if (type.indexOf(targetType) !== -1) {
+                                shape.setProperties({visible: !properties.visible});
+                                // Utils.log(`已隐藏图形: ${customId}`);
+                            }
+                        } catch (error) {
+                            Utils.log(`隐藏失败: ${customId}`);
+                            Utils.error("批量隐藏图形失败", error);
+                        }
+                    }
+                });
+            } catch (error) {
+                Utils.error("批量隐藏图形失败", error);
+            }
+        }
+
+        createHeaderButtons() {
+            const buttonConfigs = [
+                {
+                    text: "笔买卖点", title: "显示隐藏买卖点", handler: () => {
+                        this.hideShapesByType("笔中枢", "arrow_down");
+                        this.hideShapesByType("笔中枢", "arrow_up")
+                    }
+                },
+                {
+                    text: "段买卖点", title: "显示隐藏买卖点", handler: () => {
+                        this.hideShapesByType("中枢段", "arrow_down");
+                        this.hideShapesByType("中枢段", "arrow_up")
+                    }
+                },
+                {
+                    text: "内部中枢",
+                    title: "显示隐藏内部中枢",
+                    handler: () => this.hideShapesByType_("线段_", "rectangle")
+                },
+                {
+                    text: "内部中枢2",
+                    title: "显示隐藏内部中枢",
+                    handler: () => this.hideShapesByType_("线段<线段>_", "rectangle")
+                },
+                {
+                    text: "特征序列",
+                    title: "显示隐藏特征序列",
+                    handler: () => this.hideShapesByType("特征", "trend_line")
+                },
+                {text: "笔", title: "显示隐藏笔", handler: () => this.hideShapesByType("笔", "trend_line")},
+                {text: "段", title: "显示隐藏段", handler: () => this.hideShapesByType("线段", "trend_line")},
+                {
+                    text: "段段",
+                    title: "显示隐藏段的段",
+                    handler: () => this.hideShapesByType("线段<线段>", "trend_line")
+                },
+                {
+                    text: "扩展段_笔",
+                    title: "显示隐藏扩展段",
+                    handler: () => this.hideShapesByType("扩展线段", "trend_line")
+                },
+                {
+                    text: "扩展段_段",
+                    title: "显示隐藏扩展段",
+                    handler: () => this.hideShapesByType("扩展线段<线段>", "trend_line")
+                },
+                {
+                    text: "笔中枢",
+                    title: "显示隐藏笔中枢",
+                    handler: () => this.hideShapesByType("中枢<笔>", "rectangle")
+                },
+                {
+                    text: "段中枢",
+                    title: "显示隐藏段中枢",
+                    handler: () => this.hideShapesByType("中枢<线段>", "rectangle")
+                },
+                {
+                    text: "段段中枢",
+                    title: "显示隐藏段中枢",
+                    handler: () => this.hideShapesByType("中枢<线段<线段>>", "rectangle")
+                },
+                {
+                    text: "扩展段中枢_笔",
+                    title: "显示隐藏扩展段中枢",
+                    handler: () => this.hideShapesByType("中枢<扩展线段>", "rectangle")
+                },
+                {
+                    text: "扩展段中枢_段",
+                    title: "显示隐藏扩展段中枢",
+                    handler: () => this.hideShapesByType("中枢<扩展线段<线段>>", "rectangle")
+                }
+            ];
+
+            buttonConfigs.forEach(config => {
+                this.createHeaderButton(config.text, config.title, config.handler);
+            });
+        }
+
+        createHeaderButton(text, title, clickHandler) {
+            const button = this.widget.createButton();
+            button.setAttribute("title", title);
+            button.textContent = text;
+            button.addEventListener("click", clickHandler);
+        }
+
+
+    }
+
+    // ============ 可拖动分隔条逻辑 ============
+    function initSplitter() {
+        const splitter = document.getElementById('splitter');
+        const sidebar = document.getElementById('terminalSidebar');
+        let isDragging = false;
+        let startPos = 0;        // 记录起始坐标（水平或垂直）
+        let startSize = 0;       // 记录起始尺寸
+        let isVertical = window.innerWidth > 800; // 初始方向（根据响应式判断）
+
+        // 监听窗口大小变化，更新方向
+        window.addEventListener('resize', () => {
+            isVertical = window.innerWidth > 800;
+        });
+
+        // 创建遮罩层（在拖动时覆盖整个页面，防止鼠标事件丢失）
+        const mask = document.createElement('div');
+        mask.style.position = 'fixed';
+        mask.style.top = '0';
+        mask.style.left = '0';
+        mask.style.width = '100%';
+        mask.style.height = '100%';
+        mask.style.zIndex = '9999';
+        mask.style.display = 'none';
+        mask.style.cursor = isVertical ? 'col-resize' : 'row-resize';
+        mask.style.background = 'transparent'; // 透明，不影响视觉
+        document.body.appendChild(mask);
+
+        splitter.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // 防止文本选择
+            isDragging = true;
+            splitter.classList.add('active');
+
+            // 锁定指针到分隔条
+            splitter.setPointerCapture(e.pointerId);
+
+            // 记录起始位置和尺寸
+            if (isVertical) {
+                startPos = e.clientX;
+                startSize = sidebar.offsetWidth;
+                mask.style.cursor = 'col-resize';
+            } else {
+                startPos = e.clientY;
+                startSize = sidebar.offsetHeight;
+                mask.style.cursor = 'row-resize';
+            }
+
+            // 显示遮罩层
+            mask.style.display = 'block';
+
+            // 禁止页面选择
+            document.body.style.userSelect = 'none';
+        });
+
+        splitter.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+
+            e.preventDefault(); // 防止默认行为
+
+            let delta, newSize;
+            if (isVertical) {
+                delta = e.clientX - startPos;
+                newSize = startSize + delta;
+                // 限制在最小和最大宽度之间
+                const minWidth = parseInt(getComputedStyle(sidebar).minWidth) || 200;
+                const maxWidth = parseInt(getComputedStyle(sidebar).maxWidth) || 800;
+                newSize = Math.min(Math.max(newSize, minWidth), maxWidth);
+                sidebar.style.width = newSize + 'px';
+            } else {
+                delta = e.clientY - startPos;
+                newSize = startSize + delta;
+                // 限制在最小和最大高度之间
+                const minHeight = 150; // 可自定义
+                const maxHeight = window.innerHeight - 100;
+                newSize = Math.min(Math.max(newSize, minHeight), maxHeight);
+                sidebar.style.height = newSize + 'px';
+            }
+        });
+
+        splitter.addEventListener('pointerup', (e) => {
+            if (!isDragging) return;
+
+            isDragging = false;
+            splitter.classList.remove('active');
+            splitter.releasePointerCapture(e.pointerId);
+
+            // 隐藏遮罩层
+            mask.style.display = 'none';
+
+            // 恢复页面选择
+            document.body.style.userSelect = '';
+        });
+
+        // 防止指针取消（如突然失去焦点）
+        splitter.addEventListener('pointercancel', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                splitter.classList.remove('active');
+                splitter.releasePointerCapture(e.pointerId);
+                mask.style.display = 'none';
+                document.body.style.userSelect = '';
+            }
+        });
+
+        // 对于触摸设备，确保触摸事件也能正常工作
+        splitter.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            // 手动触发 mousedown 逻辑（通过事件模拟）
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                pointerId: 1, // 模拟 pointerId
+            });
+            splitter.dispatchEvent(mouseEvent);
+        });
+    }
+
+    // ============ 主应用程序 ============
+    class App {
+        constructor() {
+            this.websocketManager = new UnifiedWebSocketManager();
+            this.tradingViewManager = null;
+            this.pythonTerminalManager = null;
+        }
+
+        init() {
+            this.websocketManager.connect();
+            this.initTradingView();
+            this.initPythonTerminal();
+            initSplitter(); // 初始化分隔条
+        }
+
+        initTradingView() {
+            if (typeof TradingView === 'undefined') {
+                console.error("TradingView库未加载");
+                setTimeout(() => this.initTradingView(), 1000);
+                return;
+            }
+
+            this.tradingViewManager = new TradingViewManager(this.websocketManager);
+            window.tvWidget = this.tradingViewManager.initWidget();
+            window.tvWidget.headerReady().then(() => {
+                window.tvWidget.activeChart().createStudy("MACD", false, false, {
+                    in_0: 13,
+                    in_1: 31,
+                    in_2: 11,
+                    in_3: "close"
+                });
+                window.tvWidget.activeChart().createStudy('Moving Average Exponential', false, false, {length: Config.EMA_LENGTH});
+                this.tradingViewManager.createHeaderButtons();
+                this.tradingViewManager.setupChartEvents();
+            });
+        }
+
+        initPythonTerminal() {
+            this.pythonTerminalManager = new PythonTerminalManager(this.websocketManager);
+            window.pythonTerminalManager = this.pythonTerminalManager;
+        }
+    }
+
+    // ============ 启动应用 ============
+    window.addEventListener("DOMContentLoaded", () => {
+        new App().init();
+    });
+</script>
 </body>
-
 </html>
