@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from collections import deque
 from enum import Enum, auto
 from pathlib import Path
+from pprint import pprint
 from random import randint, choice, sample, seed, random, uniform, choices
 from threading import Thread
 from typing import (
@@ -203,6 +204,8 @@ def 转化为时间戳_数字(ts: Union[str, datetime, int, float]) -> int:
 @final
 class 缠论配置(BaseModel):
     标识: str = "bar"
+    缠K合并替换: bool = False  # False: 在原缠K上合并, True: 产出新缠K
+
     笔内元素数量: int = 4  # 成BI最低长度
     笔内缺口判定为元素: bool = False  # 跳空是否判定为 NewBar
     笔内缺口判定为元素比例: float = 0.07  # 当跳空是否判定为 NewBar时, 此值大于0时按照缺口所占比例判定是否为NewBar，等于0时直接判定为NerBar
@@ -2105,6 +2108,13 @@ class 缠论K线(object):
         return f"{self.标识}<{self.序号}, {self.分型}, {self.周期}, {self.方向}, {self.时间戳}, {self.开盘价}, {self.最高价}, {self.最低价}, {self.收盘价}>"
 
     @property
+    def 镜像(self):
+        K = 缠论K线(self.序号, self.时间戳, self.最高价, self.最低价, self._最终方向, self.标的K线, self.原始起始序号, self.原始结束序号, self.分型)
+        K.买卖点信息.update(self.买卖点信息)
+        K.备注.update(self.备注)
+        return K
+
+    @property
     def 标识(self) -> str:
         return self.标的K线.标识
 
@@ -2210,7 +2220,7 @@ class 缠论K线(object):
         return 当前
 
     @classmethod
-    def 兼并(cls, 之前缠K: Optional["缠论K线"], 当前缠K: "缠论K线", 当前普K: "K线", 配置: 缠论配置) -> Optional["缠论K线"]:
+    def 兼并(cls, 之前缠K: Optional["缠论K线"], 当前缠K: "缠论K线", 当前普K: "K线", 配置: 缠论配置) -> Tuple[Optional["缠论K线"], Optional[str]]:
         关系 = 相对方向.分析(当前缠K, 当前普K)
         if not 关系.是否包含():
             新缠K = 缠论K线.创建缠K(
@@ -2224,7 +2234,7 @@ class 缠论K线(object):
                 结构=分型结构.下 if 关系.是否向下() else 分型结构.上,
             )
             新缠K.序号 = 当前缠K.序号 + 1
-            return 新缠K
+            return 新缠K, "添加"
 
         if 当前普K.序号 == 当前缠K.原始结束序号:
             # 当序号相同时认为是重复提交K线
@@ -2237,10 +2247,8 @@ class 缠论K线(object):
         取值函数 = max
         if 之前缠K is not None:
             if 相对方向.分析(之前缠K, 当前缠K).是否向下():
-                # 方向 = 相对方向.向下
                 取值函数 = min
-            # if 当前笔 and 当前笔.方向 is 相对方向.向下:
-            #    取值函数 = min
+
         if 关系 is not 相对方向.顺:
             if 配置.推送K线 != "缠K":
                 当前缠K.时间戳 = 当前普K.时间戳
@@ -2249,9 +2257,13 @@ class 缠论K线(object):
         当前缠K.低 = 取值函数(当前缠K.低, 当前普K.低)
         当前缠K.原始结束序号 = 当前普K.序号
         当前缠K._最终方向 = 当前普K.方向  # FIXME 涉及 买卖点，MACD, 均线
+
         if 之前缠K is not None:
             当前缠K.序号 = 之前缠K.序号 + 1
-        return None
+
+        if 配置.缠K合并替换:
+            return 当前缠K.镜像, "替换"
+        return None, None
 
     @classmethod
     def 分析(cls, 当前K线: "K线", 缠K序列: List["缠论K线"], 普K序列: List["K线"], 配置: 缠论配置) -> tuple[str, Optional["分型"]]:
@@ -2288,10 +2300,16 @@ class 缠论K线(object):
                 之前缠K = 缠K序列[-2]
             except IndexError:
                 pass
-            新缠K = 缠论K线.兼并(之前缠K, 缠K序列[-1], 当前K线, 配置)
+            新缠K, 模式 = 缠论K线.兼并(之前缠K, 缠K序列[-1], 当前K线, 配置)
             if 新缠K is not None:
-                缠K序列.append(新缠K)
-                状态 = "创建"
+                if 模式 == "添加":
+                    缠K序列.append(新缠K)
+                    状态 = "创建"
+                elif 模式 == "替换":
+                    缠K序列[-1] = 新缠K
+                    状态 = "替换"
+                else:
+                    raise RuntimeError()
             else:
                 状态 = "兼并"
         else:
@@ -2443,7 +2461,7 @@ class 线段特征(list):
 
     @property
     def 图表标题(self) -> str:
-        return f"{getattr(self, '标识', self.__class__.__name__)}-{getattr(self, '序号', 0)}"
+        return self.标识  # f"{self.标识}:{self.序号}"
 
     def __str__(self):
         if not len(self):
@@ -2670,6 +2688,8 @@ class 虚线(list):
     def 武斗(self, 武: 分型, 行号: int):
         # print(f"{self.__class__.__name__}.武斗[{行号}], ", 武)
         if self._武.分型特征值 == 武.分型特征值:
+            self._武.中.备注[self.标识] = False
+            武.中.备注[self.标识] = True
             self._武 = 武
             return
         assert self._文.结构 is not 武.结构, ("文武结构相同", self._文, 武)
@@ -2685,6 +2705,8 @@ class 虚线(list):
                 raise RuntimeError("向下虚线, 结束点 大于 起点", self.标识, self.文, 武)
             if min([self._武, 武], key=lambda k: k.分型特征值) is not 武:
                 pass  # print(colored(f"{self.__class__.__name__}.武斗[{行号}] 出现回退 从 {self._武} ==>>> {武}", "red", "on_green"))  # raise RuntimeError(self._武, 武)
+        self._武.中.备注[self.标识] = False
+        武.中.备注[self.标识] = True
         self._武 = 武
 
         if self.观察员:
@@ -3078,6 +3100,59 @@ class 笔(虚线):
         lows: List[缠论K线] = [k for k in 序列 if k.低 == 序列[0].低]
         lows.sort(key=lambda k: k.时间戳)
         return lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
+
+    @property
+    def 原始高点(self) -> K线:
+        序列 = sorted(self.普K序列, key=lambda k: k.高)
+        highs: List[K线] = [k for k in 序列 if k.高 == 序列[-1].高]
+        highs.sort(key=lambda k: k.时间戳)
+        return highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
+
+    @property
+    def 原始低点(self) -> K线:
+        序列 = sorted(self.普K序列, key=lambda k: k.低)
+        lows: List[K线] = [k for k in 序列 if k.低 == 序列[0].低]
+        lows.sort(key=lambda k: k.时间戳)
+        return lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
+
+    @property
+    def 高低组合(self) -> Tuple[K线, K线, 缠论K线, 缠论K线, 缠论K线, 缠论K线]:
+        """
+        :return: (原始高点,原始低点，缠K高点,缠K低点，缠K次高点,缠K次低点)
+        """
+        普K序列 = self.普K序列
+        缠K序列 = self
+        序列 = sorted(普K序列, key=lambda k: k.高)
+        highs: List[K线] = [k for k in 序列 if k.高 == 序列[-1].高]
+        highs.sort(key=lambda k: k.时间戳)
+        原始高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
+
+        序列 = sorted(普K序列, key=lambda k: k.低)
+        lows: List[K线] = [k for k in 序列 if k.低 == 序列[0].低]
+        lows.sort(key=lambda k: k.时间戳)
+        原始低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
+
+        序列 = sorted(self, key=lambda k: k.高)
+        highs: List[缠论K线] = [k for k in 序列 if k.高 == 序列[-1].高]
+        highs.sort(key=lambda k: k.时间戳)
+        缠K高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
+
+        highs: List[缠论K线] = [k for k in 序列 if k.高 != 缠K高点.高]  # 排除
+        highs: List[缠论K线] = [k for k in highs if k.高 == highs[-1].高]  # 筛选
+        highs.sort(key=lambda k: k.时间戳)  # 排序
+        缠K次高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
+
+        序列 = sorted(缠K序列, key=lambda k: k.低)
+        lows: List[缠论K线] = [k for k in 序列 if k.低 == 序列[0].低]
+        lows.sort(key=lambda k: k.时间戳)
+        缠K低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
+
+        lows: List[缠论K线] = [k for k in 序列 if k.低 != 缠K低点.低]
+        lows: List[缠论K线] = [k for k in lows if k.低 == lows[0].低]
+        lows.sort(key=lambda k: k.时间戳)
+        缠K次低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
+
+        return 原始高点, 原始低点, 缠K高点, 缠K低点, 缠K次高点, 缠K次低点
 
     @property
     def 相对关系(self) -> bool:
@@ -3517,13 +3592,13 @@ class 线段(虚线):
             for 特征 in self.特征序列:
                 if 特征 is not None:
                     特征.序号 = 序号
-                    特征.标识 = f"特征序列:{self.图表标题}"
+                    特征.标识 = f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}_特征序列_{序号}:{self.序号}"
                     self.观察员 and self.观察员.报信(特征, 指令.添加(特征.标识), sys._getframe().f_lineno)
                 序号 += 1
 
-    def 分割序列(self, 所属中枢: Optional["中枢"] = None):
+    def 分割序列(self, 所属中枢: Optional["中枢"] = None) -> Tuple[List[Union["笔", "线段"]], List[Union["笔", "线段"]], List[Union["笔", "线段"]], Optional[Union["笔", "线段"]]]:
         if self.模式 != "文武":
-            return self[:], [], []
+            return self[:], [], [], None
         if len(self) == 0:
             print(self.标识, self.序号)
         assert self[0].文 is self.文, (self[0].文, self.文)
@@ -3755,6 +3830,7 @@ class 线段(虚线):
             if 线段序列 and not 线段序列[-1].之后是(待添加线段):
                 raise ValueError(f"线段.向序列中添加 不连续[{行号}]", 线段序列[-1].武, 待添加线段.文)
             待添加线段.模式 = "文武"
+            待添加线段.武.中.备注[待添加线段.标识] = True
             if 线段序列:
                 之前线段 = 线段序列[-1]
                 if not 之前线段.右:
@@ -3788,6 +3864,7 @@ class 线段(虚线):
                         raise ValueError("线段._从序列中删除 发现分型完毕, 且特征序列无缺口", 待弹出线段)  # 异常弹出
                 线段序列.pop()
                 待弹出线段.有效性 = False
+                待弹出线段.武.中.备注[待弹出线段.标识] = False
                 if 配置.图表展示_中枢_线段内部 and 配置.推送中枢:
                     for 中枢_ in 待弹出线段.实_中枢序列:
                         getattr(待弹出线段.实_中枢序列, "图表移除", Nil)(中枢_, sys._getframe().f_lineno)
@@ -4048,7 +4125,7 @@ class 线段(虚线):
 
             待添加线段.模式 = "高低"
             待添加线段.标识 = f"扩展{待添加线段.标识}" if type(待添加线段[0]) is not 笔 else "扩展线段"
-
+            待添加线段.武.中.备注[待添加线段.标识] = True
             if 线段序列:
                 之前线段 = 线段序列[-1]
                 待添加线段.序号 = 之前线段.序号 + 1
@@ -4063,6 +4140,7 @@ class 线段(虚线):
             if 线段序列[-1] is 待弹出线段:
                 drop = 线段序列.pop()
                 待弹出线段.有效性 = False
+                待弹出线段.武.中.备注[待弹出线段.标识] = False
                 # print(f"线段._从序列中删除[{行号}]", 待弹出线段)
                 return drop
             raise ValueError("线段._从序列中删除 弹出数据不在列表中", 待弹出线段)
@@ -4626,13 +4704,12 @@ class _图表配色:
         message["name"] = "trend_line"
         if 命令.指令 == 指令.删:
             return message
+        message["options"] = {"shape": "trend_line", "text": 对象.标识}
 
         message["points"] = [
             {"time": int(对象.文.时间戳.timestamp()), "price": 对象.文.分型特征值},
             {"time": int(对象.武.时间戳.timestamp()), "price": 对象.武.分型特征值},
         ]
-
-        message["options"] = {"shape": "trend_line", "text": 对象.标识}
 
         message["properties"] = {
             "bold": True,
@@ -4642,40 +4719,50 @@ class _图表配色:
             "title": 标识,
             "showLabel": False,
         }
-
+        信息流 = [
+            对象.标识,
+            str(对象.序号),
+        ]
         if type(对象) is 笔:
             对象: 笔 = 对象
-            信息流 = [
-                对象.标识,
-                f"周期:{周期}",
-                f"{买卖点.买卖意义(对象) if hasattr(买卖点, '买卖意义') else None} 均值:{对象.武之MACD均值}, 极值:{对象.武之MACD极值} 分型:{对象.武.与MACD柱子分型匹配}, MACD匹配:{对象.武.中.与MACD柱子匹配} 背驰过:{len(买卖点.笔是否背驰过(对象)) != 0 if hasattr(买卖点, '笔是否背驰过') else None}",
-                f"振幅强弱:{对象.振幅强弱(对象.观察员.笔序列)}",
-                f"幅度强弱:{对象.幅度强弱(对象.观察员.笔序列)}",
-                f"分型强弱:{对象.武.强度}",
-            ]
-            message["properties"]["text"] = " ".join(信息流)
+            信息流.extend(
+                [
+                    f"周期:{周期}",
+                    f"{买卖点.买卖意义(对象) if hasattr(买卖点, '买卖意义') else None} 均值:{对象.武之MACD均值}, 极值:{对象.武之MACD极值} 分型:{对象.武.与MACD柱子分型匹配}, MACD匹配:{对象.武.中.与MACD柱子匹配} 背驰过:{len(买卖点.笔是否背驰过(对象)) != 0 if hasattr(买卖点, '笔是否背驰过') else None}",
+                    f"振幅强弱:{对象.振幅强弱(对象.观察员.笔序列)}",
+                    f"幅度强弱:{对象.幅度强弱(对象.观察员.笔序列)}",
+                    f"分型强弱:{对象.武.强度}",
+                ]
+            )
 
         if 对象.标识 in ("线段", "线段<线段>"):
             对象: 线段 = 对象
-            信息流 = [
-                对象.标识,
-                f"周期:{周期}",
-                str(对象.序号),
-                对象.四象,
-                f"{对象.特征序列状态}",
-                str(对象.级别),
-                str(买卖点.判断线段内部是否背驰(对象) if hasattr(买卖点, "判断线段内部是否背驰") else None),
-                f"内部中枢数量:{len(对象.实_中枢序列)}",
-            ]
+            信息流.extend(
+                [
+                    f"周期:{周期}",
+                    对象.四象,
+                    f"{对象.特征序列状态}",
+                    str(对象.级别),
+                    str(买卖点.判断线段内部是否背驰(对象) if hasattr(买卖点, "判断线段内部是否背驰") else None),
+                    f"内部中枢数量:{len(对象.实_中枢序列)}",
+                ]
+            )
             if 对象.确认K线 is not None:
                 信息流.append(f"{对象.确认K线.时间戳.strftime('%Y-%m-%d %H:%M:%S')} 特征值: {str(对象.确认K线.分型特征值)}")
+
+        elif 对象.标识 in ("扩展线段", "扩展线段<线段>"):
+            信息流.extend(
+                [
+                    f"周期:{周期}",
+                    str(对象.级别),
+                ]
+            )
             message["properties"]["text"] = " ".join(信息流)
 
-        if 对象.标识 in ("扩展线段", "扩展线段<线段>"):
-            信息流 = [对象.标识, str(对象.序号), str(对象.级别)]
-            message["properties"]["text"] = " ".join(信息流)
         if type(对象) is 线段特征:
             message["properties"].update({"linecolor": "#F1C40F" if 对象.方向 is 相对方向.向下 else "#fbc02d", "linewidth": 4, "linestyle": 1})
+
+        message["properties"]["text"] = " ".join(信息流)
         return message
 
     @classmethod
@@ -4961,9 +5048,8 @@ class 观察者:
             return
 
         message = dict()
-        message["标识"] = 对象.标识 if hasattr(对象, "标识") else 对象.__class__.__name__
 
-        if type(对象) is K线:
+        if type(对象) is K线 or type(对象) is 缠论K线:
             message["type"] = "realtime"
             message["timestamp"] = str(对象.时间戳)
             message["open"] = 对象.开盘价
@@ -4975,14 +5061,10 @@ class 观察者:
         if type(对象) is 买卖点:
             message.update(图表配色.点(对象, 命令))
 
-        if type(对象) is 笔:
-            if not self.配置.推送笔:
-                return
+        if type(对象) is 笔 and self.配置.推送笔:
             message.update(图表配色.线(对象, 命令, self.周期))
 
-        if type(对象) is 线段:
-            if not self.配置.推送线段:
-                return
+        if type(对象) is 线段 and self.配置.推送线段:
             if 对象.标识 == "线段" and self.配置.图表展示_线段:
                 message.update(图表配色.线(对象, 命令, self.周期))
             if 对象.标识 == "扩展线段" and self.配置.图表展示_扩展线段:
@@ -4995,10 +5077,7 @@ class 观察者:
         if type(对象) is 线段特征:
             message.update(图表配色.线(对象, 命令, self.周期))
 
-        if type(对象) is 中枢:
-            if not self.配置.推送中枢:
-                return
-
+        if type(对象) is 中枢 and self.配置.推送中枢:
             if 对象.标识 == "中枢<笔>" and self.配置.图表展示_中枢_笔:
                 message.update(图表配色.面(对象, 命令, self.周期))
             if 对象.标识 == "中枢<线段>" and self.配置.图表展示_中枢_线段:
@@ -5014,7 +5093,8 @@ class 观察者:
                 message.update(图表配色.面(对象, 命令, self.周期))
 
         if len(message) < 3:
-            raise RuntimeError(对象, 命令, 行号)
+            return
+
         if self.数据通道 is not None and self.配置.图表展示 and self.数据通道.client_state.value == 1:
             asyncio.set_event_loop(self.当前事件循环)
             asyncio.ensure_future(self.数据通道.send_text(json.dumps(message)))
@@ -5034,11 +5114,11 @@ class 观察者:
         return self
 
     @classmethod
-    def 读取数据文件(cls, 文件路径: str, ws=None) -> Self:
+    def 读取数据文件(cls, 文件路径: str, ws=None, 配置=缠论配置()) -> Self:
         # btcusd-300-1631772074-1632222374.nb
         name = Path(文件路径).name.split(".")[0]
         符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
-        实例 = cls(符号=符号, 周期=int(周期), 数据通道=ws, 配置=缠论配置())
+        实例 = cls(符号=符号, 周期=int(周期), 数据通道=ws, 配置=配置)
         with open(文件路径, "rb") as f:
             buffer = f.read()
             size = struct.calcsize(">6d")
@@ -5050,13 +5130,16 @@ class 观察者:
 
 
 class 立体分析器:
-    def __init__(self, 符号: str, 周期组: List[int], 数据通道: Optional[WebSocket] = None):
+    def __init__(self, 符号: str, 周期组: List[int], 数据通道: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置()):
         self.周期组 = 周期组
+
         self.__输入周期 = self.周期组[0]  # 最小输入K线周期
         self._K线合成器 = K线合成器(符号, self.周期组, self.__K线回调)
-        self._单体分析器 = {周期: 观察者(符号=符号, 周期=周期, 数据通道=数据通道, 配置=缠论配置(推送K线=None, 推送笔=False, 推送线段=False, 图表展示=False)) for 周期 in self.周期组}
-        for 分析器 in self._单体分析器.values():
-            分析器.配置.推送K线 = None
+
+        self._单体分析器 = dict()
+        for 周期 in self.周期组:
+            当前配置 = 配置.model_copy(update={"推送K线": None, "推送笔": False, "推送线段": False, "图表展示": False}, deep=True)
+            self._单体分析器[周期] = 观察者(符号=符号, 周期=周期, 数据通道=数据通道, 配置=当前配置)
 
         self._单体分析器[self.__输入周期].上级缠K序列 = self._单体分析器[self.周期组[1]].缠论K线序列
         self._单体分析器[self.__输入周期].配置.推送K线 = "普K"
@@ -5517,21 +5600,37 @@ class 回测(高级策略基类):
 
     def 检查买信号(self):
         if self.p.观察员.笔序列:
-            for k线 in self.p.观察员.缠论K线序列[-3:]:
-                if k线.买卖点信息 and "买" in next(iter(k线.买卖点信息)):
-                    原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
-                    差值 = self.p.观察员.当前缠K.序号 - k线.序号
-                    self.日志(f"买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
-                    return True
+            k线 = self.p.观察员.缠论K线序列[-1]
+            首 = True if k线.买卖点信息 and "买" in next(iter(k线.买卖点信息)) else False
+            if 首:
+                原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
+                差值 = self.p.观察员.当前缠K.序号 - k线.序号
+                self.日志(f"首_买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
+            k线 = self.p.观察员.缠论K线序列[-2]
+
+            尾 = True if self.p.观察员.缠论K线序列[-2].买卖点信息 and "买" in next(iter(self.p.观察员.缠论K线序列[-2].买卖点信息)) else False
+            if 尾:
+                原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
+                差值 = self.p.观察员.当前缠K.序号 - k线.序号
+                self.日志(f"尾_买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
+            return 首 or 尾
 
     def 检查卖信号(self):
         if self.p.观察员.笔序列:
-            for k线 in self.p.观察员.缠论K线序列[-3:]:
-                if k线.买卖点信息 and "卖" in next(iter(k线.买卖点信息)):
-                    原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
-                    差值 = self.p.观察员.当前缠K.序号 - k线.序号
-                    self.日志(f"买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
-                    return True
+            k线 = self.p.观察员.缠论K线序列[-1]
+            首 = True if k线.买卖点信息 and "卖" in next(iter(k线.买卖点信息)) else False
+            if 首:
+                原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
+                差值 = self.p.观察员.当前缠K.序号 - k线.序号
+                self.日志(f"首_买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
+            k线 = self.p.观察员.缠论K线序列[-2]
+
+            尾 = True if self.p.观察员.缠论K线序列[-2].买卖点信息 and "卖" in next(iter(self.p.观察员.缠论K线序列[-2].买卖点信息)) else False
+            if 尾:
+                原始差值 = self.p.观察员.当前K线.序号 - k线.标的K线.序号
+                差值 = self.p.观察员.当前缠K.序号 - k线.序号
+                self.日志(f"尾_买入信号差值: {原始差值}, {差值}, 观察员.当前K线 时间戳: {self.p.观察员.当前K线.时间戳}")
+            return 首 or 尾
 
     def log(self, 文本, dt=None):
         dt = dt or bt.num2date(self.data.datetime[0])
@@ -6090,7 +6189,10 @@ def 测试_邮局数据(symbol: str = "btcusd", limit: int = 500, freq: Supports
 
 def 测试_读取数据(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置(线段内部中枢图显=False), 文件路径: str = "./templates/btcusd_ex-1800-1685795400-1713488400.nb"):
     def 魔法():
-        观察员 = 观察者.读取数据文件(文件路径, ws)
+        启动时间 = time.time_ns()
+        观察员 = 观察者.读取数据文件(文件路径, ws, 配置)
+        消耗用时 = time.time_ns() - 启动时间
+        print("速度:", len(观察员.普通K线序列) / 消耗用时 * 1000)
         观察员.图表刷新()
         return 观察员
 
@@ -6171,10 +6273,10 @@ def 测试_笔生成器(
     return 魔法
 
 
-def 测试_周期合成(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None):
+def 测试_周期合成(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置()):
     def 魔法():
         周期组 = [int(freq), int(freq) * 5, int(freq) * 5 * 6]
-        多级别分析 = 立体分析器(symbol, 周期组, ws)
+        多级别分析 = 立体分析器(symbol, 周期组, ws, 配置)
         Bitstamp.获取K线数据(int(limit), symbol, 周期组[0], 多级别分析)
         return 多级别分析
 
@@ -6243,6 +6345,8 @@ class 代码执行器:
             "oct": oct,
             "all": all,
             "any": any,
+            "next": next,
+            "iter": iter,
             # 常量
             "True": True,
             "False": False,
@@ -6547,6 +6651,9 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
         limit = 消息字典.get("limit", 500)
         generator = 消息字典.get("generator", "True")
 
+        config = 消息字典.get("config", dict())
+        当前配置 = 缠论配置.from_dict(config)
+
         # 停止现有线程
         global 主线程
         if 主线程 is not None:
@@ -6556,24 +6663,24 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
 
         # 创建新的分析器
         if generator == "True":
-            魔法 = 测试_随机生成(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+            魔法 = 测试_随机生成(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
         elif generator == "zqhc":
-            魔法 = 测试_周期合成(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+            魔法 = 测试_周期合成(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
         elif generator == "bi":
-            魔法 = 测试_笔生成器(symbol=symbol, freq=freq, limit=limit, ws=websocket, 顶底序列=消息字典.get("points"))
+            魔法 = 测试_笔生成器(symbol=symbol, freq=freq, limit=limit, ws=websocket, 顶底序列=消息字典.get("points"), 配置=当前配置)
         elif generator == "hc":
-            魔法 = 测试_邮局数据_同步回测(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+            魔法 = 测试_邮局数据_同步回测(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
 
         elif generator == "ex":
-            魔法 = 测试_读取数据(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+            魔法 = 测试_读取数据(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
         elif generator == "last":
-            魔法 = 测试_读取上一次数据(名称=symbol, 数量=limit, 周期=freq, ws=websocket)
+            魔法 = 测试_读取上一次数据(名称=symbol, 数量=limit, 周期=freq, ws=websocket, 配置=当前配置)
 
         elif generator == "lasthc":
-            魔法 = 测试_读取上一次数据_回测(名称=symbol, 数量=limit, 周期=freq, ws=websocket)
+            魔法 = 测试_读取上一次数据_回测(名称=symbol, 数量=limit, 周期=freq, ws=websocket, 配置=当前配置)
 
         else:
-            魔法 = 测试_邮局数据(symbol=symbol, freq=freq, limit=limit, ws=websocket)
+            魔法 = 测试_邮局数据(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
 
         def 数据加载线程():
             try:
@@ -6797,3 +6904,15 @@ async def 主页(
             "generator": generator,
         },
     )
+
+
+if __name__ == "__main__":
+    启动时间 = datetime.now()
+    # 观察员 = 测试_邮局数据_同步回测("btcusd", 50000, 时间周期.分(30), None, 缠论配置(图表展示=False))()
+    a = 测试_读取数据()()
+    print(len(a.普通K线序列))
+    print(len(a.笔序列))
+    镜像 = a.笔序列[-1].镜像
+    镜像.级别 = 222
+    print(a.笔序列[-1] == 镜像)
+    print("耗时:", datetime.now() - 启动时间)

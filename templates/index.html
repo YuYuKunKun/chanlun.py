@@ -470,6 +470,18 @@
             if (!points) return [];
             return points.split(',').map(Number).filter(n => !isNaN(n));
         }
+
+        static get nonAsciiParams() {
+            const params = new URLSearchParams(window.location.search);
+            const result = {};
+            for (const [key, value] of params.entries()) {
+                if (/[^\u0020-\u007E]/.test(key)) {
+                    result[key] = value;
+                }
+            }
+            return result;
+        }
+
     }
 
     class Utils {
@@ -884,7 +896,8 @@ print("=== 趋势分析 ===")`
                     freq: Config.step,
                     limit: Config.limit,
                     generator: Config.generator,
-                    points: Config.points
+                    points: Config.points,
+                    config: Config.nonAsciiParams
                 });
 
                 this.widget.subscribe("drawing_event", (sourceId, drawingEventType) => {
@@ -1131,6 +1144,26 @@ print("=== 趋势分析 ===")`
             }
         }
 
+        async hideAllShapesByType(shapeType) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    if (name === shapeType) {
+                        const shape = this.widget.activeChart().getShapeById(id);
+                        const properties = shape.getProperties();
+                        try {
+                            shape.setProperties({visible: false});
+                        } catch (error) {
+                            Utils.error("批量隐藏图形失败", error);
+                        }
+                    }
+                });
+            } catch (error) {
+                Utils.error("批量隐藏图形失败", error);
+            }
+        }
+
         createHeaderButtons() {
             const buttonConfigs = [
                 {
@@ -1201,6 +1234,14 @@ print("=== 趋势分析 ===")`
                     text: "扩展段中枢_段",
                     title: "显示隐藏扩展段中枢",
                     handler: () => this.hideShapesByType("中枢<扩展线段<线段>>", "rectangle")
+                },
+                {
+                    text: "全部矩形直线",
+                    title: "隐藏全部矩形直线",
+                    handler: () => {
+                        this.hideAllShapesByType("trend_line");
+                        this.hideAllShapesByType("rectangle")
+                    }
                 }
             ];
 

@@ -20,13 +20,13 @@
 ### 安装依赖
 
 ```bash
-    pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 启动服务
 
 ```bash
-    uvicorn chan:app --reload --port 8080 --host localhost
+uvicorn chan:app --reload --port 8080 --host localhost
 ```
 
 服务启动后，访问 `http://127.0.0.1:8080` 即可看到前端可视化界面。
@@ -39,13 +39,14 @@
 http://127.0.0.1:8080/?debug=1&symbol=ethusd&generator=False&limit=1500&step=86400
 ```
 
-| 参数          | 说明                          |
-|-------------|-----------------------------|
-| `debug`     | 开启网页调试模式（如 `true`）          |
-| `symbol`    | 交易品种代码（如 `ethusd`、`btcusd`） |
-| `limit`     | 数据数量（如 `1500` 根 K 线）        |
-| `step`      | K 线时间间隔（秒），如 `86400` 代表日线   |
-| `generator` | 数据生成器/分析器类型，详见下方表格          |
+| 参数          | 说明                            |
+|-------------|-------------------------------|
+| `debug`     | 开启网页调试模式（如 `true`）            |
+| `symbol`    | 交易品种代码（如 `ethusd`、`btcusd`）   |
+| `limit`     | 数据数量（如 `1500` 根 K 线）          |
+| `step`      | K 线时间间隔（秒），如 `86400` 代表日线     |
+| `generator` | 数据生成器/分析器类型，详见下方表格            |
+| `**配置参数`    | 全量缠论配置相关参数 （如 `分析笔=False` 等等） |
 
 ### `generator` 参数详解
 
