@@ -1008,7 +1008,8 @@ print("=== 趋势分析 ===")`
                 // 重复判断
                 const existShapeId = this.shapeIds.get(id);
                 if (existShapeId) {
-                    Utils.error("图形已存在", {id});
+                    // Utils.error("图形已存在", {id});
+                    await this.updateShape(id, points, properties);
                     return;
                 }
 
@@ -1036,6 +1037,7 @@ print("=== 趋势分析 ===")`
         }
 
         async removeShape(id) {
+            return ;
             try {
                 if (!this.widget || !this.widget.chart) return;
 
