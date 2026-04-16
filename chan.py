@@ -77,7 +77,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
 from termcolor import colored
 
 import backtrader as bt
@@ -206,7 +206,7 @@ class 缠论配置(BaseModel):
     标识: str = "bar"
     缠K合并替换: bool = False  # False: 在原缠K上合并, True: 产出新缠K
 
-    笔内元素数量: int = 4  # 成BI最低长度
+    笔内元素数量: int = 5  # 成BI最低长度
     笔内缺口判定为元素: bool = False  # 跳空是否判定为 NewBar
     笔内缺口判定为元素比例: float = 0.07  # 当跳空是否判定为 NewBar时, 此值大于0时按照缺口所占比例判定是否为NewBar，等于0时直接判定为NerBar
     笔内缺口占比强制成笔: bool = False  # 依赖 <笔内缺口判定为元素>
@@ -218,6 +218,7 @@ class 缠论配置(BaseModel):
 
     笔次级成笔: bool = False
     笔弱化: bool = False
+    笔弱化_原始数量: int = 3
 
     线段内部中枢图显: bool = True
     线段内部背驰_MACD: bool = True
@@ -286,6 +287,69 @@ class 缠论配置(BaseModel):
         3. 字段改名/删除 → 不报错
         """
         return values
+
+    @field_validator("*", mode="wrap")
+    def bool_parse_fallback_default(cls, value, handler, info):
+        field = cls.model_fields.get(info.field_name)
+        if not field:
+            return handler(value)
+        允许值 = {
+            "指标计算方式": ["开", "高", "低", "收", "高低均值", "高低收均值", "开高低收均值"],
+            "推送K线": ["普K", "缠K"],
+            "买卖点_指标模式": ["任意", "配置", "全量", "相对"],
+        }
+        # 字段类型 & 默认值
+        type_ = field.annotation
+        default = field.default
+        fname = info.field_name
+
+        try:
+            # --- 特别处理：推送K线（Optional[str]）---
+            if fname == "推送K线":
+                # 空字符串 / "None" → 转为 None
+                if value == "" or (isinstance(value, str) and value.strip().lower() == "none"):
+                    value = None
+
+                # 执行 Pydantic 解析
+                final_val = handler(value)
+
+                # 必须在允许列表内 或者 为 None
+                if final_val is not None and final_val not in 允许值["推送K线"]:
+                    print(f"[{fname}] = {final_val} 不在允许列表，使用默认值：{default}")
+                    return default
+
+                return final_val
+
+            # --- 1. 处理 bool：使用内置 bool_parsing ---
+            if type_ is bool:
+                return handler(value)
+
+            # --- 2. 处理 int：使用内置 int_parsing ---
+            elif type_ is int:
+                return handler(value)
+
+            # --- 3. 处理指定 str：必须在允许列表内 ---
+            elif fname in 允许值:
+                result = handler(value)
+                if result not in 允许值[fname]:
+                    raise ValueError(f"值不在允许范围内: {result}")
+                return result
+
+            # 其他类型不处理
+            else:
+                return handler(value)
+
+        # 验证失败 → 统一用默认值
+        except ValidationError as e:
+            if "bool_parsing" in str(e) or "int_parsing" in str(e):
+                print(f"[{fname}] = {value} 解析失败，使用默认值：{default}")
+                return default
+            raise
+
+        # 字符串不在允许列表 → 用默认值
+        except ValueError as e:
+            print(f"[{fname}] = {value} {str(e)}，使用默认值：{default}")
+            return default
 
     def to_dict(self) -> dict:
         """对象 → 字典"""
@@ -775,9 +839,7 @@ class 基础买卖点:
         self.失效K线: Optional["K线"] = None
         self.终结K线: Optional["K线"] = None  # 卖出 or 买入
         self.__破位值 = 中枢破位值
-        self.操作记录 = list()
-        self.所属_笔 = None
-        self.所属_线段 = None
+        self.结构 = None
 
     def __str__(self):
         return f"{self.类型.value}<{self.买卖点K线}, {self.偏移}, {self.失效偏移}>"
@@ -2127,6 +2189,10 @@ class 缠论K线(object):
         return self.高 if self.方向.是否向上() else self.低
 
     @property
+    def 成交量(self) -> float:
+        return self.标的K线.成交量
+
+    @property
     def 周期(self) -> int:
         return self.标的K线.周期
 
@@ -3042,7 +3108,7 @@ class 笔(虚线):
         if 实际数量 >= self.配置.笔内元素数量:
             return 实际数量
 
-        if self.配置.笔弱化:
+        if self.配置.笔弱化 and 实际数量 >= 3:
             原始数量 = 1 + abs(实际低点.标的K线.序号 - 实际高点.标的K线.序号)
             if 原始数量 >= self.配置.笔内元素数量:
                 return self.配置.笔内元素数量
@@ -3051,10 +3117,10 @@ class 笔(虚线):
                 筆 = self.根据缠K找笔(self.观察员.笔序列, 实际高点) or self.根据缠K找笔(self.观察员.笔序列, 实际低点)
                 if 筆:
                     if 筆.方向 is 相对方向.向上 and 实际低点.低 < 筆.低:
-                        if 原始数量 >= 3:
+                        if 原始数量 >= self.配置.笔弱化_原始数量:
                             return self.配置.笔内元素数量
                     if 筆.方向 is 相对方向.向下 and 实际低点.低 > 筆.高:
-                        if 原始数量 >= 3:
+                        if 原始数量 >= self.配置.笔弱化_原始数量:
                             return self.配置.笔内元素数量
 
         符合缺口数量 = 0
@@ -3847,7 +3913,9 @@ class 线段(虚线):
 
                 if 配置.图表展示_中枢_线段内部 and 配置.推送中枢:
                     getattr(之前线段.实_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
-                    getattr(之前线段.虚_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
+                    # getattr(之前线段.虚_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
+                    while 之前线段.虚_中枢序列:
+                        之前线段.虚_中枢序列.pop()
                     getattr(之前线段.合_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
 
             线段序列.append(待添加线段)
@@ -4975,9 +5043,8 @@ class 观察者:
         活跃序列 = [点 for 点 in 买卖点序列 if 点.失效K线 is None]
         活跃时间戳序列 = [点.买卖点K线.时间戳 for 点 in 活跃序列]
 
-        if self.配置.买卖点与MACD柱强相关:
-            if not 买卖点分型.中.与MACD柱子匹配:
-                return
+        if self.配置.买卖点与MACD柱强相关 and not 买卖点分型.中.与MACD柱子匹配:
+            return
         分型匹配 = 买卖点分型.与MACD柱子分型匹配
         柱子匹配 = 买卖点分型.中.与MACD柱子匹配
 
