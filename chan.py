@@ -279,6 +279,8 @@ class 缠论配置(BaseModel):
     买卖点_指标匹配_KDJ: bool = True  # 买在死叉之后，卖在金叉之后
     买卖点_指标匹配_RSI: bool = True  # 买在均线之下，卖在均线之上
 
+    加载文件路径: str = "./templates/last.nb"
+
     @model_validator(mode="before")
     def 兼容旧版本配置(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -573,27 +575,6 @@ class 相对方向(Enum):
 
     def __repr__(self):
         return self.name
-
-    def __int__(self):
-        match self:
-            case 相对方向.向上缺口:
-                return 3
-            case 相对方向.衔接向上:
-                return 2
-            case 相对方向.向上:
-                return 1
-            case 相对方向.顺:
-                return 8
-            case 相对方向.同:
-                return 0
-            case 相对方向.逆:
-                return -8
-            case 相对方向.向下:
-                return -1
-            case 相对方向.衔接向下:
-                return -2
-            case 相对方向.向下缺口:
-                return -3
 
     def 翻转(self) -> "相对方向":  # 反转
         match self:
@@ -2699,9 +2680,9 @@ class 特征分型:
 
 
 class 虚线(object):
-    __slots__ = ["标识", "序号", "级别", "配置", "_文", "_武", "观察员", "有效性", "__基础序列__"]
+    __slots__ = ["标识", "序号", "级别", "配置", "_文", "_武", "有效性", "__基础序列__"]
 
-    def __init__(self, 序号: int, 文: 分型, 武: 分型, 基础序列: List, 配置: 缠论配置, 观察员: Optional["观察者"] = None, 有效性: bool = True):
+    def __init__(self, 序号: int, 文: 分型, 武: 分型, 基础序列: List, 配置: 缠论配置, 有效性: bool = True):
         # super().__init__(基础序列[:])
         self.__基础序列__ = 基础序列[:]
         self.标识 = self.__class__.__name__
@@ -2712,7 +2693,6 @@ class 虚线(object):
         self._文: 分型 = 文
         self._武: 分型 = 武
 
-        self.观察员: Optional["观察者"] = 观察员
         self.有效性: bool = 有效性
 
     def append(self, other):
@@ -2746,29 +2726,6 @@ class 虚线(object):
     @property
     def 标注(self) -> str:
         return f"{self.标识}-{self.序号}"
-
-    @property
-    def 普K序列(self) -> List[K线]:
-        return [] if self.观察员 is None else self.观察员.普通K线序列[self._文.中.标的K线.序号 : self._武.中.标的K线.序号 + 1]
-
-    @property
-    def 缠K序列(self) -> List[缠论K线]:
-        if type(self) is 笔:
-            return self[:]
-        else:
-            结果 = []
-            for 元素 in self:
-                if type(元素) is 笔:
-                    if not 结果:
-                        结果.extend(元素[:])
-                    else:
-                        结果.extend(元素[1:])
-                else:
-                    if not 结果:
-                        结果.extend(元素.缠K序列)
-                    else:
-                        结果.extend(元素.缠K序列[1:])
-            return 结果
 
     @property
     def 方向(self) -> "相对方向":
@@ -2830,266 +2787,23 @@ class 虚线(object):
         武.中.备注[self.标识] = True
         self._武 = 武
 
-        if self.观察员:
-            return self.观察员.报信(self, 指令.修改(self.标识), 行号)
-            if self.文.中.备注.get(self.图表标题):
-                self.观察员.报信(self, 指令.修改(self.标识), 行号)
-            else:
-                pass
-
-    def 查找之前(self, 序列: List["虚线"]):
-        if len(序列) >= self.序号:
-            return 序列[self.序号 - 1]
-
-        if self in 序列:
-            序号 = 序列.index(self)
-            if 序号 > 0:
-                return 序列[序号 - 1]
-
     def 之前是(self, 之前: "虚线") -> bool:
         return 分型.判断分型(之前.武, self.文)
 
     def 之后是(self, 之后: "虚线") -> bool:
         return 分型.判断分型(self.武, 之后.文)
 
-    def 计算角度(self) -> float:
-        # 计算线段的角度
-        dx = self.武.时间戳.timestamp() - self.文.时间戳.timestamp()  # self.武.时间戳.timestamp() - self.文.时间戳.timestamp()  # self.武.时间戳 - self.文.时间戳  # 时间差
-        dy = self.武.分型特征值 - self.文.分型特征值  # 价格差
-
-        if dx == 0:
-            return 90.0 if dy > 0 else -90.0
-
-        angle = math.degrees(math.atan2(dy, dx))
-        return angle
-
-    def 计算速率(self) -> float:
-        # 计算线段的速度
-        dx = self.武.时间戳.timestamp() - self.文.时间戳.timestamp()  # self.武.时间戳 - self.文.时间戳  # 时间差
-        dy = self.武.分型特征值 - self.文.分型特征值  # 价格差
-        return dy / dx
-
-    def 计算测度(self) -> float:
-        # 计算线段测度
-        dx = self.武.时间戳.timestamp() - self.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
-        dy = abs(self.武.分型特征值 - self.文.分型特征值)  # 价格差的绝对值
-        return math.sqrt(dx * dx + dy * dy)  # 返回线段的欧几里得长度作为测度
-
-    def 计算振幅(self) -> float:
-        # 计算线段振幅比例
-        amplitude = self.武.分型特征值 - self.文.分型特征值
-        return amplitude / self.文.分型特征值 if self.文.分型特征值 != 0 else 0
-
-    def 计算幅度(self) -> float:
-        # 计算线段振幅比例
-        amplitude = self.武.分型特征值 - self.文.分型特征值
-        return amplitude
-
-    def 计算MACD(self) -> Dict[str, float]:
-        result = {"up": 0.0, "down": 0.0, "sum": 0.0}
-
-        for 元素 in self.普K序列:
-            macd = 元素.macd
-            key = "up" if macd.MACD柱 > 0 else "down"
-            result[key] = result[key] + macd.MACD柱
-
-        result["sum"] = abs(result["up"]) + abs(result["down"])
-        return result
-
-    def 计算成交分布(self, 区间数: int = 20, 区间边界: Optional[List[float]] = None) -> Tuple[List[Tuple[float, float]], List[float]]:
-        """
-        计算虚线（笔或线段）内K线成交量的价格区间分布。
-
-        参数:
-            虚线: 笔或线段对象，应包含K线序列（可通过迭代获取每个K线）
-            区间数: 当未提供区间边界时，将价格范围等分为多少份
-            区间边界: 可选，自定义价格区间边界列表（升序），例如 [100, 105, 110, ...]
-
-        返回:
-            (区间列表, 成交量列表)
-            区间列表: 每个元素为 (下界, 上界) 的元组
-            成交量列表: 对应每个区间的成交量总和
-        """
-        # 收集虚线内所有K线的价格和成交量
-        价格序列 = []  # 存储每根K线的价格（这里使用收盘价作为成交发生的价格，也可用最高/最低，按需修改）
-        成交量序列 = []
-        for k in self.普K序列:
-            # 假设K线对象有 .收盘价 和 .成交量 属性
-            # 实际可根据需要选择价格（如用最高价、最低价或平均价）
-            价格序列.append(k.收盘价)
-            成交量序列.append(k.成交量)
-
-        if not 价格序列:
-            return [], []
-
-        # 确定价格区间边界
-        if 区间边界 is not None:
-            区间边界序列 = sorted(区间边界)
-            # 确保边界包含所有价格
-            最低价 = min(价格序列)
-            最高价 = max(价格序列)
-            if 最低价 < 区间边界序列[0]:
-                区间边界序列.insert(0, 最低价)
-            if 最高价 > 区间边界序列[-1]:
-                区间边界序列.append(最高价)
-        else:
-            最低价 = min(价格序列)
-            最高价 = max(价格序列)
-            if 最高价 == 最低价:
-                # 所有价格相等，只用一个区间
-                区间边界序列 = [最低价, 最高价]
-            else:
-                步长 = (最高价 - 最低价) / 区间数
-                区间边界序列 = [最低价 + i * 步长 for i in range(区间数 + 1)]
-
-        # 构建区间列表（左闭右开，最后一个区间包含右端点）
-        价格区间 = []
-        for i in range(len(区间边界序列) - 1):
-            低 = 区间边界序列[i]
-            高 = 区间边界序列[i + 1]
-            价格区间.append((低, 高))
-
-        # 统计每个区间的成交量
-        区间成交量 = [0.0] * len(价格区间)
-        for 价格, 量 in zip(价格序列, 成交量序列):
-            # 确定价格属于哪个区间
-            for 序号, (低, 高) in enumerate(价格区间):
-                if 序号 == len(价格区间) - 1:
-                    # 最后一个区间包含右边界
-                    if 低 <= 价格 <= 高:
-                        区间成交量[序号] += 量
-                        break
-                else:
-                    if 低 <= 价格 < 高:
-                        区间成交量[序号] += 量
-                        break
-
-        return 价格区间, 区间成交量
-
-    def 计算MACD柱子分段(self, k线序列: List["K线"] = None) -> Tuple[List[List["K线"]], ...]:
-        k线序列: List["K线"] = self.普K序列 if not k线序列 else k线序列
-
-        if not k线序列:
-            return ()
-
-        def 符号(x: float) -> str:
-            if x > 0:
-                return "正"
-            else:
-                return "负"
-
-        当前符号 = 符号(k线序列[0].macd.MACD柱)
-        当前段柱子 = [k线序列[0].macd.MACD柱]
-        结果 = []
-
-        for i in range(1, len(k线序列)):
-            新符号 = 符号(k线序列[i].macd.MACD柱)
-            if 新符号 == 当前符号:
-                当前段柱子.append(k线序列[i].macd.MACD柱)
-            else:
-                结果.append(当前段柱子)
-                当前段柱子 = [k线序列[i].macd.MACD柱]
-                当前符号 = 新符号
-        return tuple(结果)
-
-    def 事后买卖点(self):
-        特征 = f"事后{self.标识}"
-        买卖点分型 = self.武
-        self.观察员.添加买卖点(特征, 买卖点分型, "一", "本级")
-
-    def 获取分位数(self, 序列: List["虚线"], 百分比: float, 模式: str = "幅度"):
-        """
-        获取序列中的分位数
-        :param 序列: 虚线序列
-        :param 百分比: 百分比
-        :param 模式: 幅度 与 振幅 缺省默认 幅度
-        :return: 分位数
-        """
-        模式序列 = [abs(o.计算振幅()) for o in 序列] if 模式 == "振幅" else [abs(o.计算幅度()) for o in 序列]
-        模式序列.sort()
-        位置 = int((len(序列) + 1) * 百分比)
-        return 模式序列[位置]
-
-    def 幅度强弱(self, 序列: List["虚线"], 百分比: float = 0.4) -> Optional[bool]:
-        return abs(self.计算幅度()) > abs(self.获取分位数(序列, 百分比, "幅度"))
-
-    def 振幅强弱(self, 序列: List["虚线"], 百分比: float = 0.4) -> Optional[bool]:
-        return abs(self.计算振幅()) > abs(self.获取分位数(序列, 百分比, "振幅"))
-
-    def 计算MACD柱子均值(self) -> float:
-        K线序列 = self.普K序列
-        return sum([abs(K.macd.MACD柱) for K in K线序列]) / len(K线序列)
-
-    def 计算MACD柱子均值_阴(self) -> float:
-        K线序列 = self.普K序列
-        总 = [abs(K.macd.MACD柱) for K in K线序列 if K.macd.MACD柱 < 0]
-        if 总:
-            return sum(总) / len(总)
-        return False
-
-    def 计算MACD柱子均值_阳(self) -> float:
-        K线序列 = self.普K序列
-        总 = [abs(K.macd.MACD柱) for K in K线序列 if K.macd.MACD柱 > 0]
-        if 总:
-            return sum(总) / len(总)
-        return False
-
-    @property
-    def 武之全量MACD均值(self) -> bool:
-        """
-        小于均值则背驰
-        """
-        return abs(self.武.中.标的K线.macd.MACD柱) < self.计算MACD柱子均值()
-
-    @property
-    def 武之MACD均值(self) -> bool:
-        """
-        小于均值则背驰
-        """
-        if self.方向 is 相对方向.向上:
-            return self.武之MACD均值_阳
-        else:
-            return self.武之MACD均值_阴
-
-    @property
-    def 武之MACD均值_阴(self) -> bool:
-        """
-        小于均值则背驰
-        """
-        return abs(self.武.中.标的K线.macd.MACD柱) < abs(self.计算MACD柱子均值_阴())
-
-    @property
-    def 武之MACD均值_阳(self) -> bool:
-        """
-        小于均值则背驰
-        """
-        return abs(self.武.中.标的K线.macd.MACD柱) < abs(self.计算MACD柱子均值_阳())
-
-    @property
-    def 武之MACD极值(self) -> bool:
-        """
-        最高最低
-        """
-        所有柱子 = [K.macd.MACD柱 for K in self.普K序列]
-        if self.武.中.标的K线.macd.MACD柱 > 0:
-            取值函数 = max
-        else:
-            取值函数 = min
-        if 取值函数(所有柱子) == self.武.中.标的K线.macd.MACD柱:
-            return True
-        return False
-
 
 class 笔(虚线):
     def __str__(self):
-        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {self.缠K数量})"
+        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
 
     def __repr__(self):
-        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {self.缠K数量})"
+        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
 
     @property
     def 镜像(self) -> Self:
-        镜像 = 笔(序号=self.序号, 文=self.文, 武=self.武, 基础序列=self[:], 观察员=self.观察员, 配置=self.配置, 有效性=self.有效性)
+        镜像 = 笔(序号=self.序号, 文=self.文, 武=self.武, 基础序列=self[:], 配置=self.配置, 有效性=self.有效性)
         镜像.标识 = self.标识
         镜像.级别 = self.级别
         assert 镜像 == self
@@ -3123,8 +2837,7 @@ class 笔(虚线):
                 缺口序列.append(缺口(high, low))
         return 缺口序列
 
-    @property
-    def 缠K数量(self) -> int:
+    def 获取缠K数量(self, 笔序列: List["笔"]) -> int:
         缺口序列 = self.元素缺口序列
         实际高点 = self.实际高点
         实际低点 = self.实际低点
@@ -3138,8 +2851,8 @@ class 笔(虚线):
             if 原始数量 >= self.配置.笔内元素数量:
                 return self.配置.笔内元素数量
 
-            if self.观察员.笔序列:
-                筆 = self.根据缠K找笔(self.观察员.笔序列, 实际高点) or self.根据缠K找笔(self.观察员.笔序列, 实际低点)
+            if 笔序列:
+                筆 = self.根据缠K找笔(笔序列, 实际高点) or self.根据缠K找笔(笔序列, 实际低点)
                 if 筆:
                     if 筆.方向 is 相对方向.向上 and 实际低点.低 < 筆.低:
                         if 原始数量 >= self.配置.笔弱化_原始数量:
@@ -3193,59 +2906,6 @@ class 笔(虚线):
         return lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
 
     @property
-    def 原始高点(self) -> K线:
-        序列 = sorted(self.普K序列, key=lambda k: k.高)
-        highs: List[K线] = [k for k in 序列 if k.高 == 序列[-1].高]
-        highs.sort(key=lambda k: k.时间戳)
-        return highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
-
-    @property
-    def 原始低点(self) -> K线:
-        序列 = sorted(self.普K序列, key=lambda k: k.低)
-        lows: List[K线] = [k for k in 序列 if k.低 == 序列[0].低]
-        lows.sort(key=lambda k: k.时间戳)
-        return lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
-
-    @property
-    def 高低组合(self) -> Tuple[K线, K线, 缠论K线, 缠论K线, 缠论K线, 缠论K线]:
-        """
-        :return: (原始高点,原始低点，缠K高点,缠K低点，缠K次高点,缠K次低点)
-        """
-        普K序列 = self.普K序列
-        缠K序列 = self
-        序列 = sorted(普K序列, key=lambda k: k.高)
-        highs: List[K线] = [k for k in 序列 if k.高 == 序列[-1].高]
-        highs.sort(key=lambda k: k.时间戳)
-        原始高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
-
-        序列 = sorted(普K序列, key=lambda k: k.低)
-        lows: List[K线] = [k for k in 序列 if k.低 == 序列[0].低]
-        lows.sort(key=lambda k: k.时间戳)
-        原始低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
-
-        序列 = sorted(self, key=lambda k: k.高)
-        highs: List[缠论K线] = [k for k in 序列 if k.高 == 序列[-1].高]
-        highs.sort(key=lambda k: k.时间戳)
-        缠K高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
-
-        highs: List[缠论K线] = [k for k in 序列 if k.高 != 缠K高点.高]  # 排除
-        highs: List[缠论K线] = [k for k in highs if k.高 == highs[-1].高]  # 筛选
-        highs.sort(key=lambda k: k.时间戳)  # 排序
-        缠K次高点 = highs[-1] if self.配置.笔内相同终点取舍 else highs[0]
-
-        序列 = sorted(缠K序列, key=lambda k: k.低)
-        lows: List[缠论K线] = [k for k in 序列 if k.低 == 序列[0].低]
-        lows.sort(key=lambda k: k.时间戳)
-        缠K低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
-
-        lows: List[缠论K线] = [k for k in 序列 if k.低 != 缠K低点.低]
-        lows: List[缠论K线] = [k for k in lows if k.低 == lows[0].低]
-        lows.sort(key=lambda k: k.时间戳)
-        缠K次低点 = lows[-1] if self.配置.笔内相同终点取舍 else lows[0]
-
-        return 原始高点, 原始低点, 缠K高点, 缠K低点, 缠K次高点, 缠K次低点
-
-    @property
     def 相对关系(self) -> bool:
         if self.配置.笔内起始分型包含整笔:
             相对关系 = 相对方向.分析(self.文, self.武)
@@ -3269,32 +2929,16 @@ class 笔(虚线):
             return NotImplemented
         return super().之后是(之后)
 
-    def 自检(self) -> bool:
-        if self.缠K数量 >= self.配置.笔内元素数量:
+    def 自检(self, 笔序列: List["笔"]) -> bool:
+        if self.获取缠K数量(笔序列) >= self.配置.笔内元素数量:
             if self.方向 is 相对方向.向下 and self.文.中 is self.实际高点 and self.武.中 is self.实际低点:
                 return True
             if self.方向 is 相对方向.向上 and self.文.中 is self.实际低点 and self.武.中 is self.实际高点:
                 return True
         return False
 
-    def 获取所有停顿位置(self):
-        笔序列 = []
-        文 = self.文
-        for i in range(3, len(self) - 1):
-            K = self[i]
-            武 = 分型(self[i - 1], K, self[i + 1])
-            if K.分型 is 分型结构.顶 and self.方向 is 相对方向.向上:
-                当前笔 = 笔(序号=self.序号, 文=文, 武=武, 基础序列=self[: i + 1], 配置=self.配置, 观察员=self.观察员)
-                当前笔.自检() and 笔序列.append(当前笔)
-
-            if K.分型 is 分型结构.底 and self.方向 is 相对方向.向下:
-                当前笔 = 笔(序号=self.序号, 文=文, 武=武, 基础序列=self[: i + 1], 配置=self.配置, 观察员=self.观察员)
-                当前笔.自检() and 笔序列.append(当前笔)
-
-        return 笔序列
-
     @classmethod
-    def 分析(cls, 当前分型: Optional[分型], 分型序列: List[分型], 笔序列: List["笔"], 缠K序列: List[缠论K线], 递归层次: int, 配置: 缠论配置, 观察员: "观察者"):
+    def 分析(cls, 当前分型: Optional[分型], 分型序列: List[分型], 笔序列: List["笔"], 缠K序列: List[缠论K线], 递归层次: int, 配置: 缠论配置):
         if 当前分型 is None:
             return 递归层次
 
@@ -3314,11 +2958,6 @@ class 笔(虚线):
                 旧笔 = 笔序列.pop()
                 assert 旧笔.武 is 旧分型, "最后一笔终点错误"
                 旧笔.有效性 = False
-                配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.笔序列, 观察员.线段序列, 观察员, 配置)
-                配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.线段序列, 观察员.线段_线段序列, 观察员, 配置)
-
-                配置.分析扩展线段 and 线段.扩展分析(观察员.当前缠K, 观察员.笔序列, 观察员.扩展线段序列, 观察员, 配置)
-                配置.分析扩展线段 and 线段.扩展分析(观察员.当前缠K, 观察员.线段序列, 观察员.扩展线段序列_线段, 观察员, 配置)
 
         def _添加新笔(待添加分型: "分型", 待添加新笔: "笔", 行号):
             分型.向序列中添加(分型序列, 待添加分型)
@@ -3333,12 +2972,6 @@ class 笔(虚线):
                     print(f"_添加新笔[{行号}] 出现无效分型", 笔序列[-1])
 
             笔序列.append(待添加新笔)
-            待添加新笔.观察员 = 观察员
-            配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.笔序列, 观察员.线段序列, 观察员, 配置)
-            配置.分析线段 and 线段.分析(观察员.当前缠K, 观察员.线段序列, 观察员.线段_线段序列, 观察员, 配置)
-
-            配置.分析扩展线段 and 线段.扩展分析(观察员.当前缠K, 观察员.笔序列, 观察员.扩展线段序列, 观察员, 配置)
-            配置.分析扩展线段 and 线段.扩展分析(观察员.当前缠K, 观察员.线段序列, 观察员.扩展线段序列_线段, 观察员, 配置)
 
         之前分型 = 分型序列[-1]
         if 之前分型.结构 in (分型结构.上, 分型结构.下):
@@ -3349,26 +2982,26 @@ class 笔(虚线):
                 return 递归层次
 
         if 之前分型.中.时间戳 > 当前分型.中.时间戳:
-            raise RuntimeError(f"时序错误-{递归层次}, {之前分型}, {当前分型}, {观察员.当前缠K}")
+            raise RuntimeError(f"时序错误-{递归层次}, {之前分型}, {当前分型}")
 
         if 之前分型.中.时间戳 == 当前分型.中.时间戳:
             _弹出旧笔(sys._getframe().f_lineno)
-            return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)
+            return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)
 
         if 配置.笔弱化:
             if 笔序列 and len(笔序列[-1]) == 3:
                 if 笔序列[-1].方向.是否向上() and 笔序列[-1].低 > 当前分型.分型特征值 and 当前分型.结构 is 分型结构.底:
                     _弹出旧笔(sys._getframe().f_lineno)
-                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)
+                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)
 
                 if 笔序列[-1].方向.是否向下() and 笔序列[-1].高 < 当前分型.分型特征值 and 当前分型.结构 is 分型结构.顶:
                     _弹出旧笔(sys._getframe().f_lineno)
-                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)
+                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)
 
         if (之前分型.结构 is 分型结构.顶 and 当前分型.结构 is 分型结构.底) or (之前分型.结构 is 分型结构.底 and 当前分型.结构 is 分型结构.顶):
             基础序列 = 缠论K线.截取(缠K序列, 之前分型.中, 当前分型.中)
-            当前笔 = 笔(序号=0, 文=之前分型, 武=当前分型, 基础序列=基础序列, 配置=配置, 观察员=观察员)
-            if 当前笔.缠K数量 >= 配置.笔内元素数量:
+            当前笔 = 笔(序号=0, 文=之前分型, 武=当前分型, 基础序列=基础序列, 配置=配置)
+            if 当前笔.获取缠K数量(笔序列) >= 配置.笔内元素数量:
                 eq = 配置.笔内相同终点取舍
                 配置.笔内相同终点取舍 = False  # 起始点检测时不考虑相同起始点情况，避免递归
 
@@ -3383,8 +3016,8 @@ class 笔(虚线):
                         assert 临时分型.结构 is 分型结构.顶, 临时分型
                     else:
                         assert 临时分型.结构 is 分型结构.底, 临时分型
-                    递归层次_ = 笔递归分析(临时分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)  # 处理新顶
-                    递归层次_ += 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)  # 再处理当前底
+                    递归层次_ = 笔递归分析(临时分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)  # 处理新顶
+                    递归层次_ += 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)  # 再处理当前底
                     配置.笔内相同终点取舍 = eq
                     return 递归层次_ - (递归层次 * 2)
 
@@ -3418,7 +3051,7 @@ class 笔(虚线):
                     else:
                         assert 之前分型.结构 is 分型结构.顶, 之前分型.结构
 
-                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置, 观察员)  # 处理新顶
+                    return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 递归层次 + 1, 配置)  # 处理新顶
                 else:
                     分型.向序列中添加(分型序列, 当前分型)
 
@@ -3485,9 +3118,9 @@ class 线段(虚线):
         super().__init__(**kwargs)
         self.特征序列: List[Optional[线段特征]] = [None] * 3
 
-        self.实_中枢序列: List["中枢"] = 图表展示序列(self.观察员) if self.配置.推送中枢 else []
-        self.虚_中枢序列: List["中枢"] = 图表展示序列(self.观察员) if self.配置.推送中枢 else []
-        self.合_中枢序列: List["中枢"] = 图表展示序列(self.观察员) if self.配置.推送中枢 else []
+        self.实_中枢序列: List["中枢"] = []
+        self.虚_中枢序列: List["中枢"] = []
+        self.合_中枢序列: List["中枢"] = []
         self.确认K线: Optional[缠论K线] = None
         self.模式: str = "文武"
         self._特征序列_显示 = None
@@ -3516,7 +3149,7 @@ class 线段(虚线):
 
     @property
     def 镜像(self) -> Self:
-        镜像 = 线段(序号=self.序号, 文=self.文, 武=self.武, 基础序列=self[:], 观察员=self.观察员, 配置=self.配置)
+        镜像 = 线段(序号=self.序号, 文=self.文, 武=self.武, 基础序列=self[:], 配置=self.配置)
         镜像.特征序列 = self.特征序列[:]
         镜像.实_中枢序列 = self.实_中枢序列[:]
         镜像.虚_中枢序列 = self.虚_中枢序列[:]
@@ -3631,12 +3264,10 @@ class 线段(虚线):
                     break
 
             if (len(基础序列) >= 6) and (len(基础序列) % 2 == 0):
-                # print(colored("   线段.右 基础序列被重置", "yellow"), len(self), len(基础序列), self)
                 self[:] = 基础序列[:]
             else:
                 raise RuntimeError()
         else:
-            # print(colored("线段.右 = None", "yellow"), self.观察员.当前K线)
             pass
 
     def __设置特征(self, 偏移: int, 特征: Optional[线段特征]):
@@ -3687,19 +3318,19 @@ class 线段(虚线):
             return [], [], []
         实, 虚, _, _ = self.分割序列()
 
-        中枢.分析(实, self.实_中枢序列, self.观察员, 标识=f"{self.标识}_{self.序号}_实_")  # FIXME 此处需注意观察员
-        中枢.分析(虚, self.虚_中枢序列, self.观察员, 标识=f"{self.标识}_{self.序号}_虚_")  # FIXME 此处需注意观察员
-        中枢.分析(self, self.合_中枢序列, self.观察员, 标识=f"{self.标识}_{self.序号}_合_")  # FIXME 此处需注意观察员
+        中枢.分析(实, self.实_中枢序列, self.配置, 标识=f"{self.标识}_{self.序号}_实_")
+        中枢.分析(虚, self.虚_中枢序列, self.配置, 标识=f"{self.标识}_{self.序号}_虚_")
+        中枢.分析(self, self.合_中枢序列, self.配置, 标识=f"{self.标识}_{self.序号}_合_")
         return self.虚_中枢序列, self.实_中枢序列, self.合_中枢序列  # 阴 阳 合
 
-    def 图表移除特征序列(self):
+    def 图表移除特征序列(self, 观察员=None):
         if self._特征序列_显示:
             self._特征序列_显示 = False
             for 特征 in self.特征序列:
                 if 特征 is not None:
-                    self.观察员 and self.观察员.报信(特征, 指令.删除(特征.标识), sys._getframe().f_lineno)
+                    观察员 and 观察员.报信(特征, 指令.删除(特征.标识), sys._getframe().f_lineno)
 
-    def 图表显示特征序列(self):
+    def 图表显示特征序列(self, 观察员=None):
         if not self._特征序列_显示:
             # self.__刷新特征序列()
             self._特征序列_显示 = True
@@ -3708,7 +3339,7 @@ class 线段(虚线):
                 if 特征 is not None:
                     特征.序号 = 序号
                     特征.标识 = f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}_特征序列_{序号}:{self.序号}"
-                    self.观察员 and self.观察员.报信(特征, 指令.添加(特征.标识), sys._getframe().f_lineno)
+                    观察员 and 观察员.报信(特征, 指令.添加(特征.标识), sys._getframe().f_lineno)
                 序号 += 1
 
     def 分割序列(self, 所属中枢: Optional["中枢"] = None) -> Tuple[List[Union["笔", "线段"]], List[Union["笔", "线段"]], List[Union["笔", "线段"]], Optional[Union["笔", "线段"]]]:
@@ -3827,7 +3458,7 @@ class 线段(虚线):
                 print("    线段.刷新 特征后一笔 = None, ", self, 有效特征序列)
         else:
             raise RuntimeError(len(有效特征序列))
-        self.获取内部中枢序列()
+        # self.获取内部中枢序列()
 
     def 序列重置(self, 序列: Sequence):
         异常序列 = []
@@ -3861,38 +3492,6 @@ class 线段(虚线):
             self.右 = None
         return 异常序列
 
-    def 获取所有停顿位置(self):
-        结果 = []
-        if self.模式 != "文武":
-            return 结果
-        if self.标识 != "线段":  # 不考虑段的段，不如直接更换K线周期
-            return 结果
-        阳, 阴, _, _ = self.分割序列(None)
-        线段序列 = []
-        笔序列 = []
-        当前停顿 = None
-
-        for 筆 in 阳:
-            if len(笔序列) >= 2:
-                筆停顿 = 筆.获取所有停顿位置()
-                筆停顿.append(筆)
-                for 停顿 in 筆停顿:
-                    笔序列.append(停顿)
-                    线段.分析(None, 笔序列, 线段序列, None, self.配置, 关系序列=[相对方向.向下, 相对方向.向上, 相对方向.顺, 相对方向.逆, 相对方向.同])
-                    if 线段序列 and 线段序列[-1].武 is not 当前停顿:
-                        新段 = 线段.新建(线段序列[-1][:], self.观察员, self.配置)
-                        新段.序号 = self.序号
-                        新段.刷新()
-                        if 新段.方向 is self.方向:
-                            结果.append(新段)
-                            当前停顿 = 线段序列[-1].武
-
-                    if 停顿 is not 筆:
-                        笔序列.pop().有效性 = False
-            else:
-                笔序列.append(筆)
-        return 结果
-
     @classmethod
     def 基础判断(cls, 左: Union["笔", "线段"], 中: Union["笔", "线段"], 右: Union["笔", "线段"], 关系序列: List[相对方向]) -> bool:
         """
@@ -3920,12 +3519,12 @@ class 线段(虚线):
         return True
 
     @classmethod
-    def 新建(cls, 虚线序列: List["笔"], 观察员: Optional["观察者"], 配置: 缠论配置) -> "线段":
-        段 = 线段(序号=0, 文=虚线序列[0].文, 武=虚线序列[-1].武, 基础序列=虚线序列, 观察员=观察员, 配置=配置)
+    def 新建(cls, 虚线序列: List["笔"], 配置: 缠论配置) -> "线段":
+        段 = 线段(序号=0, 文=虚线序列[0].文, 武=虚线序列[-1].武, 基础序列=虚线序列, 配置=配置)
         return 段
 
     @classmethod
-    def 分析(cls, 当前K线: 缠论K线, 笔序列: List[Union["笔", "线段"]], 线段序列: List["线段"], 观察员: "观察者", 配置: 缠论配置, 层级: int = 0, 关系序列=[相对方向.向上, 相对方向.向下]) -> None:
+    def 分析(cls, 当前K线: 缠论K线, 笔序列: List[Union["笔", "线段"]], 线段序列: List["线段"], 配置: 缠论配置, 层级: int = 0, 关系序列=[相对方向.向上, 相对方向.向下]) -> None:
         """
         注意笔序列前三个元素必须符合线段基本要求
         四象: 老阴，老阳，少阴，小阳
@@ -3954,10 +3553,6 @@ class 线段(虚线):
                 待添加线段.序号 = 之前线段.序号 + 1
                 待添加线段.前一缺口 = 之前线段.缺口
                 待添加线段.前一结束位置 = 之前线段[-1]
-
-                if 观察员:
-                    if 之前线段.确认K线 is None:
-                        之前线段.确认K线 = 观察员.当前缠K
 
                 if 配置.图表展示_中枢_线段内部 and 配置.推送中枢:
                     getattr(之前线段.实_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
@@ -3999,7 +3594,7 @@ class 线段(虚线):
                 if not 线段.基础判断(左, 中, 右, 关系序列):  # FIXME 首个线段必须有明确方向
                     continue
 
-                段 = 线段.新建([左, 中, 右], 观察员, 配置)
+                段 = 线段.新建([左, 中, 右], 配置)
                 _添加线段(段, f"{sys._getframe().f_lineno}, {层级}")
                 段.左 = 线段特征.新建([中], 段.方向)
                 break
@@ -4021,18 +3616,18 @@ class 线段(虚线):
                 # print(colored(f"线段. 分析[{层级}] 当前线段 异常元素 涉及上一段", "red"), len(异常元素序列))
                 _弹出线段(当前线段, f"{sys._getframe().f_lineno}, {层级}")
                 当前线段 = 之前线段
-                # return 线段递归分析(当前K线, 笔序列, 线段序列, 观察员, 配置, 层级+1, 关系序列)
+                # return 线段递归分析(当前K线, 笔序列, 线段序列, 配置, 层级+1, 关系序列)
             else:
                 assert 之前线段.右 is not None
 
         if len(当前线段) < 3:
             _弹出线段(当前线段, f"{sys._getframe().f_lineno}, {层级}")
-            return 线段递归分析(当前K线, 笔序列, 线段序列, 观察员, 配置, 层级 + 1, 关系序列)
+            return 线段递归分析(当前K线, 笔序列, 线段序列, 配置, 层级 + 1, 关系序列)
 
         if 当前线段.右 is not None:
             基础序列 = 当前线段.分割序列()[1]
             # print(colored(f"线段. 分析[{层级}] 特殊情况, 特征序列俱全时出现在 线段序列尾部, 基础序列: ", "red"), len(基础序列), 当前线段)
-            新段 = 线段.新建(基础序列, 观察员, 配置)
+            新段 = 线段.新建(基础序列, 配置)
             _添加线段(新段, f"{sys._getframe().f_lineno}, {层级}")
             if 当前线段.四象 in ("老阴", "老阳"):
                 新段.前一缺口 = None
@@ -4088,7 +3683,7 @@ class 线段(虚线):
 
             if 当前线段.右 is not None:
                 基础序列 = 当前线段.分割序列()[1]
-                新段 = 线段.新建(基础序列, 观察员, 配置)
+                新段 = 线段.新建(基础序列, 配置)
                 _添加线段(新段, f"{sys._getframe().f_lineno}, {层级}")
                 # 当前线段.图表移除特征序列()
                 if 四象 in ("老阴", "老阳"):
@@ -4117,7 +3712,7 @@ class 线段(虚线):
             self.pop()
 
     @classmethod
-    def 扩展分析(cls, 当前K线: 缠论K线, 虚线序列: List[Union["笔", "线段"]], 线段序列: List["线段"], 观察员: "观察者", 配置: 缠论配置) -> None:
+    def 扩展分析(cls, 当前K线: 缠论K线, 虚线序列: List[Union["笔", "线段"]], 线段序列: List["线段"], 配置: 缠论配置) -> None:
         """
         即同级别分析
         将笔看成线段
@@ -4163,7 +3758,7 @@ class 线段(虚线):
                 if 关系 not in (相对方向.向下, 相对方向.向上, 相对方向.顺, 相对方向.逆, 相对方向.同):  # FIXME 此处为首个线段
                     continue
 
-                段 = 线段.新建([左, 中, 右], 观察员, 配置)
+                段 = 线段.新建([左, 中, 右], 配置)
                 _添加线段(段, sys._getframe().f_lineno)
                 break
 
@@ -4175,7 +3770,7 @@ class 线段(虚线):
         当前线段._验证序列(虚线序列)
         if len(当前线段) < 3:
             _弹出线段(当前线段, sys._getframe().f_lineno)
-            return 线段递归扩展分析(当前K线, 虚线序列, 线段序列, 观察员, 配置)
+            return 线段递归扩展分析(当前K线, 虚线序列, 线段序列, 配置)
 
         if not 配置.线段当下扩展分析:
             当前线段[:] = 当前线段[:3]
@@ -4199,15 +3794,15 @@ class 线段(虚线):
             if 左 in 当前线段:
                 continue
 
-            段 = 线段.新建([左, 中, 右], 观察员, 配置)
+            段 = 线段.新建([左, 中, 右], 配置)
             _添加线段(段, sys._getframe().f_lineno)
-            return 线段递归扩展分析(当前K线, 虚线序列, 线段序列, 观察员, 配置)
+            return 线段递归扩展分析(当前K线, 虚线序列, 线段序列, 配置)
 
 
 class 中枢(list):
-    __slots__ = ["序号", "标识", "级别", "配置", "支持延续", "支持扩张", "扩展序列", "扩展中枢序列", "第三买卖线", "本级_第三买卖线", "观察员"]
+    __slots__ = ["序号", "标识", "级别", "配置", "支持延续", "支持扩张", "扩展序列", "扩展中枢序列", "第三买卖线", "本级_第三买卖线", "进入段"]
 
-    def __init__(self, 序号: int, 标识: str, 级别: int, 基础序列: List[Union["笔", "线段"]], 观察员: Optional["观察者"], 配置: 缠论配置):
+    def __init__(self, 序号: int, 标识: str, 级别: int, 基础序列: List[Union["笔", "线段"]], 配置: 缠论配置):
         super().__init__(基础序列[:3])
         self.标识: str = self.__class__.__name__
         self.配置: 缠论配置 = 配置
@@ -4218,9 +3813,8 @@ class 中枢(list):
         self.扩展中枢序列: List["中枢"] = []  # FIXME 高一级中枢
         self.第三买卖线: Optional[Union["笔", "线段"]] = None
         self.本级_第三买卖线: Optional[Union["笔", "线段"]] = None
-        # self.进入段: Optional[Union["笔", "线段"]] = None
+        self.进入段: Optional[Union["笔", "线段"]] = None
         # self.离开段: Optional[Union["笔", "线段"]] = None
-        self.观察员: Optional["观察者"] = 观察员
 
     def append(self, __object):
         super().append(__object)
@@ -4236,18 +3830,6 @@ class 中枢(list):
     @property
     def 图表标题(self) -> str:
         return f"{self.文.右.标识}:{self.文.右.周期}:{getattr(self, '标识')}:{getattr(self, '序号', 0)}"
-
-    @property
-    def 进入段(self) -> Union["笔", "线段"]:
-        进入段 = None
-        if 进入段 is None and self.观察员 is not None:
-            if type(self[0]) is 线段:
-                进入段 = self[0].查找之前(self.观察员.线段序列)
-
-            if type(self[0]) is 笔:
-                进入段 = self[0].查找之前(self.观察员.笔序列)
-
-        return 进入段
 
     @property
     def 离开段(self) -> Union["笔", "线段"]:
@@ -4346,8 +3928,8 @@ class 中枢(list):
     def 获取扩展中枢(self, 扩展中枢: List):
         if len(self) >= 9:
             扩展线段 = []
-            线段.扩展分析(None, self, 扩展线段, self.观察员, self.配置)
-            中枢.分析(扩展线段, 扩展中枢, self.观察员, False, f"{self.标识}_扩展中枢_")
+            线段.扩展分析(None, self, 扩展线段, self.配置)
+            中枢.分析(扩展线段, 扩展中枢, self.配置, False, f"{self.标识}_扩展中枢_")
 
     def 校验合法性(self, 序列: Sequence, 中枢序列) -> bool:
         有效序列 = self[:]
@@ -4453,19 +4035,18 @@ class 中枢(list):
         return 相对方向.分析(左, 右) in (相对方向.向下, 相对方向.向上, 相对方向.顺, 相对方向.逆, 相对方向.同)
 
     @classmethod
-    def 创建(cls, 左: Union["笔", "线段"], 中: Union["笔", "线段"], 右: Union["笔", "线段"], 级别: int, 观察员: Optional["观察者"], 配置: 缠论配置, 标识: str = "") -> "中枢":
+    def 创建(cls, 左: Union["笔", "线段"], 中: Union["笔", "线段"], 右: Union["笔", "线段"], 级别: int, 配置: 缠论配置, 标识: str = "") -> "中枢":
         assert 中枢.基础检查(左, 中, 右)
         return 中枢(
             序号=0,
             标识=f"{标识}中枢<{中.标识}>",
             基础序列=[左, 中, 右],
             级别=级别,
-            观察员=观察员,
             配置=配置,
         )
 
     @classmethod
-    def 从序列中获取中枢(cls, 虚线序列: List[Union["笔", "线段"]], 起始方向: 相对方向, 观察员: Optional["观察者"], 配置: 缠论配置, 标识: str) -> Optional["中枢"]:
+    def 从序列中获取中枢(cls, 虚线序列: List[Union["笔", "线段"]], 起始方向: 相对方向, 配置: 缠论配置, 标识: str) -> Optional["中枢"]:
         if len(虚线序列) < 3:
             return None
 
@@ -4473,17 +4054,16 @@ class 中枢(list):
             左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
             if 中枢.基础检查(左, 中, 右):
                 if 左.方向 is 起始方向:
-                    return 中枢.创建(左, 中, 右, 级别=0, 观察员=观察员, 配置=配置, 标识=标识)
+                    return 中枢.创建(左, 中, 右, 级别=0, 配置=配置, 标识=标识)
 
         return None
 
     @classmethod
-    def 分析(cls, 虚线序列: List[Union["笔", "线段"]], 中枢序列: List["中枢"], 观察员: Optional["观察者"], 跳过首部: bool = True, 标识: str = "", 层级: int = 0) -> None:
+    def 分析(cls, 虚线序列: List[Union["笔", "线段"]], 中枢序列: List["中枢"], 配置: 缠论配置, 跳过首部: bool = True, 标识: str = "", 层级: int = 0) -> None:
         if not 虚线序列:
             return None
 
         中枢递归分析 = 中枢.分析
-        配置 = 观察员.配置 if 观察员 else None
 
         def 向中枢序列尾部添加(待添加中枢: "中枢"):
             if 中枢序列:
@@ -4503,7 +4083,7 @@ class 中枢(list):
             for i in range(1, len(虚线序列) - 1):
                 左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
                 if 中枢.基础检查(左, 中, 右):
-                    新中枢 = 中枢.创建(左, 中, 右, 中.级别, 观察员, 配置, 标识)
+                    新中枢 = 中枢.创建(左, 中, 右, 中.级别, 配置, 标识)
                     序号 = 虚线序列.index(左)
                     if 跳过首部 and (左.序号 == 0 or 序号 == 0):
                         continue  # 方便计算走势
@@ -4515,7 +4095,7 @@ class 中枢(list):
                             continue
 
                     向中枢序列尾部添加(新中枢)
-                    return 中枢递归分析(虚线序列, 中枢序列, 观察员, 跳过首部, 标识, 层级 + 1)
+                    return 中枢递归分析(虚线序列, 中枢序列, 配置, 跳过首部, 标识, 层级 + 1)
 
             return None
 
@@ -4523,7 +4103,7 @@ class 中枢(list):
 
         if not 当前中枢.校验合法性(虚线序列, 中枢序列):
             从中枢序列尾部弹出(当前中枢)
-            return 中枢递归分析(虚线序列, 中枢序列, 观察员, 跳过首部, 标识, 层级 + 1)
+            return 中枢递归分析(虚线序列, 中枢序列, 配置, 跳过首部, 标识, 层级 + 1)
 
         序号 = 虚线序列.index(当前中枢[-1]) + 1
 
@@ -4544,7 +4124,7 @@ class 中枢(list):
                     基础序列.append(当前虚线)
 
             while len(基础序列) >= 3:
-                新中枢 = 中枢.从序列中获取中枢(基础序列[:], 当前中枢[-1].方向.翻转(), 观察员, 配置, 标识)
+                新中枢 = 中枢.从序列中获取中枢(基础序列[:], 当前中枢[-1].方向.翻转(), 配置, 标识)
                 if 新中枢 is None:
                     基础序列.pop(0)
                 else:
@@ -4564,37 +4144,6 @@ class 中枢(list):
                     当前中枢 = 新中枢
                     基础序列 = []
         return None
-
-    @classmethod
-    def 最近中枢(cls, 虚线序列: List[Union["笔", "线段"]]):
-        if len(虚线序列) < 3:
-            return None, None
-        序号 = len(虚线序列) - 1
-        当前虚线 = 虚线序列[-1]
-        中枢序列 = []
-        序号 -= 1
-        序列 = [当前虚线]
-        进入段 = None
-        当前中枢 = None
-        while 序号 > 0:
-            序列.insert(0, 虚线序列[序号])
-            if len(序列) >= 4:
-                中枢.分析(序列, 中枢序列, None, 跳过首部=False)
-                if 中枢序列:
-                    if 序号 >= 0:
-                        if 虚线序列[序号 - 1].方向 is not 当前虚线.方向:
-                            序号 -= 1
-                            continue
-                        if 中枢序列[-1][-1] is 当前虚线:
-                            if (当前虚线.方向.是否向上() and 相对方向.分析(虚线序列[序号 - 1], 当前虚线).是否向上()) or (当前虚线.方向.是否向下() and 相对方向.分析(虚线序列[序号 - 1], 当前虚线).是否向下()):
-                                if (当前虚线.方向.是否向上() and max(中枢序列[-1], key=lambda O: O.高) is 当前虚线) or (当前虚线.方向.是否向下() and min(中枢序列[-1], key=lambda O: O.低) is 当前虚线):
-                                    进入段 = 虚线序列[序号 - 1]
-                                    当前中枢 = 中枢序列[-1]
-                                    break
-
-                中枢序列.clear()
-            序号 -= 1
-        return 进入段, 当前中枢
 
 
 @final
@@ -4798,7 +4347,7 @@ class _图表配色:
             "visible": True,
         }
 
-        武_时间戳 = int(对象.第三买卖线.武.中.时间戳.timestamp()) if 对象.第三买卖线 else int(对象.武.中.时间戳.timestamp())  # int(对象.观察员.当前K线.时间戳.timestamp())
+        武_时间戳 = int(对象.第三买卖线.武.中.时间戳.timestamp()) if 对象.第三买卖线 else int(对象.武.中.时间戳.timestamp())
         if type(对象[0]) is 线段 and 对象.本级_第三买卖线 is not None:
             武_时间戳 = int(对象.本级_第三买卖线.武.中.时间戳.timestamp())
         extendRight = False  # if 对象.第三买卖线 else True
@@ -4935,23 +4484,23 @@ class 观察者:
 
         self.缓存["之前分型"] = 当前分型.镜像
 
-        self.配置.分析笔 and 笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, 0, self.配置, self)
+        self.配置.分析笔 and 笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, 0, self.配置)
         if not self.分型序列:
             return
 
-        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列, self)
+        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列, self.配置)
 
-        self.配置.分析线段 and 线段.分析(self.当前缠K, self.笔序列, self.线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列, self)
+        self.配置.分析线段 and 线段.分析(self.当前缠K, self.笔序列, self.线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列, self.配置)
 
-        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.笔序列, self.扩展线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列, self)
+        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.笔序列, self.扩展线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列, self.配置)
 
-        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.线段序列, self.扩展线段序列_线段, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段, self)
+        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.线段序列, self.扩展线段序列_线段, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段, self.配置)
 
-        self.配置.分析线段 and 线段.分析(self.当前缠K, self.线段序列, self.线段_线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列, self)
+        self.配置.分析线段 and 线段.分析(self.当前缠K, self.线段序列, self.线段_线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列, self.配置)
         try:
             self.识别买卖点()
         except:
@@ -4961,21 +4510,21 @@ class 观察者:
     def 分部分析(self):
         for i in range(1, len(self.缠论K线序列) - 1):
             当前分型 = 分型(self.缠论K线序列[i - 1], self.缠论K线序列[i], self.缠论K线序列[i + 1])
-            笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, 0, self.配置, self)
+            笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, 0, self.配置)
 
-        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列, self)
+        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列, self.配置)
 
-        self.配置.分析线段 and 线段.分析(self.当前缠K, self.笔序列, self.线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列, self)
+        self.配置.分析线段 and 线段.分析(self.当前缠K, self.笔序列, self.线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列, self.配置)
 
-        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.笔序列, self.扩展线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列, self)
+        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.笔序列, self.扩展线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列, self.配置)
 
-        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.线段序列, self.扩展线段序列_线段, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段, self)
+        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.线段序列, self.扩展线段序列_线段, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段, self.配置)
 
-        self.配置.分析线段 and 线段.分析(self.当前缠K, self.线段序列, self.线段_线段序列, self, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列, self)
+        self.配置.分析线段 and 线段.分析(self.当前缠K, self.线段序列, self.线段_线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列, self.配置)
 
     def 识别买卖点(self):
         pass
@@ -6208,7 +5757,7 @@ def 测试_邮局数据(symbol: str = "btcusd", limit: int = 500, freq: Supports
 def 测试_读取数据(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置(线段内部中枢图显=False), 文件路径: str = "./templates/btcusd_ex-1800-1685795400-1713488400.nb"):
     def 魔法():
         启动时间 = datetime.now()
-        观察员 = 观察者.读取数据文件(文件路径, ws, 配置)
+        观察员 = 观察者.读取数据文件(配置.加载文件路径, ws, 配置)
         # 观察员.分部分析()
         消耗用时 = datetime.now() - 启动时间
         print(消耗用时)
@@ -6751,9 +6300,9 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
                     待发送消息.update({"index": 序号, "data": str(观察员.线段序列[序号])})
                     段 = 观察员.线段序列[序号]
                     if 段._特征序列_显示:
-                        段.图表移除特征序列()
+                        段.图表移除特征序列(观察员)
                     else:
-                        段.图表显示特征序列()
+                        段.图表显示特征序列(观察员)
                 if 数据类型 == "扩展线段":
                     待发送消息.update({"index": 序号, "data": str(观察员.扩展线段序列[序号])})
                 if 数据类型 == "扩展线段<线段>":
@@ -6763,9 +6312,9 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
                     待发送消息.update({"index": 序号, "data": str(观察员.线段_线段序列[序号])})
                     段 = 观察员.线段_线段序列[序号]
                     if 段._特征序列_显示:
-                        段.图表移除特征序列()
+                        段.图表移除特征序列(观察员)
                     else:
-                        段.图表显示特征序列()
+                        段.图表显示特征序列(观察员)
 
                 if "_" in 数据类型 and "中枢" in 数据类型:  # 线段_0_实_中枢<笔>
                     数据类型, 线序, 虚实合, 类型 = 数据类型.split("_")
