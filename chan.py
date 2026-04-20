@@ -89,23 +89,23 @@ def 获取模块版本():
     # 2.
     try:
         versions["fastapi"] = importlib.metadata.version("fastapi")
-    except:
+    except importlib.metadata.PackageNotFoundError:
         pass
     try:
         versions["requests"] = importlib.metadata.version("requests")
-    except:
+    except importlib.metadata.PackageNotFoundError:
         pass
 
     # 3. 回测框架（你在用 backtrader 或类似）
     try:
         versions["backtrader"] = importlib.metadata.version("backtrader")
-    except:
+    except importlib.metadata.PackageNotFoundError:
         pass
 
     # 4. 配置/模型（你这个缠论配置用了 pydantic）
     try:
         versions["pydantic"] = importlib.metadata.version("pydantic")
-    except:
+    except importlib.metadata.PackageNotFoundError:
         pass
 
     return versions
@@ -219,6 +219,8 @@ class 缠论配置(BaseModel):
     笔次级成笔: bool = False
     笔弱化: bool = False
     笔弱化_原始数量: int = 3
+
+    线段_非缺口下穿刺: bool = False  # True: 非缺口状态下[小阳, 少阴]时，存在贯穿伤与之后紧邻的三个元素有方向相同的线段时回退， 此举在当下是否有任何意义呢？
 
     线段内部中枢图显: bool = True
     线段内部背驰_MACD: bool = True
@@ -3127,7 +3129,7 @@ class 线段(object):
     @property
     def 高(self) -> float:
         if self.模式 != "文武":
-            return max(self, key=lambda x: x.高).高
+            return max(self.__基础序列__, key=lambda x: x.高).高
         if self.方向 is 相对方向.向上:
             return self.武.分型特征值
         return self.文.分型特征值
@@ -3135,7 +3137,7 @@ class 线段(object):
     @property
     def 低(self) -> float:
         if self.模式 != "文武":
-            return min(self, key=lambda x: x.低).低
+            return min(self.__基础序列__, key=lambda x: x.低).低
         if self.方向 is 相对方向.向下:
             return self.武.分型特征值
         return self.文.分型特征值
@@ -3465,6 +3467,16 @@ class 线段(object):
         self[:] = 基础序列[:]
         self.右 = None
 
+    def 查找贯穿伤(self) -> Optional[Union[笔, "线段"]]:
+        for 贯穿伤 in self.__基础序列__[3:]:
+            if self.方向.是否向上():
+                if 贯穿伤.武.分型特征值 < self.文.分型特征值:
+                    return 贯穿伤
+            else:
+                if 贯穿伤.武.分型特征值 > self.文.分型特征值:
+                    return 贯穿伤
+        return None
+
     @classmethod
     def 基础判断(cls, 左: Union["笔", "线段"], 中: Union["笔", "线段"], 右: Union["笔", "线段"], 关系序列: List[相对方向]) -> bool:
         """
@@ -3620,6 +3632,25 @@ class 线段(object):
                 当前线段[:] = 当前线段基础序列[:]
                 当前线段.刷新(配置)
 
+        if 配置.线段_非缺口下穿刺 and 四象 in ("小阳", "少阴") and 当前线段.右 is None:
+            if 贯穿伤 := 当前线段.查找贯穿伤():
+                基础序列 = 当前线段[当前线段.index(贯穿伤) :]
+                if len(基础序列) == 4 and len(线段序列) >= 2:
+                    左, 中, 右 = 基础序列[-3], 基础序列[-2], 基础序列[-1]
+                    if 相对方向.分析(左, 右) is 当前线段.方向:
+                        print(colored(f"[警告<{sys._getframe().f_lineno}, {层级}>]:", "yellow"), colored("线段.修复贯穿伤", "red"), 贯穿伤, 基础序列)  # 异常弹出
+                        基础序列 = 当前线段[:]
+                        _弹出线段(当前线段, f"{sys._getframe().f_lineno}, {层级}")
+                        当前线段 = 线段序列[-1]
+                        当前线段.右 = None
+                        for 临时虚线 in 基础序列[基础序列.index(当前线段[-1]) + 1 :]:
+                            当前线段.append(临时虚线)
+                        当前线段.刷新(配置)
+                        if 当前线段.右:
+                            段 = 线段.新建([左, 中, 右])
+                            _添加线段(段, f"{sys._getframe().f_lineno}, {层级}")
+                            段.左 = 线段特征.新建([中], 段.方向)
+
         序号 = 笔序列.index(当前线段[-1]) + 1
 
         for 当前虚线 in 笔序列[序号:]:
@@ -3643,6 +3674,26 @@ class 线段(object):
                     当前线段[:] = 当前线段基础序列[:]
                     当前线段.刷新(配置)
                     continue
+
+            if 配置.线段_非缺口下穿刺 and 四象 in ("小阳", "少阴") and 当前线段.右 is None:
+                if 贯穿伤 := 当前线段.查找贯穿伤():
+                    基础序列 = 当前线段[当前线段.index(贯穿伤) :]
+                    if len(基础序列) == 4 and len(线段序列) >= 2:
+                        左, 中, 右 = 基础序列[-3], 基础序列[-2], 基础序列[-1]
+                        if 相对方向.分析(左, 右) is 当前线段.方向:
+                            print(colored(f"[警告<{sys._getframe().f_lineno}, {层级}>]:", "yellow"), colored("线段.修复贯穿伤", "red"), 贯穿伤, 基础序列)  # 异常弹出
+                            基础序列 = 当前线段[:]
+                            _弹出线段(当前线段, f"{sys._getframe().f_lineno}, {层级}")
+                            当前线段 = 线段序列[-1]
+                            当前线段.右 = None
+                            for 临时虚线 in 基础序列[基础序列.index(当前线段[-1]) + 1 :]:
+                                当前线段.append(临时虚线)
+                            当前线段.刷新(配置)
+                            if 当前线段.右:
+                                段 = 线段.新建([左, 中, 右])
+                                _添加线段(段, f"{sys._getframe().f_lineno}, {层级}")
+                                段.左 = 线段特征.新建([中], 段.方向)
+                            continue
 
             if 当前线段.右 is not None:
                 基础序列 = 当前线段.分割序列()[1]
@@ -4404,7 +4455,7 @@ class 观察者:
 
     @final
     def 增加原始K线(self, 普K: K线):
-        if 普K.时间戳 > 转化为时间戳("2026-04-07 22:22:33"):
+        if 普K.时间戳 > 转化为时间戳("2026-04-17 04:05:33"):
             pass  # raise RuntimeError("手动终止")
         try:
             self.__处理数据(普K)
@@ -6178,6 +6229,7 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
 
         config = 消息字典.get("config", dict())
         当前配置 = 缠论配置.from_dict(config)
+        print(当前配置)
 
         # 停止现有线程
         global 主线程
