@@ -3105,10 +3105,10 @@ class 线段(object):
         return f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}:{self.序号}"
 
     def __str__(self):
-        return f"线段<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
+        return f"{self.标识}<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
 
     def __repr__(self):
-        return f"线段<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
+        return f"{self.标识}<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
 
     @property
     def 方向(self) -> "相对方向":
@@ -3128,16 +3128,18 @@ class 线段(object):
 
     @property
     def 高(self) -> float:
-        if self.模式 != "文武":
-            return max(self.__基础序列__, key=lambda x: x.高).高
+        """if self.模式 != "文武":
+            if type(self[0] is 笔):
+                return max(self.__基础序列__, key=lambda x: x.高).高"""
         if self.方向 is 相对方向.向上:
             return self.武.分型特征值
         return self.文.分型特征值
 
     @property
     def 低(self) -> float:
-        if self.模式 != "文武":
-            return min(self.__基础序列__, key=lambda x: x.低).低
+        """if self.模式 != "文武":
+            if type(self[0] is 笔):
+                return min(self.__基础序列__, key=lambda x: x.低).低"""
         if self.方向 is 相对方向.向下:
             return self.武.分型特征值
         return self.文.分型特征值
@@ -4453,6 +4455,10 @@ class 观察者:
         self.线段_线段序列: List[线段] = 图表展示序列(self) if self.配置.推送线段 else []
         self.线段_中枢序列: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
 
+        self.扩展线段序列_扩展线段: List[线段] = 图表展示序列(self) if self.配置.推送线段 else []
+        self.扩展中枢序列_扩展线段: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
+
+
     @final
     def 增加原始K线(self, 普K: K线):
         if 普K.时间戳 > 转化为时间戳("2026-04-17 04:05:33"):
@@ -4519,6 +4525,10 @@ class 观察者:
 
         self.配置.分析线段 and 线段.分析(self.当前缠K, self.线段序列, self.线段_线段序列, self.配置)
         self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列)
+
+        self.配置.分析扩展线段 and 线段.扩展分析(self.当前缠K, self.扩展线段序列, self.扩展线段序列_扩展线段, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_扩展线段, self.扩展中枢序列_扩展线段)
+
         try:
             self.识别买卖点()
         except:
@@ -4651,6 +4661,9 @@ class 观察者:
             if 对象.标识 == "线段<线段>" and self.配置.图表展示_线段_线段:
                 message.update(图表配色.线(对象, 命令, self.周期))
 
+            if 对象.标识 == "扩展线段<扩展线段>" and self.配置.图表展示_扩展线段_线段:
+                message.update(图表配色.线(对象, 命令, self.周期))
+
         if type(对象) is 线段特征:
             message.update(图表配色.线(对象, 命令, self.周期))
 
@@ -4665,6 +4678,9 @@ class 观察者:
                 message.update(图表配色.面(对象, 命令, self.周期))
             if 对象.标识 == "中枢<线段<线段>>" and self.配置.图表展示_中枢_线段_线段:
                 message.update(图表配色.面(对象, 命令, self.周期))
+
+            if 对象.标识 == "中枢<扩展线段<扩展线段>>" and self.配置.图表展示_扩展线段_线段:
+                message.update(图表配色.线(对象, 命令, self.周期))
 
             if "_" in 对象.标识 and self.配置.图表展示_中枢_线段内部:
                 message.update(图表配色.面(对象, 命令, self.周期))
@@ -4827,16 +4843,17 @@ class Bitstamp(观察者):
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
             # "content-type": "application/json",
         }
-        proxies = {
+        """proxies = {
             "http": "http://127.0.0.1:10808",
             "https": "http://127.0.0.1:10808",
-        }
+        }"""
 
         params = {"step": step, "limit": length, "start": start, "end": end}
 
         for attempt in range(retries):
             try:
-                resp = session.get(url, params=params, timeout=10, proxies=proxies)
+                #resp = session.get(url, params=params, timeout=10, proxies=proxies)
+                resp = session.get(url, params=params, timeout=10)
                 resp.raise_for_status()
                 return resp.json()
             except Exception as e:
