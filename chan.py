@@ -1609,8 +1609,51 @@ class 背驰分析:
     @staticmethod
     def 测度背驰(进入段: Union["笔", "线段"], 离开段: Union["笔", "线段"]) -> bool:
         """价格斜率背驰"""
-        进入测度 = 进入段.计算测度()
-        离开测度 = 离开段.计算测度()
+        dx = 进入段.武.时间戳.timestamp() - 进入段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(进入段.武.分型特征值 - 进入段.文.分型特征值)  # 价格差的绝对值
+        进入测度 = math.sqrt(dx * dx + dy * dy)
+
+        dx = 离开段.武.时间戳.timestamp() - 离开段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(离开段.武.分型特征值 - 离开段.文.分型特征值)  # 价格差的绝对值
+        离开测度 = math.sqrt(dx * dx + dy * dy)
+
+        if 进入段.方向 == 相对方向.向上:
+            if 离开段.高 > 进入段.高 and abs(离开测度) < abs(进入测度):
+                return True
+        else:
+            if 离开段.低 < 进入段.低 and abs(离开测度) < abs(进入测度):
+                return True
+        return False
+
+    @staticmethod
+    def 测度背驰2(进入段: Union["笔", "线段"], 离开段: Union["笔", "线段"]) -> bool:
+        """价格斜率背驰"""
+        dx = 进入段.武.时间戳.timestamp() - 进入段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(进入段.武.分型特征值 - 进入段.文.分型特征值)  # 价格差的绝对值
+        进入测度 = math.sqrt(dx * dx + dy * dy) / dy
+
+        dx = 离开段.武.时间戳.timestamp() - 离开段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(离开段.武.分型特征值 - 离开段.文.分型特征值)  # 价格差的绝对值
+        离开测度 = math.sqrt(dx * dx + dy * dy) / dy
+
+        if 进入段.方向 == 相对方向.向上:
+            if 离开段.高 > 进入段.高 and abs(离开测度) < abs(进入测度):
+                return True
+        else:
+            if 离开段.低 < 进入段.低 and abs(离开测度) < abs(进入测度):
+                return True
+        return False
+
+    @staticmethod
+    def 测度背驰3(进入段: Union["笔", "线段"], 离开段: Union["笔", "线段"]) -> bool:
+        """价格斜率背驰"""
+        dx = 进入段.武.时间戳.timestamp() - 进入段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(进入段.武.分型特征值 - 进入段.文.分型特征值)  # 价格差的绝对值
+        进入测度 = math.sqrt(dx * dx + dy * dy) / dx
+
+        dx = 离开段.武.时间戳.timestamp() - 离开段.文.时间戳.timestamp()  # 时间差 self.武.中.标的K线.序号 - self.文.中.标的K线.序号  #
+        dy = abs(离开段.武.分型特征值 - 离开段.文.分型特征值)  # 价格差的绝对值
+        离开测度 = math.sqrt(dx * dx + dy * dy) / dx
 
         if 进入段.方向 == 相对方向.向上:
             if 离开段.高 > 进入段.高 and abs(离开测度) < abs(进入测度):
@@ -1745,9 +1788,6 @@ class K线(object):
 
     @classmethod
     def 创建普K(cls, 标识: str, 时间戳: datetime, 开盘价: float, 最高价: float, 最低价: float, 收盘价: float, 成交量: float, 序号: int, 周期: int) -> "K线":
-        macd = None  # 平滑异同移动平均线.首次计算(收盘价, 时间戳)
-        rsi = None  # 相对强弱指数.首次计算(收盘价, 时间戳)
-        kdj = None  # 随机指标.首次计算(最高价, 最低价, 收盘价, 时间戳)
         k线 = K线(
             标识=标识,
             序号=序号,
@@ -1758,9 +1798,6 @@ class K线(object):
             最低价=最低价,
             收盘价=收盘价,
             成交量=成交量,
-            macd=macd,
-            rsi=rsi,
-            kdj=kdj,
         )
         return k线
 
@@ -2719,6 +2756,12 @@ class 笔(object):
         基础 = self.__基础序列__  # super()
         基础[key] = value
 
+    def __str__(self):
+        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
+
+    def __repr__(self):
+        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
+
     @property
     def 图表标题(self) -> str:
         return f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}:{self.序号}"
@@ -2759,16 +2802,14 @@ class 笔(object):
     def 武(self) -> 分型:
         return self._武
 
-    def __str__(self):
-        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
-
-    def __repr__(self):
-        return f"笔({self.序号}, {self.方向}, {self.文}, {self.武}, 周期: {self.周期}, {len(self)})"
-
     @property
     def 周期(self) -> int:
         assert self[0].周期 == self[-1].周期
         return self[0].周期
+
+    @property
+    def 缠K序列(self) -> List[缠论K线]:
+        return self.__基础序列__[:]
 
     @property
     def 元素缺口序列(self) -> List[缺口]:
@@ -3100,15 +3141,31 @@ class 线段(object):
         基础 = self.__基础序列__  # super()
         基础[key] = value
 
-    @property
-    def 图表标题(self) -> str:
-        return f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}:{self.序号}"
-
     def __str__(self):
         return f"{self.标识}<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
 
     def __repr__(self):
         return f"{self.标识}<{self.序号}, {self.四象}, {self.方向}, {self.文}, {self.武}, 数量: {len(self)}, 缺口: {self.缺口}, {self.确认K线}>"
+
+    @property
+    def 图表标题(self) -> str:
+        return f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}:{self.序号}"
+
+    @property
+    def 缠K序列(self) -> List[缠论K线]:
+        结果 = []
+        for 元素 in self:
+            if type(元素) is 笔:
+                if not 结果:
+                    结果.extend(元素.缠K序列[:])
+                else:
+                    结果.extend(元素.缠K序列[1:])
+            else:
+                if not 结果:
+                    结果.extend(元素.缠K序列)
+                else:
+                    结果.extend(元素.缠K序列[1:])
+        return 结果
 
     @property
     def 方向(self) -> "相对方向":
@@ -3129,8 +3186,8 @@ class 线段(object):
     @property
     def 高(self) -> float:
         """if self.模式 != "文武":
-            if type(self[0] is 笔):
-                return max(self.__基础序列__, key=lambda x: x.高).高"""
+        if type(self[0] is 笔):
+            return max(self.__基础序列__, key=lambda x: x.高).高"""
         if self.方向 is 相对方向.向上:
             return self.武.分型特征值
         return self.文.分型特征值
@@ -3138,8 +3195,8 @@ class 线段(object):
     @property
     def 低(self) -> float:
         """if self.模式 != "文武":
-            if type(self[0] is 笔):
-                return min(self.__基础序列__, key=lambda x: x.低).低"""
+        if type(self[0] is 笔):
+            return min(self.__基础序列__, key=lambda x: x.低).低"""
         if self.方向 is 相对方向.向下:
             return self.武.分型特征值
         return self.文.分型特征值
@@ -3175,18 +3232,6 @@ class 线段(object):
         self._武.中.备注[self.标识] = False
         武.中.备注[self.标识] = True
         self._武 = 武
-
-    def 之前是(self, 之前: "线段") -> bool:
-        if not isinstance(之前, 线段):
-            return NotImplemented
-
-        return 分型.判断分型(之前.武, self.文)
-
-    def 之后是(self, 之后: "线段") -> bool:
-        if not isinstance(之后, 线段):
-            return NotImplemented
-
-        return 分型.判断分型(self.武, 之后.文)
 
     @property
     def 贯穿伤(self) -> Optional[Union[笔, "线段"]]:
@@ -3281,6 +3326,18 @@ class 线段(object):
         else:
             pass
 
+    def 之前是(self, 之前: "线段") -> bool:
+        if not isinstance(之前, 线段):
+            return NotImplemented
+
+        return 分型.判断分型(之前.武, self.文)
+
+    def 之后是(self, 之后: "线段") -> bool:
+        if not isinstance(之后, 线段):
+            return NotImplemented
+
+        return 分型.判断分型(self.武, 之后.文)
+
     def __设置特征(self, 偏移: int, 特征: Optional[线段特征]):
         if self.模式 != "文武":
             return
@@ -3312,35 +3369,6 @@ class 线段(object):
         else:
             特征序列.extend([None] * (3 - len(特征序列)))
             self.设置特征序列(特征序列, sys._getframe().f_lineno)
-
-    def 获取内部中枢序列(self, 配置: 缠论配置) -> Tuple[List["中枢"], List["中枢"], List["中枢"]]:
-        # 线段内部如存在中枢则级别比无中枢要大
-        if self.模式 != "文武":
-            return [], [], []
-        实, 虚, _, _ = self.分割序列()
-
-        中枢.分析(实, self.实_中枢序列, 标识=f"{self.标识}_{self.序号}_实_")
-        中枢.分析(虚, self.虚_中枢序列, 标识=f"{self.标识}_{self.序号}_虚_")
-        中枢.分析(self.__基础序列__, self.合_中枢序列, 标识=f"{self.标识}_{self.序号}_合_")
-        return self.虚_中枢序列, self.实_中枢序列, self.合_中枢序列  # 阴 阳 合
-
-    def 图表移除特征序列(self, 观察员=None):
-        if self._特征序列_显示:
-            self._特征序列_显示 = False
-            for 特征 in self.特征序列:
-                if 特征 is not None:
-                    观察员 and 观察员.报信(特征, 指令.删除(特征.标识), sys._getframe().f_lineno)
-
-    def 图表显示特征序列(self, 观察员=None):
-        if not self._特征序列_显示:
-            self._特征序列_显示 = True
-            序号 = 0
-            for 特征 in self.特征序列:
-                if 特征 is not None:
-                    特征.序号 = 序号
-                    特征.标识 = f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}_特征序列_{序号}:{self.序号}"
-                    观察员 and 观察员.报信(特征, 指令.添加(特征.标识), sys._getframe().f_lineno)
-                序号 += 1
 
     def 分割序列(self, 所属中枢: Optional["中枢"] = None) -> Tuple[List[Union["笔", "线段"]], List[Union["笔", "线段"]], List[Union["笔", "线段"]], Optional[Union["笔", "线段"]]]:
         if self.模式 != "文武":
@@ -3478,6 +3506,35 @@ class 线段(object):
                 if 贯穿伤.武.分型特征值 > self.文.分型特征值:
                     return 贯穿伤
         return None
+
+    def 获取内部中枢序列(self, 配置: 缠论配置) -> Tuple[List["中枢"], List["中枢"], List["中枢"]]:
+        # 线段内部如存在中枢则级别比无中枢要大
+        if self.模式 != "文武":
+            return [], [], []
+        实, 虚, _, _ = self.分割序列()
+
+        中枢.分析(实, self.实_中枢序列, 标识=f"{self.标识}_{self.序号}_实_")
+        中枢.分析(虚, self.虚_中枢序列, 标识=f"{self.标识}_{self.序号}_虚_")
+        中枢.分析(self.__基础序列__, self.合_中枢序列, 标识=f"{self.标识}_{self.序号}_合_")
+        return self.虚_中枢序列, self.实_中枢序列, self.合_中枢序列  # 阴 阳 合
+
+    def 图表移除特征序列(self, 观察员=None):
+        if self._特征序列_显示:
+            self._特征序列_显示 = False
+            for 特征 in self.特征序列:
+                if 特征 is not None:
+                    观察员 and 观察员.报信(特征, 指令.删除(特征.标识), sys._getframe().f_lineno)
+
+    def 图表显示特征序列(self, 观察员=None):
+        if not self._特征序列_显示:
+            self._特征序列_显示 = True
+            序号 = 0
+            for 特征 in self.特征序列:
+                if 特征 is not None:
+                    特征.序号 = 序号
+                    特征.标识 = f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}_特征序列_{序号}:{self.序号}"
+                    观察员 and 观察员.报信(特征, 指令.添加(特征.标识), sys._getframe().f_lineno)
+                序号 += 1
 
     @classmethod
     def 基础判断(cls, 左: Union["笔", "线段"], 中: Union["笔", "线段"], 右: Union["笔", "线段"], 关系序列: List[相对方向]) -> bool:
@@ -4458,7 +4515,6 @@ class 观察者:
         self.扩展线段序列_扩展线段: List[线段] = 图表展示序列(self) if self.配置.推送线段 else []
         self.扩展中枢序列_扩展线段: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
 
-
     @final
     def 增加原始K线(self, 普K: K线):
         if 普K.时间戳 > 转化为时间戳("2026-04-17 04:05:33"):
@@ -4555,7 +4611,30 @@ class 观察者:
         self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列)
 
     def 识别买卖点(self):
-        pass
+        """
+        简单买卖策略
+        """
+        if len(self.笔序列) >= 3 and self.线段序列 and self.笔序列[-1].武 is self.线段序列[-1].武 and self.线段序列[-1].实_中枢序列:
+            进入段, 离开段 = self.笔序列[-3], self.笔序列[-1]
+            方向 = 相对方向.分析(进入段, 离开段)
+            if 方向 is 相对方向.向上:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3笔", 离开段.武, "一", "次级")
+
+            elif 方向 is 相对方向.向下:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3笔", 离开段.武, "一", "次级")
+
+        if len(self.线段序列) >= 3 and 0:
+            进入段, 离开段 = self.线段序列[-3], self.线段序列[-1]
+            方向 = 相对方向.分析(进入段, 离开段)
+            if 方向 is 相对方向.向上:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3段", 离开段.武, "一", "次级")
+
+            elif 方向 is 相对方向.向下:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3段", 离开段.武, "一", "次级")
 
     @final
     def 添加买卖点(self, 特征: str, 买卖点分型: 分型, 序号: str, 级别: str):
@@ -4852,7 +4931,7 @@ class Bitstamp(观察者):
 
         for attempt in range(retries):
             try:
-                #resp = session.get(url, params=params, timeout=10, proxies=proxies)
+                # resp = session.get(url, params=params, timeout=10, proxies=proxies)
                 resp = session.get(url, params=params, timeout=10)
                 resp.raise_for_status()
                 return resp.json()
