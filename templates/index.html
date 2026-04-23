@@ -6,285 +6,427 @@
           content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
     <script type="text/javascript"
             src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* 全局样式 */
-        body, html {
+        /* ----- 现代化全局重置 & 变量 ----- */
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
             width: 100%;
             height: 100%;
             overflow: hidden;
-            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #0b0e14;
         }
 
-        /* 左右分割容器 */
+        /* 等宽字体用于代码 */
+        .terminal-input, .output-line, .terminal-prompt, .example-chip {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', 'Courier New', monospace;
+        }
+
+        /* 分割容器 — 现代化渐变背景 */
         .split-container {
             display: flex;
             width: 100%;
             height: 100%;
             position: relative;
+            background: radial-gradient(circle at 20% 30%, #1a1f2b, #0f131a);
         }
 
-        /* 左侧终端区域 */
-        .terminal-sidebar {
-            width: 400px;
-            min-width: 200px;
-            max-width: 800px;
-            height: 100%;
-            background: #1e1e1e; /* 经典终端背景色 */
-            color: #f0f0f0;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border-right: 1px solid #333;
-            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-
-        /* 可拖动分隔条 */
-        .splitter {
-            width: 4px;
-            height: 100%;
-            background: #333;
-            cursor: col-resize;
-            transition: background 0.2s;
-            z-index: 20;
-        }
-
-        .splitter:hover,
-        .splitter.active {
-            background: #007acc;
-        }
-
-        /* 右侧图表区域 */
+        /* ----- 图表区域 (左侧) ----- */
         .chart-area {
             flex: 1;
             height: 100%;
             position: relative;
+            background: #131821;
+            border-radius: 0 20px 20px 0;
+            overflow: hidden;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 30px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            margin: 8px 0 8px 8px;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .chart-area:hover {
+            box-shadow: inset 0 0 0 1px rgba(100, 150, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.7);
         }
 
         #tv_chart_container {
             width: 100%;
             height: 100%;
+            border-radius: inherit;
         }
 
-        /* 终端内部样式 */
+        /* ----- 右侧终端 — 毛玻璃 + 现代卡片 ----- */
+        .terminal-sidebar {
+            width: 420px;
+            min-width: 240px;
+            max-width: 850px;
+            height: 100%;
+            background: rgba(18, 25, 35, 0.85);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-left: 1px solid rgba(72, 120, 255, 0.2);
+            box-shadow: -5px 0 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+            margin: 8px 8px 8px 0;
+            border-radius: 20px;
+            transition: all 0.2s;
+        }
+
+        /* 分隔条 — 极简科幻 */
+        .splitter {
+            width: 6px;
+            height: 100%;
+            background: transparent;
+            cursor: col-resize;
+            z-index: 25;
+            position: relative;
+            transition: background 0.2s;
+            margin: 8px 0;
+        }
+
+        .splitter::after {
+            content: '';
+            position: absolute;
+            top: 10%;
+            left: 2px;
+            width: 2px;
+            height: 80%;
+            background: rgba(120, 160, 255, 0.2);
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+
+        .splitter:hover::after,
+        .splitter.active::after {
+            background: #3b82f6;
+            box-shadow: 0 0 12px #3b82f6;
+            width: 3px;
+            left: 1.5px;
+        }
+
+        /* ----- 终端内部组件 ----- */
         .terminal-container {
             display: flex;
             flex-direction: column;
             height: 100%;
-            background: #1e1e1e;
-            color: #d4d4d4;
+            background: transparent;
+            color: #e3e9f5;
         }
 
         .terminal-header {
-            padding: 8px 12px;
-            background: #2d2d2d;
-            border-bottom: 1px solid #3c3c3c;
-            color: #cccccc;
-            font-size: 13px;
+            padding: 16px 18px 12px;
+            background: transparent;
+            border-bottom: 1px solid rgba(100, 150, 255, 0.18);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            backdrop-filter: blur(5px);
         }
 
         .terminal-title {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        .terminal-title i {
+            color: #3b82f6;
+            font-size: 20px;
+            filter: drop-shadow(0 0 6px #3b82f680);
         }
 
         .terminal-title span {
-            color: #569cd6;
+            background: linear-gradient(135deg, #a0c0ff, #6ea8fe);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-weight: 600;
         }
 
         .terminal-controls {
             display: flex;
-            gap: 8px;
+            gap: 10px;
         }
 
         .terminal-btn {
-            background: #3c3c3c;
-            color: #d4d4d4;
-            border: none;
-            border-radius: 3px;
-            padding: 4px 10px;
+            background: rgba(40, 55, 80, 0.6);
+            color: #d0e0ff;
+            border: 0.5px solid rgba(100, 160, 255, 0.25);
+            border-radius: 30px;
+            padding: 6px 16px;
             font-family: inherit;
-            font-size: 12px;
+            font-size: 13px;
+            font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s;
+            backdrop-filter: blur(5px);
+            transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         }
 
         .terminal-btn:hover {
-            background: #4a4a4a;
+            background: rgba(60, 90, 140, 0.7);
+            border-color: #3b82f6;
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+            transform: translateY(-1px);
         }
 
         .terminal-btn.primary {
-            background: #0e639c;
+            background: linear-gradient(145deg, #1e4bd2, #3b82f6);
+            border: none;
             color: white;
+            box-shadow: 0 4px 12px #1e4bd280;
         }
 
         .terminal-btn.primary:hover {
-            background: #1177bb;
+            background: linear-gradient(145deg, #2563eb, #6094fa);
+            box-shadow: 0 6px 16px #3b82f6b3;
         }
 
+        /* 代码编辑区 — 类IDE */
         .terminal-code-area {
             flex: 1;
-            padding: 8px;
-            background: #1e1e1e;
-            border-bottom: 1px solid #3c3c3c;
+            padding: 18px 16px;
+            background: rgba(8, 14, 22, 0.4);
+            border-bottom: 1px solid rgba(72, 120, 255, 0.15);
             display: flex;
             flex-direction: column;
         }
 
         .terminal-prompt {
-            color: #6a9955;
-            margin-right: 8px;
+            color: #6abf69;
+            margin-right: 10px;
             user-select: none;
+            font-weight: 600;
+            text-shadow: 0 0 8px #6abf6980;
         }
 
         .terminal-input {
             width: 100%;
             flex: 1;
-            background: transparent;
-            border: none;
-            color: #d4d4d4;
-            font-family: inherit;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(100, 160, 255, 0.2);
+            border-radius: 14px;
+            color: #e2e9ff;
             font-size: 14px;
+            line-height: 1.6;
             resize: none;
             outline: none;
-            padding: 4px;
-            line-height: 1.5;
-            tab-size: 2;
+            padding: 16px;
+            tab-size: 4;
+            backdrop-filter: blur(5px);
+            transition: border 0.2s, box-shadow 0.2s;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .terminal-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), inset 0 2px 8px #0000004d;
         }
 
         .terminal-input::placeholder {
-            color: #5a5a5a;
+            color: #6f85a0;
             font-style: italic;
+            opacity: 0.7;
         }
 
+        /* 示例chips — 胶囊标签 */
+        .examples-bar {
+            padding: 12px 16px;
+            background: rgba(10, 18, 28, 0.5);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .example-chip {
+            padding: 5px 14px;
+            background: rgba(30, 45, 70, 0.6);
+            border: 0.5px solid rgba(80, 140, 255, 0.3);
+            border-radius: 40px;
+            color: #b4ccff;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: all 0.15s;
+            box-shadow: 0 2px 6px #0000001a;
+        }
+
+        .example-chip:hover {
+            background: #2e4a8e;
+            border-color: #3b82f6;
+            color: white;
+            transform: scale(1.02);
+            box-shadow: 0 4px 10px #1e3a8a80;
+        }
+
+        /* 输出区域 — 类终端历史 */
         .terminal-output-area {
-            height: 200px;
-            background: #1e1e1e;
-            border-top: 1px solid #3c3c3c;
+            height: 220px;
+            background: rgba(4, 10, 18, 0.7);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid #2a3a55;
             overflow-y: auto;
-            padding: 8px;
-            font-family: inherit;
+            padding: 12px 16px;
             font-size: 13px;
+            scroll-behavior: smooth;
+        }
+
+        /* 自定义滚动条 */
+        .terminal-output-area::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .terminal-output-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .terminal-output-area::-webkit-scrollbar-thumb {
+            background: #3a506e;
+            border-radius: 10px;
         }
 
         .output-line {
-            margin: 2px 0;
-            padding: 2px 0;
-            border-left: 3px solid transparent;
-            padding-left: 8px;
+            margin: 6px 0;
+            padding: 8px 12px;
+            border-radius: 10px;
+            background: rgba(20, 30, 45, 0.4);
+            backdrop-filter: blur(5px);
+            border-left: 4px solid;
             white-space: pre-wrap;
             word-break: break-word;
+            transition: background 0.15s;
+            box-shadow: 0 1px 3px #0000001a;
         }
 
         .output-line.success {
-            border-left-color: #6a9955;
-            color: #9cdcfe;
+            border-left-color: #10b981;
+            background: rgba(16, 185, 129, 0.08);
         }
 
         .output-line.error {
-            border-left-color: #f48771;
-            color: #f48771;
+            border-left-color: #f43f5e;
+            background: rgba(244, 63, 94, 0.08);
         }
 
         .output-line.info {
-            border-left-color: #569cd6;
-            color: #9cdcfe;
+            border-left-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.08);
         }
 
         .output-line.warning {
-            border-left-color: #dcdcaa;
-            color: #dcdcaa;
+            border-left-color: #fbbf24;
+            background: rgba(251, 191, 36, 0.08);
         }
 
+        /* 状态栏 — 极简状态 */
         .terminal-status-bar {
-            padding: 6px 12px;
-            background: #2d2d2d;
-            border-top: 1px solid #3c3c3c;
+            padding: 10px 18px;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid #2a3a55;
             font-size: 12px;
-            color: #9e9e9e;
+            color: #9ab3d0;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #f48771;
+            width: 10px;
+            height: 10px;
+            border-radius: 10px;
+            background: #f87171;
             display: inline-block;
-            margin-right: 6px;
+            margin-right: 8px;
+            box-shadow: 0 0 6px currentColor;
+            transition: all 0.3s;
         }
 
         .status-dot.connected {
-            background: #6a9955;
-            animation: pulse 2s infinite;
+            background: #10b981;
+            box-shadow: 0 0 12px #10b981;
+            animation: pulse-glow 2s infinite;
         }
 
-        @keyframes pulse {
+        @keyframes pulse-glow {
             0% {
-                opacity: 1;
+                opacity: 0.9;
+                box-shadow: 0 0 5px #10b981;
             }
             50% {
-                opacity: 0.5;
+                opacity: 1;
+                box-shadow: 0 0 16px #34d399;
             }
             100% {
-                opacity: 1;
+                opacity: 0.9;
+                box-shadow: 0 0 5px #10b981;
             }
         }
 
-        .examples-bar {
-            padding: 6px 12px;
-            background: #2d2d2d;
-            border-top: 1px solid #3c3c3c;
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
+        #connectionInfo {
+            font-weight: 500;
+            background: #1e2b41;
+            padding: 2px 12px;
+            border-radius: 40px;
+            color: #b9d1ff;
         }
 
-        .example-chip {
-            padding: 2px 8px;
-            background: #3c3c3c;
-            border: 1px solid #4a4a4a;
-            border-radius: 3px;
-            color: #9cdcfe;
-            font-size: 11px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .example-chip:hover {
-            background: #4a4a4a;
-            color: #d4d4d4;
-        }
-
-        /* 响应式调整 */
+        /* 响应式 — 移动端优化 */
         @media (max-width: 800px) {
             .split-container {
                 flex-direction: column;
             }
 
+            .chart-area {
+                margin: 8px 8px 0 8px;
+                border-radius: 20px 20px 0 0;
+                height: 55%;
+            }
+
             .terminal-sidebar {
                 width: 100% !important;
                 max-width: 100%;
-                height: 40%;
-                border-right: none;
-                border-bottom: 1px solid #333;
+                height: 45%;
+                margin: 0 8px 8px 8px;
+                border-radius: 0 0 20px 20px;
+                border-left: none;
+                border-top: 1px solid rgba(72, 120, 255, 0.25);
             }
 
             .splitter {
                 width: 100%;
-                height: 4px;
+                height: 6px;
                 cursor: row-resize;
+                margin: 0;
+            }
+
+            .splitter::after {
+                top: 2px;
+                left: 10%;
+                width: 80%;
+                height: 2px;
             }
         }
+
+        /* 辅助 — 隐藏原始内联样式中过时的部分（由新样式覆盖） */
+        .terminal-sidebar .terminal-container .terminal-header,
+        .terminal-sidebar .terminal-container .terminal-code-area {
+            background: transparent; /* 确保透明让毛玻璃透出 */
+        }
+
     </style>
 </head>
 
@@ -717,7 +859,12 @@ print("=== 图表数据分析 ===")
                 'indicators': `# 技术指标计算
 print("=== 技术指标 ===")`,
                 'trend': `# 趋势分析
-print("=== 趋势分析 ===")`
+print("=== 趋势分析 ===")
+序列 = 图表展示序列(观察员)
+基础序列 = 观察员.笔序列[272:281]
+扩展序列 = []
+线段.扩展分析(None, 基础序列, 扩展序列,观察员,观察员.配置)
+中枢.分析(扩展序列,序列,观察员,False,"临时扩展_")`
             };
             if (examples[name]) {
                 document.getElementById('codeInput').value = examples[name];
@@ -778,6 +925,7 @@ print("=== 趋势分析 ===")`
             }
         }
     }
+
 
     // ============ TradingView 图表管理器 ============
     class TradingViewManager {
@@ -900,11 +1048,37 @@ print("=== 趋势分析 ===")`
                     config: Config.nonAsciiParams
                 });
 
+                const chart = this.widget.activeChart();
+
                 this.widget.subscribe("drawing_event", (sourceId, drawingEventType) => {
                     if (drawingEventType.indexOf("click") === 0) {
                         this.handleDrawingClick(sourceId);
                     }
                 });
+
+                // 存储最新的十字线位置
+                let currentCrosshair = {time: null, price: null};
+
+                // 订阅十字线移动事件，持续更新位置
+                chart.crossHairMoved().subscribe(null, ({time, price}) => {
+                    currentCrosshair = {time, price};
+                });
+
+                // 订阅全局鼠标松开事件（仅在点击时处理）
+                this.widget.subscribe('mouse_up', (params) => {
+                    if (currentCrosshair.time !== null) {
+                        const timestamp = currentCrosshair.time; // Unix时间戳（秒）
+                        const price = currentCrosshair.price;
+
+                        console.log(`用户点击K线时间: ${timestamp}, 价格: ${price}`);
+
+                        // 如果你有历史数据数组，可以匹配完整K线信息
+                        // const bar = yourBarsData.find(b => b.time === timestamp);
+                        // console.log('完整K线:', bar);
+                    }
+                });
+
+
             });
         }
 
@@ -1037,7 +1211,7 @@ print("=== 趋势分析 ===")`
         }
 
         async removeShape(id) {
-            return ;
+            return;
             try {
                 if (!this.widget || !this.widget.chart) return;
 
@@ -1106,7 +1280,33 @@ print("=== 趋势分析 ===")`
                         try {
                             const [flag, period, type, index] = customId.split(':');
                             if (type === targetType) {
-                                shape.setProperties({visible: !properties.visible});
+                                shape.setProperties({visible: false});
+                                // Utils.log(`已隐藏图形: ${customId}`);
+                            }
+                        } catch (error) {
+                            Utils.log(`隐藏失败: ${customId}`);
+                            Utils.error("批量隐藏图形失败", error);
+                        }
+                    }
+                });
+            } catch (error) {
+                Utils.error("批量隐藏图形失败", error);
+            }
+        }
+
+        async setShapesVisibleByType(targetType, shapeType, val) {
+            try {
+                if (!this.widget || !this.widget.chart) return;
+
+                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
+                    if (name === shapeType) {
+                        const shape = this.widget.activeChart().getShapeById(id);
+                        const properties = shape.getProperties();
+                        const customId = properties.title;
+                        try {
+                            const [flag, period, type, index] = customId.split(':');
+                            if (type === targetType) {
+                                shape.setProperties({visible: val});
                                 // Utils.log(`已隐藏图形: ${customId}`);
                             }
                         } catch (error) {
@@ -1194,62 +1394,16 @@ print("=== 趋势分析 ===")`
                     text: "特征序列",
                     title: "显示隐藏特征序列",
                     handler: () => this.hideShapesByType("特征", "trend_line")
-                },
-                {text: "笔", title: "显示隐藏笔", handler: () => this.hideShapesByType("笔", "trend_line")},
-                {text: "段", title: "显示隐藏段", handler: () => this.hideShapesByType("线段", "trend_line")},
-                {
-                    text: "段段",
-                    title: "显示隐藏段的段",
-                    handler: () => this.hideShapesByType("线段<线段>", "trend_line")
-                },
-                {
-                    text: "扩展段_笔",
-                    title: "显示隐藏扩展段",
-                    handler: () => this.hideShapesByType("扩展线段", "trend_line")
-                },
-                {
-                    text: "扩展段_段",
-                    title: "显示隐藏扩展段",
-                    handler: () => this.hideShapesByType("扩展线段<线段>", "trend_line")
-                },
-                {
-                    text: "笔中枢",
-                    title: "显示隐藏笔中枢",
-                    handler: () => this.hideShapesByType("中枢<笔>", "rectangle")
-                },
-                {
-                    text: "段中枢",
-                    title: "显示隐藏段中枢",
-                    handler: () => this.hideShapesByType("中枢<线段>", "rectangle")
-                },
-                {
-                    text: "段段中枢",
-                    title: "显示隐藏段中枢",
-                    handler: () => this.hideShapesByType("中枢<线段<线段>>", "rectangle")
-                },
-                {
-                    text: "扩展段中枢_笔",
-                    title: "显示隐藏扩展段中枢",
-                    handler: () => this.hideShapesByType("中枢<扩展线段>", "rectangle")
-                },
-                {
-                    text: "扩展段中枢_段",
-                    title: "显示隐藏扩展段中枢",
-                    handler: () => this.hideShapesByType("中枢<扩展线段<线段>>", "rectangle")
-                },
-                {
-                    text: "全部矩形直线",
-                    title: "隐藏全部矩形直线",
-                    handler: () => {
-                        this.hideAllShapesByType("trend_line");
-                        this.hideAllShapesByType("rectangle")
-                    }
                 }
             ];
 
             buttonConfigs.forEach(config => {
                 this.createHeaderButton(config.text, config.title, config.handler);
             });
+
+            this.createButton();
+
+
         }
 
         createHeaderButton(text, title, clickHandler) {
@@ -1257,6 +1411,202 @@ print("=== 趋势分析 ===")`
             button.setAttribute("title", title);
             button.textContent = text;
             button.addEventListener("click", clickHandler);
+        }
+
+        setupCustomDropdown(triggerElement, widget) {
+            // 创建面板
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+            position: absolute;
+            z-index: 10000;
+            background: ${widget.getTheme() === 'dark' ? '#1e2532' : '#ffffff'};
+            border-radius: 6px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            padding: 8px 0;
+            min-width: 220px;
+            border: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
+            color: ${widget.getTheme() === 'dark' ? '#d1d9e6' : '#131722'};
+            font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
+            display: none;
+            backdrop-filter: blur(4px);
+        `;
+            document.body.appendChild(panel);
+            // 1. 定义要创建的菜单项配置（名称数组，可自由增减）
+            const menuLabels = ['笔', '线段', '线段<线段>', '扩展线段<线段>', '扩展线段', '扩展线段<扩展线段>'];
+            const menuItems = [];
+
+            for (let i = 0; i < menuLabels.length; i++) {
+                const label = menuLabels[i];
+                menuItems.push({
+                    label: label,
+                    checked: true,
+                    action: (val) => {
+                        this.setShapesVisibleByType(label, "trend_line", val)
+                    }
+                });
+            }
+
+            for (let i = 0; i < menuLabels.length; i++) {
+                const label = menuLabels[i];
+                menuItems.push({
+                    label: `中枢<${label}>`,
+                    checked: true,
+                    action: (val) => {
+                        this.setShapesVisibleByType(`中枢<${label}>`, "rectangle", val)
+                    }
+                });
+            }
+
+
+            menuItems.forEach(item => {
+                const row = document.createElement('div');
+                row.style.cssText = `
+                padding: 8px 16px;
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                transition: background 0.15s;
+            `;
+                row.addEventListener('mouseenter', () => row.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
+                row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = item.checked;
+                checkbox.style.cssText = `
+                margin-right: 12px;
+                accent-color: #2962ff;
+                width: 16px;
+                height: 16px;
+                cursor: pointer;
+            `;
+
+                const label = document.createElement('span');
+                label.textContent = item.label;
+                label.style.flex = '1';
+
+                row.appendChild(checkbox);
+                row.appendChild(label);
+
+                row.addEventListener('click', (e) => {
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    item.action(checkbox.checked);
+                });
+
+                panel.appendChild(row);
+            });
+
+            // 分隔线 + 重置按钮（可选）
+            const separator = document.createElement('div');
+            separator.style.cssText = `height: 1px; background: ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'}; margin: 6px 0;`;
+            panel.appendChild(separator);
+
+            const resetBtn = document.createElement('div');
+            resetBtn.textContent = '↻ 重置默认';
+            resetBtn.style.cssText = `
+            padding: 8px 16px;
+            cursor: pointer;
+            color: ${widget.getTheme() === 'dark' ? '#90a4e0' : '#2962ff'};
+            font-size: 13px;
+            text-align: center;
+            transition: background 0.15s;
+        `;
+            resetBtn.addEventListener('mouseenter', () => resetBtn.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
+            resetBtn.addEventListener('mouseleave', () => resetBtn.style.background = 'transparent');
+            resetBtn.addEventListener('click', () => {
+                panel.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
+                    cb.checked = idx === 0; // 仅第一项为 true
+                    menuItems[idx].action(cb.checked);
+                });
+            });
+            panel.appendChild(resetBtn);
+
+            console.warn(panel.offsetWidth);
+
+            // 显示/隐藏逻辑
+            function showPanel() {
+                // 1. 先设置为 block 以便浏览器计算尺寸
+                panel.style.display = 'block';
+
+                // 2. 获取面板实际宽度（此时元素可见，尺寸正确）
+                const panelWidth = panel.offsetWidth;
+
+                // 3. 获取触发按钮的位置信息
+                const rect = triggerElement.getBoundingClientRect();
+
+                // 4. 计算右对齐时的 left 值
+                let left = rect.right - panelWidth;
+                // 防止面板超出屏幕左侧
+                if (left < 0) left = 5;
+
+                // 5. 设置最终位置
+                panel.style.top = `${rect.bottom + 4}px`;
+                panel.style.left = `${left}px`;
+
+                // 6. 面板已在步骤1显示，无需再次设置 display
+            }
+
+            function hidePanel() {
+                panel.style.display = 'none';
+            }
+
+            triggerElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                panel.style.display === 'block' ? hidePanel() : showPanel();
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!panel.contains(e.target) && e.target !== triggerElement) {
+                    hidePanel();
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (panel.style.display === 'block') showPanel();
+            });
+        }
+
+        async createButton() {
+            // 创建自定义按钮（注意：useTradingViewStyle 省略或设为 false）
+            const customBtn = this.widget.createButton({
+                align: 'right' // 可选 'left' 或 'right'
+            });
+
+            // 设置按钮内容与样式
+            customBtn.innerHTML = `⚙️ 图表工具`;
+            customBtn.style.cssText = `
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                height: 32px;
+                padding: 0 12px;
+                margin: 0 4px;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 500;
+                color: ${this.widget.getTheme() === 'dark' ? '#d1d4dc' : '#131722'};
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                transition: background 0.2s, color 0.2s;
+                font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+                user-select: none;
+            `;
+
+            // 悬停效果
+            customBtn.addEventListener('mouseenter', () => {
+                customBtn.style.background = this.widget.getTheme() === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.05)';
+            });
+            customBtn.addEventListener('mouseleave', () => {
+                customBtn.style.background = 'transparent';
+            });
+
+            // 现在你可以安全地使用 customBtn 作为触发器
+            this.setupCustomDropdown(customBtn, this.widget);
         }
 
 
