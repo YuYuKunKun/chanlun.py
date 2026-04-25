@@ -579,7 +579,7 @@
             const val = params.get('step');
             const step = Number(val);
             const o = !val || isNaN(step) ? 60 : step;
-            return dict.get(Number(o)) || '5';
+            return dict.get(Number(o)) || '1';
         }
 
         static get EMA_LENGTH() {
@@ -969,7 +969,7 @@ print("=== 趋势分析 ===")
                         minmov: 1,
                         pricescale: 100,
                         visible_plots_set: "ohlcv",
-                        has_no_volume: true,
+                        has_no_volume: false,
                         has_weekly_and_monthly: false,
                         supported_resolutions: ["1", "3", "5", "15", "30", "1H", "2H", "4H", "6H", "12H", "1D", "3D"],
                         volume_precision: 1,
@@ -1211,7 +1211,6 @@ print("=== 趋势分析 ===")
         }
 
         async removeShape(id) {
-            return;
             try {
                 if (!this.widget || !this.widget.chart) return;
 
@@ -1760,6 +1759,8 @@ print("=== 趋势分析 ===")
                     in_2: 11,
                     in_3: "close"
                 });
+                window.tvWidget.activeChart().createStudy("Volume", true);
+
                 window.tvWidget.activeChart().createStudy('Moving Average Exponential', false, false, {length: Config.EMA_LENGTH});
                 this.tradingViewManager.createHeaderButtons();
                 this.tradingViewManager.setupChartEvents();
