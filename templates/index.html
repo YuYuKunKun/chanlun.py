@@ -2,11 +2,14 @@
 <html lang="zh">
 <head>
     <title>TradingView Chart with Python Terminal</title>
-    <meta charset="utf-8" name="viewport"
-          content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
-    <script type="text/javascript"
-            src="{{ url_for('charting_library', path='/charting_library.standalone.js') }}"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <meta charset="utf-8" name="viewport" content=
+    "width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
+
+    <script type="text/javascript" src=
+    "{{url_for('charting_library',path='/charting_library.standalone.js')}}"></script>
+    <link rel="stylesheet" href=
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
     <style>
         /* ----- 现代化全局重置 & 变量 ----- */
         * {
@@ -429,64 +432,64 @@
 
     </style>
 </head>
-
 <body>
-<div class="split-container">
-    <!-- 左侧终端区域 -->
-    <div class="chart-area">
-        <div id="tv_chart_container"></div>
-    </div>
-
-    <!-- 可拖动分隔条 -->
-    <div class="splitter" id="splitter"></div>
-
-    <!-- 右侧图表区域 -->
-    <div class="terminal-sidebar" id="terminalSidebar">
-        <div class="terminal-container">
-            <div class="terminal-header">
-                <div class="terminal-title">
-                    <span>🐍</span> Python 终端
+    <div class="split-container">
+        <!-- 左侧终端区域 -->
+        <div class="chart-area">
+            <div id="tv_chart_container"></div>
+        </div><!-- 可拖动分隔条 -->
+        <div class="splitter" id="splitter"></div><!-- 右侧图表区域 -->
+        <div class="terminal-sidebar" id="terminalSidebar">
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <div class="terminal-title">
+                        <span>🐍</span> Python 终端
+                    </div>
+                    <div class="terminal-controls">
+                        <button class="terminal-btn" onclick=
+                        "window.pythonWidget.clearCode()">清空</button>
+                        <button class="terminal-btn primary"
+                        onclick="window.pythonWidget.executeCode()"
+                        id="executeBtn">执行 (Ctrl+Enter)</button>
+                    </div>
                 </div>
-                <div class="terminal-controls">
-                    <button class="terminal-btn" onclick="window.pythonWidget.clearCode()">清空</button>
-                    <button class="terminal-btn primary" onclick="window.pythonWidget.executeCode()" id="executeBtn">执行
-                        (Ctrl+Enter)
-                    </button>
+                <div class="terminal-code-area">
+                    <div style=
+                    "display: flex; align-items: center; margin-bottom: 4px;">
+                        <span class=
+                        "terminal-prompt">&gt;&gt;&gt;</span>
+                    </div>
+                    <textarea class="terminal-input" id="codeInput"
+                    placeholder="# 在这里输入Python代码..." spellcheck=
+                    "false"></textarea>
                 </div>
-            </div>
-
-            <div class="terminal-code-area">
-                <div style="display: flex; align-items: center; margin-bottom: 4px;">
-                    <span class="terminal-prompt">>>> </span>
+                <div class="examples-bar">
+                    <span class="example-chip" onclick=
+                    "window.pythonWidget.loadExample('basic')">基础</span>
+                    <span class="example-chip" onclick=
+                    "window.pythonWidget.loadExample('chart')">图表分析</span>
+                    <span class="example-chip" onclick=
+                    "window.pythonWidget.loadExample('indicators')">
+                    技术指标</span> <span class="example-chip" onclick=
+                    "window.pythonWidget.loadExample('trend')">趋势分析</span>
                 </div>
-                <textarea class="terminal-input" id="codeInput" placeholder="# 在这里输入Python代码..."
-                          spellcheck="false"></textarea>
-            </div>
-
-            <div class="examples-bar">
-                <span class="example-chip" onclick="window.pythonWidget.loadExample('basic')">基础</span>
-                <span class="example-chip" onclick="window.pythonWidget.loadExample('chart')">图表分析</span>
-                <span class="example-chip" onclick="window.pythonWidget.loadExample('indicators')">技术指标</span>
-                <span class="example-chip" onclick="window.pythonWidget.loadExample('trend')">趋势分析</span>
-            </div>
-
-            <div class="terminal-output-area" id="outputArea">
-                <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
-            </div>
-
-            <div class="terminal-status-bar">
-                <div>
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">连接中...</span>
+                <div class="terminal-output-area" id="outputArea">
+                    <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
                 </div>
-                <div id="connectionInfo">Python 3.x</div>
+                <div class="terminal-status-bar">
+                    <div>
+                        <span class="status-dot" id=
+                        "statusDot"></span> <span id=
+                        "statusText">连接中...</span>
+                    </div>
+                    <div id="connectionInfo">
+                        Python 3.x
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-
-</div>
-
-<script type="text/javascript">
+    <script type="text/javascript">
     // ============ 工具函数 ============
     function hexToRgba(hex, alpha = 1) {
         hex = hex.replace(/^#/, '');
@@ -622,6 +625,15 @@
                 }
             }
             return result;
+        }
+
+        static formatPeriod(seconds) {
+            const map = {
+                60: '1分钟', 180: '3分钟', 300: '5分钟', 900: '15分钟', 1800: '30分钟',
+                3600: '1小时', 7200: '2小时', 14400: '4小时', 21600: '6小时',
+                43200: '12小时', 86400: '日线', 259200: '3日线'
+            };
+            return map[seconds] || `${seconds}秒`;
         }
 
     }
@@ -1278,84 +1290,12 @@ print("=== 趋势分析 ===")
                         const customId = properties.title;
                         try {
                             const [flag, period, type, index] = customId.split(':');
-                            if (type === targetType) {
-                                shape.setProperties({visible: false});
-                                // Utils.log(`已隐藏图形: ${customId}`);
-                            }
-                        } catch (error) {
-                            Utils.log(`隐藏失败: ${customId}`);
-                            Utils.error("批量隐藏图形失败", error);
-                        }
-                    }
-                });
-            } catch (error) {
-                Utils.error("批量隐藏图形失败", error);
-            }
-        }
-
-        async setShapesVisibleByType(targetType, shapeType, val) {
-            try {
-                if (!this.widget || !this.widget.chart) return;
-
-                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
-                    if (name === shapeType) {
-                        const shape = this.widget.activeChart().getShapeById(id);
-                        const properties = shape.getProperties();
-                        const customId = properties.title;
-                        try {
-                            const [flag, period, type, index] = customId.split(':');
-                            if (type === targetType) {
-                                shape.setProperties({visible: val});
-                                // Utils.log(`已隐藏图形: ${customId}`);
-                            }
-                        } catch (error) {
-                            Utils.log(`隐藏失败: ${customId}`);
-                            Utils.error("批量隐藏图形失败", error);
-                        }
-                    }
-                });
-            } catch (error) {
-                Utils.error("批量隐藏图形失败", error);
-            }
-        }
-
-        async hideShapesByType_(targetType, shapeType) {
-            try {
-                if (!this.widget || !this.widget.chart) return;
-
-                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
-                    if (name === shapeType) {
-                        const shape = this.widget.activeChart().getShapeById(id);
-                        const properties = shape.getProperties();
-                        const customId = properties.title;
-                        try {
-                            const [flag, period, type, index] = customId.split(':');
                             if (type.indexOf(targetType) !== -1) {
                                 shape.setProperties({visible: !properties.visible});
                                 // Utils.log(`已隐藏图形: ${customId}`);
                             }
                         } catch (error) {
                             Utils.log(`隐藏失败: ${customId}`);
-                            Utils.error("批量隐藏图形失败", error);
-                        }
-                    }
-                });
-            } catch (error) {
-                Utils.error("批量隐藏图形失败", error);
-            }
-        }
-
-        async hideAllShapesByType(shapeType) {
-            try {
-                if (!this.widget || !this.widget.chart) return;
-
-                this.widget.activeChart().getAllShapes().forEach(({name, id}) => {
-                    if (name === shapeType) {
-                        const shape = this.widget.activeChart().getShapeById(id);
-                        const properties = shape.getProperties();
-                        try {
-                            shape.setProperties({visible: false});
-                        } catch (error) {
                             Utils.error("批量隐藏图形失败", error);
                         }
                     }
@@ -1380,16 +1320,6 @@ print("=== 趋势分析 ===")
                     }
                 },
                 {
-                    text: "内部中枢",
-                    title: "显示隐藏内部中枢",
-                    handler: () => this.hideShapesByType_("线段_", "rectangle")
-                },
-                {
-                    text: "内部中枢2",
-                    title: "显示隐藏内部中枢",
-                    handler: () => this.hideShapesByType_("线段<线段>_", "rectangle")
-                },
-                {
                     text: "特征序列",
                     title: "显示隐藏特征序列",
                     handler: () => this.hideShapesByType("特征", "trend_line")
@@ -1412,159 +1342,222 @@ print("=== 趋势分析 ===")
             button.addEventListener("click", clickHandler);
         }
 
+        setShapesVisibleByPeriod(rawType, periodSeconds, visible) {
+            if (!this.widget || !this.widget.activeChart()) return;
+            const allShapes = this.widget.activeChart().getAllShapes();
+            allShapes.forEach(({id}) => {
+                const shape = this.widget.activeChart().getShapeById(id);
+                if (!shape) return;
+                const props = shape.getProperties();
+                const title = props.title || '';
+                const parts = title.split(':');
+                if (parts.length < 3) return;
+                const [, periodStr, typeFromTitle] = parts;
+                const periodFromTitle = Number(periodStr);
+                if (typeFromTitle === rawType && periodFromTitle === periodSeconds) {
+                    shape.setProperties({visible});
+                }
+            });
+        }
+
+        isPeriodVisible(rawType, periodSeconds) {
+            if (!this.widget || !this.widget.activeChart()) return true;
+            const allShapes = this.widget.activeChart().getAllShapes();
+            let hasAny = false;
+            for (const {id} of allShapes) {
+                const shape = this.widget.activeChart().getShapeById(id);
+                if (!shape) continue;
+                const props = shape.getProperties();
+                const title = props.title || '';
+                const parts = title.split(':');
+                if (parts.length < 3) continue;
+                const [, periodStr, typeFromTitle] = parts;
+                const periodFromTitle = Number(periodStr);
+                if (typeFromTitle === rawType && periodFromTitle === periodSeconds) {
+                    hasAny = true;
+                    if (props.visible === false) return false;
+                }
+            }
+            return hasAny;
+        }
+
+        /**
+         * 创建动态下拉菜单（按基础类型 + 周期分组）
+         */
         setupCustomDropdown(triggerElement, widget) {
-            // 创建面板
             const panel = document.createElement('div');
             panel.style.cssText = `
-            position: absolute;
-            z-index: 10000;
-            background: ${widget.getTheme() === 'dark' ? '#1e2532' : '#ffffff'};
-            border-radius: 6px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-            padding: 8px 0;
-            min-width: 220px;
-            border: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
-            color: ${widget.getTheme() === 'dark' ? '#d1d9e6' : '#131722'};
-            font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
-            display: none;
-            backdrop-filter: blur(4px);
-        `;
+        position: absolute; z-index: 10000;
+        background: ${widget.getTheme() === 'dark' ? '#1e2532' : '#ffffff'};
+        border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        padding: 8px 0; min-width: 240px; max-height: 70vh; overflow-y: auto;
+        border: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
+        color: ${widget.getTheme() === 'dark' ? '#d1d9e6' : '#131722'};
+        font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
+        display: none;
+        backdrop-filter: blur(4px);
+    `;
             document.body.appendChild(panel);
-            // 1. 定义要创建的菜单项配置（名称数组，可自由增减）
-            const menuLabels = ['笔', '线段', '线段<线段>', '扩展线段<线段>', '扩展线段', '扩展线段<扩展线段>'];
-            const menuItems = [];
 
-            for (let i = 0; i < menuLabels.length; i++) {
-                const label = menuLabels[i];
-                menuItems.push({
-                    label: label,
-                    checked: true,
-                    action: (val) => {
-                        this.setShapesVisibleByType(label, "trend_line", val)
-                    }
+            const refreshMenu = () => {
+                panel.innerHTML = '';
+                if (!this.widget || !this.widget.activeChart()) return;
+                const allShapes = this.widget.activeChart().getAllShapes();
+
+                // 收集 { baseType -> Set of periods }
+
+                const typePeriods = {}; // { rawType -> Set of periods }
+
+                allShapes.forEach(({id}) => {
+                    const shape = this.widget.activeChart().getShapeById(id);
+                    if (!shape) return;
+                    const props = shape.getProperties();
+                    const title = props.title || '';
+                    const parts = title.split(':');
+                    if (parts.length < 3) return;
+                    const period = Number(parts[1]);
+                    const rawType = parts[2];          // 直接使用第三段
+                    if (!typePeriods[rawType]) typePeriods[rawType] = new Set();
+                    typePeriods[rawType].add(period);
                 });
-            }
 
-            for (let i = 0; i < menuLabels.length; i++) {
-                const label = menuLabels[i];
-                menuItems.push({
-                    label: `中枢<${label}>`,
-                    checked: true,
-                    action: (val) => {
-                        this.setShapesVisibleByType(`中枢<${label}>`, "rectangle", val)
-                    }
-                });
-            }
+                if (Object.keys(typePeriods).length === 0) {
+                    const empty = document.createElement('div');
+                    empty.textContent = '暂无图形数据';
+                    empty.style.padding = '12px 16px';
+                    empty.style.opacity = '0.7';
+                    panel.appendChild(empty);
+                    return;
+                }
 
-
-            menuItems.forEach(item => {
-                const row = document.createElement('div');
-                row.style.cssText = `
-                padding: 8px 16px;
-                display: flex;
-                align-items: center;
-                cursor: pointer;
-                transition: background 0.15s;
+                // 为每个基础类型创建折叠组
+                Object.keys(typePeriods).sort().forEach(baseType => {
+                    const section = document.createElement('div');
+                    const header = document.createElement('div');
+                    header.style.cssText = `
+                padding: 10px 16px; cursor: pointer; display: flex; align-items: center;
+                justify-content: space-between; user-select: none;
+                background: ${widget.getTheme() === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'};
+                border-bottom: 1px solid rgba(128,128,128,0.2);
             `;
-                row.addEventListener('mouseenter', () => row.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
-                row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+                    header.innerHTML = `<span style="font-weight:600;">${baseType}</span><span class="toggle-arrow" style="transition: transform 0.2s;">▼</span>`;
+                    const content = document.createElement('div');
+                    content.style.display = 'block';
 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = item.checked;
-                checkbox.style.cssText = `
-                margin-right: 12px;
-                accent-color: #2962ff;
-                width: 16px;
-                height: 16px;
-                cursor: pointer;
-            `;
+                    header.addEventListener('click', () => {
+                        const arrow = header.querySelector('.toggle-arrow');
+                        if (content.style.display === 'none') {
+                            content.style.display = 'block';
+                            arrow.style.transform = 'rotate(0deg)';
+                        } else {
+                            content.style.display = 'none';
+                            arrow.style.transform = 'rotate(-90deg)';
+                        }
+                    });
 
-                const label = document.createElement('span');
-                label.textContent = item.label;
-                label.style.flex = '1';
+                    const periods = Array.from(typePeriods[baseType]).sort((a, b) => a - b);
+                    periods.forEach(period => {
+                        const row = document.createElement('div');
+                        row.style.cssText = `
+                    padding: 6px 16px 6px 28px; display: flex; align-items: center;
+                    cursor: pointer; transition: background 0.15s;
+                `;
+                        row.addEventListener('mouseenter', () => row.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
+                        row.addEventListener('mouseleave', () => row.style.background = 'transparent');
 
-                row.appendChild(checkbox);
-                row.appendChild(label);
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.checked = this.isPeriodVisible(baseType, period);
+                        checkbox.style.cssText = `
+                    margin-right: 12px; accent-color: #2962ff;
+                    width: 16px; height: 16px; cursor: pointer;
+                `;
 
-                row.addEventListener('click', (e) => {
-                    if (e.target !== checkbox) {
-                        checkbox.checked = !checkbox.checked;
-                    }
-                    item.action(checkbox.checked);
+                        const label = document.createElement('span');
+                        label.textContent = Config.formatPeriod(period);
+                        label.style.flex = '1';
+
+                        row.appendChild(checkbox);
+                        row.appendChild(label);
+
+                        row.addEventListener('click', (e) => {
+                            if (e.target !== checkbox) {
+                                checkbox.checked = !checkbox.checked;
+                            }
+                            this.setShapesVisibleByPeriod(baseType, period, checkbox.checked);
+                        });
+
+                        content.appendChild(row);
+                    });
+
+                    section.appendChild(header);
+                    section.appendChild(content);
+                    panel.appendChild(section);
                 });
 
-                panel.appendChild(row);
-            });
-
-            // 分隔线 + 重置按钮（可选）
-            const separator = document.createElement('div');
-            separator.style.cssText = `height: 1px; background: ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'}; margin: 6px 0;`;
-            panel.appendChild(separator);
-
-            const resetBtn = document.createElement('div');
-            resetBtn.textContent = '↻ 重置默认';
-            resetBtn.style.cssText = `
-            padding: 8px 16px;
-            cursor: pointer;
-            color: ${widget.getTheme() === 'dark' ? '#90a4e0' : '#2962ff'};
-            font-size: 13px;
-            text-align: center;
-            transition: background 0.15s;
+                // 底部全局控制按钮
+                const footer = document.createElement('div');
+                footer.style.cssText = `
+            border-top: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
+            padding: 8px 16px; display: flex; gap: 8px;
         `;
-            resetBtn.addEventListener('mouseenter', () => resetBtn.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
-            resetBtn.addEventListener('mouseleave', () => resetBtn.style.background = 'transparent');
-            resetBtn.addEventListener('click', () => {
-                panel.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
-                    cb.checked = idx === 0; // 仅第一项为 true
-                    menuItems[idx].action(cb.checked);
+                const showAllBtn = document.createElement('button');
+                showAllBtn.textContent = '全部显示';
+                showAllBtn.style.cssText = `flex:1; padding: 4px; background: #2563eb; color:white; border:none; border-radius: 4px; cursor:pointer;`;
+                showAllBtn.addEventListener('click', () => {
+                    Object.keys(typePeriods).forEach(baseType => {
+                        typePeriods[baseType].forEach(period => {
+                            this.setShapesVisibleByPeriod(baseType, period, true);
+                        });
+                    });
+                    refreshMenu();
                 });
-            });
-            panel.appendChild(resetBtn);
+                const hideAllBtn = document.createElement('button');
+                hideAllBtn.textContent = '全部隐藏';
+                hideAllBtn.style.cssText = `flex:1; padding: 4px; background: #ef4444; color:white; border:none; border-radius: 4px; cursor:pointer;`;
+                hideAllBtn.addEventListener('click', () => {
+                    Object.keys(typePeriods).forEach(baseType => {
+                        typePeriods[baseType].forEach(period => {
+                            this.setShapesVisibleByPeriod(baseType, period, false);
+                        });
+                    });
+                    refreshMenu();
+                });
+                footer.appendChild(showAllBtn);
+                footer.appendChild(hideAllBtn);
+                panel.appendChild(footer);
+            };
 
-            console.warn(panel.offsetWidth);
-
-            // 显示/隐藏逻辑
-            function showPanel() {
-                // 1. 先设置为 block 以便浏览器计算尺寸
+            const showPanel = () => {
+                refreshMenu();
                 panel.style.display = 'block';
-
-                // 2. 获取面板实际宽度（此时元素可见，尺寸正确）
-                const panelWidth = panel.offsetWidth;
-
-                // 3. 获取触发按钮的位置信息
                 const rect = triggerElement.getBoundingClientRect();
-
-                // 4. 计算右对齐时的 left 值
-                let left = rect.right - panelWidth;
-                // 防止面板超出屏幕左侧
-                if (left < 0) left = 5;
-
-                // 5. 设置最终位置
-                panel.style.top = `${rect.bottom + 4}px`;
-                panel.style.left = `${left}px`;
-
-                // 6. 面板已在步骤1显示，无需再次设置 display
-            }
-
-            function hidePanel() {
+                // 等待 layout 完成以获取正确的 panel 宽度
+                requestAnimationFrame(() => {
+                    const panelWidth = panel.offsetWidth;
+                    let left = rect.right - panelWidth;
+                    if (left < 0) left = 5;
+                    panel.style.top = `${rect.bottom + 4}px`;
+                    panel.style.left = `${left}px`;
+                });
+            };
+            const hidePanel = () => {
                 panel.style.display = 'none';
-            }
+            };
 
             triggerElement.addEventListener('click', (e) => {
                 e.stopPropagation();
                 panel.style.display === 'block' ? hidePanel() : showPanel();
             });
-
             document.addEventListener('click', (e) => {
-                if (!panel.contains(e.target) && e.target !== triggerElement) {
-                    hidePanel();
-                }
+                if (!panel.contains(e.target) && e.target !== triggerElement) hidePanel();
             });
-
             window.addEventListener('resize', () => {
                 if (panel.style.display === 'block') showPanel();
             });
+
+            // 保存引用以便外部强制刷新
+            this.refreshDropdown = refreshMenu;
         }
 
         async createButton() {
@@ -1759,7 +1752,7 @@ print("=== 趋势分析 ===")
                     in_2: 11,
                     in_3: "close"
                 });
-                window.tvWidget.activeChart().createStudy("Volume", true);
+                //window.tvWidget.activeChart().createStudy("Volume", true);
 
                 window.tvWidget.activeChart().createStudy('Moving Average Exponential', false, false, {length: Config.EMA_LENGTH});
                 this.tradingViewManager.createHeaderButtons();
@@ -1777,6 +1770,6 @@ print("=== 趋势分析 ===")
     window.addEventListener("DOMContentLoaded", () => {
         new App().init();
     });
-</script>
+    </script>
 </body>
 </html>
