@@ -366,6 +366,60 @@ class 缠论配置(BaseModel):
             图表展示_中枢_线段内部=False,
         )
 
+    @classmethod
+    def 按序号重组字典(cls, 默认配置, 原始字典: dict) -> dict:
+        """
+        {
+            "1_open": 10,
+            "1_close": 11,
+            "2_open": 20,
+            "name": "BTC",    # 无法拆分
+            "time": 123456    # 无法拆分
+        }
+        转化为
+        {
+            1: {"open": 10, "close": 11},
+            2: {"open": 20},
+            "无法拆分": {
+                "name": "BTC",
+                "time": 123456
+            }
+        }
+
+        """
+
+        结果 = {}
+        无法拆分项 = {}
+
+        for 复合键, 值 in 原始字典.items():
+            # 尝试拆分
+            if "_" in 复合键:
+                序号部分, 键部分 = 复合键.split("_", 1)
+                try:
+                    序号 = int(序号部分)
+                    # 能正常拆分 → 分组
+                    if 序号 not in 结果:
+                        结果[序号] = {}
+                    结果[序号][键部分] = 值
+                except:
+                    # 格式异常 → 单独处理
+                    无法拆分项[复合键] = 值
+            else:
+                # 无下划线 → 无法拆分 → 单独存放
+                无法拆分项[复合键] = 值
+
+        # 把无法拆分的也放进结果顶层（你要的结构）
+        """if 无法拆分项:
+            结果["无法拆分"] = 无法拆分项"""
+        配置组 = dict()
+        for k, v in 结果.items():
+            配置组[k] = 默认配置.model_copy(
+                update=v,
+                deep=True,
+            )
+
+        return 配置组
+
 
 class 时间周期:
     def __init__(self, 秒: int, 是否单笔交易: bool = False):
@@ -1958,7 +2012,7 @@ class K线合成器:
 
 
 class 缠论K线(object):
-    __slots__ = ["序号", "时间戳", "高", "低", "方向", "分型", "周期", "标识", "分型特征值", "原始起始序号", "原始结束序号", "标的K线"]
+    __slots__ = ["序号", "时间戳", "高", "低", "方向", "分型", "周期", "标识", "分型特征值", "原始起始序号", "原始结束序号", "标的K线", "买卖点信息"]
 
     def __init__(
         self,
@@ -1985,6 +2039,7 @@ class 缠论K线(object):
         self.原始起始序号: int = 原始起始序号
         self.原始结束序号: int = 原始结束序号
         self.标的K线: "K线" = 普K
+        self.买卖点信息 = set()
 
     def __str__(self):
         return f"{self.标识}<{self.序号}, {self.分型}, {self.周期}, {self.方向}, {self.时间戳}, {self.高}, {self.低}>"
@@ -1995,6 +2050,7 @@ class 缠论K线(object):
     @property
     def 镜像(self):
         K = 缠论K线(self.序号, self.时间戳, self.高, self.低, self.方向, self.标的K线, self.原始起始序号, self.原始结束序号, self.分型)
+        K.买卖点信息.update(self.买卖点信息)
         return K
 
     @property
@@ -4251,6 +4307,51 @@ class 观察者:
                 if 背驰分析.测度背驰(进入段, 离开段):
                     self.添加买卖点("3笔", 离开段.武, "一", "次级")
 
+            if self.线段序列[-1].实_中枢序列[-1].离开段 is (max(self.线段序列[-1].实_中枢序列[-1], key=lambda o: o.高) or min(self.线段序列[-1].实_中枢序列[-1], key=lambda o: o.低)):
+                进入段 = self.线段序列[-1][self.线段序列[-1].index(self.线段序列[-1].实_中枢序列[-1][0]) - 1]
+                离开段 = self.线段序列[-1].实_中枢序列[-1].离开段
+                方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
+                if 方向 is 相对方向.向上:
+                    if 背驰分析.测度背驰(进入段, 离开段):
+                        self.添加买卖点("段内中枢", 离开段.武, "一", "次级")
+
+                elif 方向 is 相对方向.向下:
+                    if 背驰分析.测度背驰(进入段, 离开段):
+                        self.添加买卖点("段内中枢", 离开段.武, "一", "次级")
+
+        if len(self.线段序列) >= 3 and 0:
+            进入段, 离开段 = self.线段序列[-3], self.线段序列[-1]
+            方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
+            if 方向 is 相对方向.向上:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3段", 离开段.武, "一", "次级")
+
+            elif 方向 is 相对方向.向下:
+                if 背驰分析.测度背驰(进入段, 离开段):
+                    self.添加买卖点("3段", 离开段.武, "一", "次级")
+
+        # 第三买卖点
+        if self.扩展中枢序列_线段:
+            当前中枢 = self.扩展中枢序列_线段[-1]
+            if 当前中枢.第三买卖线:
+                当前线段: 线段 = 当前中枢.第三买卖线[-1]
+                if 当前线段.实_中枢序列:
+                    当前笔中枢 = 当前线段.实_中枢序列[-1]
+                    if 当前笔中枢.第三买卖线:
+                        ...
+                    else:
+                        离开段 = 当前笔中枢.离开段
+                        进入段 = self.笔序列[self.笔序列.index(当前笔中枢[0]) - 1]
+                        方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
+                        # self.添加买卖点("扩展中枢_线段", 离开段.武, "三", "上级")
+                        if 方向 is 相对方向.向上:
+                            if 背驰分析.测度背驰(进入段, 离开段):
+                                self.添加买卖点("扩展中枢_线段", 离开段.武, "三", "上级")
+
+                        elif 方向 is 相对方向.向下:
+                            if 背驰分析.测度背驰(进入段, 离开段):
+                                self.添加买卖点("扩展中枢_线段", 离开段.武, "三", "上级")
+
     @final
     def 添加买卖点(self, 特征: str, 买卖点分型: 分型, 序号: str, 级别: str):
         当前买卖点: 买卖点 = 买卖点.生成买卖点(特征, 序号, 级别, 买卖点分型, self.当前缠K)
@@ -4273,6 +4374,7 @@ class 观察者:
         rsi匹配 = 买卖点分型.中.与RSI匹配
         kdj匹配 = 买卖点分型.中.与KDJ匹配
 
+        当前买卖点.备注 = f"{self.标识}" + 当前买卖点.备注
         当前买卖点.备注 = 当前买卖点.备注 + f"_{买卖点分型.强度}"
         if 分型匹配 is not None and not 分型匹配:
             当前买卖点.备注 = 当前买卖点.备注 + "_非MACD分型"
@@ -4291,7 +4393,7 @@ class 观察者:
 
         if 当前买卖点.买卖点K线.时间戳 not in 活跃时间戳序列:
             买卖点序列.add(当前买卖点)
-            # 当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
+            当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
             self.报信(当前买卖点, 指令.添加(当前买卖点.备注), sys._getframe().f_lineno)
 
     def 图表刷新(self):
@@ -4426,7 +4528,7 @@ class 观察者:
 
 
 class 立体分析器:
-    def __init__(self, 符号: str, 周期组: List[int], 数据通道: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置()):
+    def __init__(self, 符号: str, 周期组: List[int], 数据通道: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置(), 配置组: Dict[int, 缠论配置] = dict()):
         self.周期组 = 周期组
 
         self.__输入周期 = self.周期组[0]  # 最小输入K线周期
@@ -4435,7 +4537,8 @@ class 立体分析器:
 
         self._单体分析器 = dict()
         for 周期 in self.周期组:
-            当前配置 = 配置.model_copy(
+            临时配置 = 配置组.get(周期, 配置)
+            当前配置 = 临时配置.model_copy(
                 update={
                     "推送K线": False,
                     # "推送笔": False,
@@ -5144,10 +5247,10 @@ def 测试_邮局数据_同步回测(symbol: str = "btcusd", limit: int = 500, f
     return 魔法
 
 
-def 测试_周期合成(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置()):
+def 测试_周期合成(symbol: str = "btcusd", limit: int = 500, freq: SupportsInt = 时间周期.分(5), ws: Optional[WebSocket] = None, 配置: 缠论配置 = 缠论配置(), 配置组: Dict[int:缠论配置] = None):
     def 魔法():
         周期组 = [int(freq), int(freq) * 5, int(freq) * 5 * 6]
-        多级别分析 = 立体分析器(symbol, 周期组, ws, 配置)
+        多级别分析 = 立体分析器(symbol, 周期组, ws, 配置, 配置组)
         Bitstamp.获取K线数据(int(limit), symbol, 周期组[0], 多级别分析)
         return 多级别分析
 
@@ -5526,6 +5629,8 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
         config = 消息字典.get("config", dict())
         当前配置 = 缠论配置.from_dict(config)
         print(当前配置)
+        配置组 = 缠论配置.按序号重组字典(当前配置, config)
+        print(配置组)
 
         # 停止现有线程
         global 主线程
@@ -5536,7 +5641,7 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
 
         # 创建新的分析器
         if generator == "zqhc":
-            魔法 = 测试_周期合成(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
+            魔法 = 测试_周期合成(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置, 配置组=配置组)
         elif generator == "hc":
             魔法 = 测试_邮局数据_同步回测(symbol=symbol, freq=freq, limit=limit, ws=websocket, 配置=当前配置)
 
