@@ -70,6 +70,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from humanfriendly.terminal import message
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
 from termcolor import colored
 
@@ -2594,7 +2595,7 @@ class 笔(object):
         if 配置.笔内起始分型包含整笔:
             有效序列 = [k线 for k线 in (self.文.左, self.文.中, self.文.右) if k线 is not None]
             文 = 缺口(max(有效序列, key=lambda k: k.高).高, min(有效序列, key=lambda k: k.低).低)
-            有效序列 = [k线 for k线 in (self.武.左, self.武.中, self.武.右) if k线 is not None]
+            有效序列 = [k线 for k线 in (self.武.左, self.武.中) if k线 is not None] # 排除 右
             武 = 缺口(max(有效序列, key=lambda k: k.高).高, min(有效序列, key=lambda k: k.低).低)
             相对关系 = 相对方向.分析(文.高, 文.低, 武.高, 武.低)
         else:
@@ -4126,6 +4127,25 @@ class 观察者:
         if self.分型序列[-1].强度 not in "强中":
             pass
 
+        if 笔内部背驰判断(self.普通K线序列, self.笔序列[-1]):
+            self.添加买卖点("笔", self.笔序列[-1].武, "一", "次次级")
+
+        if not self.线段序列:
+            return
+
+        if 笔内部背驰判断(self.普通K线序列, self.线段序列[-1]):
+            0 and self.添加买卖点("笔", self.线段序列[-1].武, "一", "次级")
+
+        if 线段背驰判断(self.普通K线序列, self.线段序列[-1]):
+            self.添加买卖点("线段", self.线段序列[-1].武, "一", "次级")
+
+        if not self.线段_线段序列:
+            return
+
+        if 笔内部背驰判断(self.普通K线序列, self.线段_线段序列[-1]):
+            self.添加买卖点("笔", self.线段_线段序列[-1].武, "一", "本级")
+
+        return
         if len(self.笔序列) >= 3 and self.线段序列 and self.笔序列[-1].武 is self.线段序列[-1].武 and self.线段序列[-1].实_中枢序列:
             进入段, 离开段 = self.笔序列[-3], self.笔序列[-1]
             方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
@@ -4230,6 +4250,7 @@ class 观察者:
         for key in dir(self):
             if "序列" in key:
                 getattr(getattr(self, key), "尾部刷新", Nil)(行号=-1)
+        self.将图表数据固化到本地()
 
     def 定位K线所在(self, k线: K线):
         return self.定位时间戳所在(k线.时间戳)
@@ -4360,6 +4381,8 @@ class 观察者:
                     "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                     "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                 }
+                if type(对象) is 笔:
+                    message["overrides"]["text"] += " " + str(笔内部背驰判断(self.普通K线序列, 对象))
 
                 if type(对象) is not 线段特征:
                     message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{对象.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} "
@@ -4422,7 +4445,7 @@ class 观察者:
 
         return 实例
 
-    def 将图表数据固化到本地(self, static_shapes):
+    def 将图表数据固化到本地(self, static_shapes=None):
         template_path = "./templates/static.html"
         # 初始化 Jinja2 环境，模板目录为当前目录
         env = Environment(loader=FileSystemLoader(os.path.dirname(template_path) or "."))
@@ -4430,6 +4453,94 @@ class 观察者:
         resolution = 时间周期.找到最大可整除周期(self.周期)
         static_data = {"bars": [[int(k.时间戳.timestamp()), k.开盘价, k.高, k.低, k.收盘价, k.成交量] for k in self.普通K线序列]}
 
+        配色表 = {
+            "笔": "#6C4D7E",
+            "线段": "#FEC187",
+            "线段<线段>": "#8F6048",  # 以线段为基础的特征序列线段
+            "扩展线段": "#09a4ff",  # 以笔为基础的
+            "扩展线段<线段>": "#07d59e",  # 以线段为基础的
+            "扩展线段<扩展线段>": "#ff29e3",
+            "扩展线段<扩展线段<线段>>": "#07d59e",
+        }
+
+        for k, v in list(配色表.items()):
+            配色表[f"中枢<{k}>"] = v
+
+        if not static_shapes:
+            static_shapes = []
+            全部 = []
+            for o in dir(self):
+                if "序列" in o and "K线序列" not in o and "分型" not in o:
+                    oo = getattr(self, o)
+                    if isinstance(oo, list):
+                        全部.extend(oo)
+            for o in self.买卖点字典.values():
+                全部.extend(o)
+
+            for 对象 in 全部:
+                if type(对象) in (笔, 线段, 中枢, 线段特征):
+                    message = dict()
+                    图标 = 对象.图表标题
+                    message["type"] = "shape"
+                    message["id"] = 图标
+                    message["shapeType"] = "trend_line" if type(对象) is not 中枢 else "rectangle"
+                    message["points"] = [
+                        {"time": int(缠论K线.时间戳对齐(self.基础缠K序列, 对象.文.中).timestamp()), "price": 对象.文.分型特征值 if type(对象) is not 中枢 else 对象.高},
+                        {"time": int(缠论K线.时间戳对齐(self.基础缠K序列, 对象.武.中).timestamp()), "price": 对象.武.分型特征值 if type(对象) is not 中枢 else 对象.低},
+                    ]
+                    linewidths = {"笔": 1, "线段": 2, "走势": 3, "线段特征": 2}
+                    message["overrides"] = {
+                        "bold": True,
+                        "linecolor": 配色表.get(对象.标识, 配色表["笔"]),
+                        "textcolor": "#000000",
+                        "text": "",
+                        "title": 图标,
+                        "linewidth": linewidths.get(对象.标识, 2) if type(对象) is not 中枢 else linewidths.get(对象[0].标识, 2),
+                        "backgroundColor": "rgba(242, 54, 69, 0.2)" if 对象.方向 is 相对方向.向下 else "rgba(76, 175, 80, 0.2)",
+                        # 上下上 为 红色，反之为 绿色,
+                        "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
+                        "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
+                    }
+                    if type(对象) is 笔:
+                        message["overrides"]["text"] += " " + str(笔内部背驰判断(self.普通K线序列, 对象))
+
+                    if type(对象) is not 线段特征:
+                        message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{对象.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} "
+
+                    if type(对象) is 线段:
+                        message["overrides"]["text"] += f" 内部中枢数量:{len(对象.实_中枢序列)}"
+
+                    if type(对象) is 线段特征:
+                        message["overrides"].update({"linecolor": "#F1C40F" if 对象.方向 is 相对方向.向下 else "#fbc02d", "linewidth": 4, "linestyle": 1})
+
+                    if type(对象) is 中枢:
+                        del message["overrides"]["textcolor"]
+                        del message["overrides"]["linecolor"]
+                    else:
+                        del message["overrides"]["textColor"]
+                        del message["overrides"]["backgroundColor"]
+                        del message["overrides"]["color"]
+                    static_shapes.append(message)
+                    continue
+
+                if type(对象) is 买卖点:
+                    message = dict()
+                    message["type"] = "shape"
+                    message["id"] = str(id(对象))
+                    message["shapeType"] = "arrow_down" if 对象.类型.是卖点 else "arrow_up"
+                    message["points"] = [{"time": int(对象.买卖点K线.时间戳.timestamp()), "price": 对象.买卖点K线.分型特征值}]
+                    arrowColor = "#FF2800" if 对象.类型.是卖点 else "#00FF22"
+                    text = f"{str(对象.偏移)}, {对象.破位值}, {对象.备注}"
+                    message["overrides"] = {
+                        "color": "#CC62FF",
+                        "arrowColor": arrowColor,
+                        "text": text,
+                        "title": 对象.备注.split("_")[0],
+                        "showLabel": False,
+                    }
+                    static_shapes.append(message)
+                else:
+                    print(type(对象), 对象)
         for item in static_shapes:
             if item.get("overrides") and item["overrides"].get("intervalsVisibilities"):
                 del item["overrides"]["intervalsVisibilities"]
