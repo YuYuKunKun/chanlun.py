@@ -27,7 +27,7 @@ SOFTWARE.
 # @File    : chan.py
 
 import asyncio
-import io
+import io, os
 import json
 import math
 import struct
@@ -36,6 +36,7 @@ import ast
 import signal
 import sys
 import time
+import copy
 import queue
 import platform
 import traceback
@@ -61,6 +62,8 @@ from typing import (
     SupportsIndex,
 )
 import importlib.metadata
+from dataclasses import dataclass, field
+from collections import OrderedDict
 
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -70,7 +73,51 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
 from termcolor import colored
 
+from jinja2 import Environment, FileSystemLoader
+
 import backtrader as bt
+
+__all__ = [
+    "Bitstamp",
+    "KDJ信号",
+    "KDJ趋势方向",
+    "K线",
+    "K线合成器",
+    "MACD信号",
+    "MACD趋势方向",
+    "Nil",
+    "RSI信号",
+    "RSI趋势方向",
+    "中枢",
+    "买卖点",
+    "买卖点类型",
+    "分型",
+    "分型结构",
+    "同步_跟踪回测",
+    "回测",
+    "基础买卖点",
+    "平滑异同移动平均线",
+    "指令",
+    "指标",
+    "时间周期",
+    "特征分型",
+    "相对强弱指数",
+    "相对方向",
+    "立体分析器",
+    "笔",
+    "线段",
+    "线段特征",
+    "缠论K线",
+    "缠论配置",
+    "缺口",
+    "背驰分析",
+    "自定义实时数据源",
+    "观察者",
+    "转化为时间戳",
+    "转化为时间戳_数字",
+    "随机指标",
+    "高级策略基类",
+]
 
 
 def 获取模块版本():
@@ -458,6 +505,37 @@ class 时间周期:
     @classmethod
     def 周(cls, value: int):
         return cls(60 * 60 * 24 * 7 * value)
+
+    @classmethod
+    def 找到最大可整除周期(cls, 输入秒数: int) -> int:
+        """
+        输入秒数 → 返回 最大可整除的周期秒数
+        周期范围：
+        1~59分钟、1~23小时、1~28天
+        """
+        周期列表 = []
+
+        # 1~59分钟
+        for m in range(1, 60):
+            周期列表.append(m * 60)
+
+        # 1~23小时
+        for h in range(1, 24):
+            周期列表.append(h * 3600)
+
+        # 1~28天
+        for d in range(1, 29):
+            周期列表.append(d * 86400)
+
+        # 从大到小排序
+        周期列表.sort(reverse=True)
+
+        # 找第一个能整除的
+        for 周期秒 in 周期列表:
+            if 输入秒数 % 周期秒 == 0:
+                return cls.秒数转周期(周期秒)
+
+        return 输入秒数
 
     @classmethod
     def 秒数转周期(cls, 秒数: int) -> str:
@@ -2836,6 +2914,10 @@ class 线段(object):
         self.前一缺口: Optional[缺口] = None
         self.前一结束位置 = None
 
+    @property
+    def 笔序列(self):
+        return self.__基础序列__
+
     def append(self, 线):
         if len(self) and not 分型.判断分型(self[-1].武, 线.文):
             raise ValueError(f"{self.标识}.添加虚线 不连续", self[-1], 线)
@@ -2871,22 +2953,6 @@ class 线段(object):
     @property
     def 图表标题(self) -> str:
         return f"{self.文.右.标识}:{self.文.右.周期}:{self.标识}:{self.序号}"
-
-    @property
-    def 缠K序列(self) -> List[缠论K线]:
-        结果 = []
-        for 元素 in self:
-            if type(元素) is 笔:
-                if not 结果:
-                    结果.extend(元素.缠K序列[:])
-                else:
-                    结果.extend(元素.缠K序列[1:])
-            else:
-                if not 结果:
-                    结果.extend(元素.缠K序列)
-                else:
-                    结果.extend(元素.缠K序列[1:])
-        return 结果
 
     @property
     def 方向(self) -> "相对方向":
@@ -3901,243 +3967,6 @@ class 中枢(list):
         return None
 
 
-@final
-class _图表配色:
-    配色表 = {
-        "笔": "#6C4D7E",
-        "线段": "#FEC187",
-        "线段<线段>": "#8F6048",  # 以线段为基础的特征序列线段
-        "扩展线段": "#09a4ff",  # 以笔为基础的
-        "扩展线段<线段>": "#07d59e",  # 以线段为基础的
-        "扩展线段<扩展线段>": "#ff29e3",
-        "扩展线段<扩展线段<线段>>": "#07d59e",
-    }
-    笔: str = "#6C4D7E"
-    线段: str = "#FEC187"
-    走势: str = "#00C40F"  # 二级线段
-    灰色: str = "#BEBEBE"
-
-    @staticmethod
-    def invert_alpha(color_str, default_alpha=1.0):
-        """
-        将颜色字符串的透明度取反，并以 rgba() 格式返回。
-
-        参数:
-            color_str (str): 颜色字符串，支持 HEX (#RGB, #RRGGBB, #RGBA, #RRGGBBAA) 或
-                             RGB/RGBA (rgb(r,g,b), rgba(r,g,b,a)) 格式。
-            default_alpha (float): 当输入字符串不包含透明度时使用的原始透明度值，默认 1.0。
-
-        返回:
-            str: 格式为 "rgba(r, g, b, a)" 的字符串，其中 a 为取反后的透明度。
-        """
-        color_str = color_str.strip()
-
-        # 匹配 HEX 格式
-        hex_pattern = re.compile(r"^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
-        # 匹配 RGB/RGBA 格式
-        rgba_pattern = re.compile(r"^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([0-9.]+)\s*)?\)$", re.IGNORECASE)
-
-        if hex_pattern.match(color_str):
-            # 处理 HEX
-            hex_part = color_str.lstrip("#")
-            # 扩展简写
-            if len(hex_part) == 3:
-                hex_part = "".join([c * 2 for c in hex_part])  # #RGB -> #RRGGBB
-            elif len(hex_part) == 4:
-                hex_part = "".join([c * 2 for c in hex_part])  # #RGBA -> #RRGGBBAA
-
-            r = int(hex_part[0:2], 16)
-            g = int(hex_part[2:4], 16)
-            b = int(hex_part[4:6], 16)
-
-            if len(hex_part) == 8:
-                # 包含透明度分量
-                original_alpha = int(hex_part[6:8], 16) / 255.0
-            else:
-                original_alpha = default_alpha
-
-        elif rgba_pattern.match(color_str):
-            # 处理 RGB/RGBA
-            match = rgba_pattern.match(color_str)
-            r = int(match.group(1))
-            g = int(match.group(2))
-            b = int(match.group(3))
-            if match.group(4) is not None:
-                original_alpha = float(match.group(4))
-            else:
-                original_alpha = default_alpha
-        else:
-            raise ValueError("不支持的格式，请输入 HEX 或 RGBA 颜色字符串")
-
-        # 透明度取反
-        new_alpha = 1.0 - original_alpha
-
-        return f"rgba({r}, {g}, {b}, {new_alpha})"
-
-    @classmethod
-    def 点(cls, 对象: 买卖点, 命令: 指令, 基线: List[缠论K线]):
-
-        message = dict()
-        # return message
-        message["标识"] = 对象.标识 if hasattr(对象, "标识") else 对象.__class__.__name__
-
-        message["type"] = "shape"
-        message["cmd"] = str(命令)
-        message["id"] = str(id(对象))
-        message["name"] = "arrow_down" if 对象.类型.是卖点 else "arrow_up"
-        message["points"] = [{"time": int(对象.买卖点K线.时间戳.timestamp()), "price": 对象.买卖点K线.分型特征值}]
-
-        arrowColor = "#FF2800" if 对象.类型.是卖点 else "#00FF22"
-        text = f"{str(对象.偏移)}, {对象.破位值}, {对象.备注}"
-        if 对象.失效偏移 > -1:
-            arrowColor = 图表配色.灰色
-            text = f"{str(对象.偏移)}, {对象.破位值}, {对象.备注}, {str(对象.失效K线.时间戳)}"
-            if 对象.类型.是卖点:
-                message["points"][0]["price"] = message["points"][0]["price"] * 1.01
-            else:
-                message["points"][0]["price"] = message["points"][0]["price"] * 0.99
-        message["options"] = {
-            "shape": "arrow_down" if 对象.类型.是卖点 else "arrow_up",
-            "text": text,
-        }
-        message["properties"] = {
-            "color": cls.invert_alpha("#CC62FF"),
-            "arrowColor": arrowColor,
-            "text": text,
-            "title": 对象.备注.split("_")[0],
-            "showLabel": False,
-        }
-
-        return message
-
-    @classmethod
-    def 线(cls, 对象: Union[笔, 线段, 线段特征], 命令: 指令, 周期: int, 基线: List[缠论K线]):
-        linewidths = {"笔": 1, "线段": 2, "走势": 3, "线段特征": 2}
-        标识 = 对象.图表标题
-        message = dict()
-        message["type"] = "shape"
-        message["cmd"] = 命令.指令.upper()
-        message["id"] = 标识
-        message["name"] = "trend_line"
-        if 命令.指令 == 指令.删:
-            return message
-        message["options"] = {"shape": "trend_line", "text": 对象.标识}
-
-        message["points"] = [
-            {"time": int(缠论K线.时间戳对齐(基线, 对象.文.中).timestamp()), "price": 对象.文.分型特征值},
-            {"time": int(缠论K线.时间戳对齐(基线, 对象.武.中).timestamp()), "price": 对象.武.分型特征值},
-        ]
-
-        message["properties"] = {
-            "bold": True,
-            "textcolor": cls.invert_alpha("#000000"),
-            "linecolor": cls.配色表.get(对象.标识, cls.笔),
-            "linewidth": linewidths.get(对象.标识, 2),
-            "title": 标识,
-            "showLabel": False,
-            "visible": True,
-        }
-        信息流 = [
-            对象.标识,
-            str(对象.序号),
-        ]
-        if type(对象) is 笔:
-            对象: 笔 = 对象
-            信息流.extend(
-                [
-                    f"周期:{周期}",
-                    # f"{买卖点.买卖意义(对象) if hasattr(买卖点, '买卖意义') else None}",
-                    # f"均值:{对象.武之MACD均值}, 极值:{对象.武之MACD极值} 分型:{对象.武.与MACD柱子分型匹配}, MACD匹配:{对象.武.中.与MACD柱子匹配}",
-                    # f"背驰过:{len(买卖点.笔是否背驰过(对象)) != 0 if hasattr(买卖点, '笔是否背驰过') else None}",
-                    # f"振幅强弱:{对象.振幅强弱(对象.观察员.笔序列)}",
-                    # f"幅度强弱:{对象.幅度强弱(对象.观察员.笔序列)}",
-                    # f"分型强弱:{对象.武.强度}",
-                ]
-            )
-
-        if 对象.标识 in ("线段", "线段<线段>"):
-            对象: 线段 = 对象
-            信息流.extend(
-                [
-                    f"周期:{周期}",
-                    对象.四象,
-                    f"{对象.特征序列状态}",
-                    str(对象.级别),
-                    # str(买卖点.判断线段内部是否背驰(对象) if hasattr(买卖点, "判断线段内部是否背驰") else None),
-                    f"内部中枢数量:{len(对象.实_中枢序列)}",
-                ]
-            )
-            if 对象.确认K线 is not None:
-                信息流.append(f"{对象.确认K线.时间戳.strftime('%Y-%m-%d %H:%M:%S')} 特征值: {str(对象.确认K线.分型特征值)}")
-
-        elif 对象.标识 in ("扩展线段", "扩展线段<线段>"):
-            信息流.extend(
-                [
-                    f"周期:{周期}",
-                    str(对象.级别),
-                ]
-            )
-            message["properties"]["text"] = " ".join(信息流)
-
-        if type(对象) is 线段特征:
-            message["properties"].update({"linecolor": "#F1C40F" if 对象.方向 is 相对方向.向下 else "#fbc02d", "linewidth": 4, "linestyle": 1})
-
-        message["properties"]["text"] = " ".join(信息流)
-        return message
-
-    @classmethod
-    def 面(cls, 对象: 中枢, 命令: 指令, 周期: int, 基线: List[缠论K线]):
-        linewidths = {"笔": 1, "线段": 2, "走势": 3}
-        标识 = 对象.图表标题
-        message = dict()
-        message["type"] = "shape"
-        message["cmd"] = str(命令)
-        message["id"] = 标识
-        message["name"] = "rectangle"
-        if 命令.指令 == 指令.删:
-            return message
-        message["options"] = {"shape": "rectangle", "text": 对象.标识}
-        message["properties"] = {
-            "title": 标识,
-            "visible": True,
-        }
-
-        武_时间戳 = int(缠论K线.时间戳对齐(基线, 对象.第三买卖线.武.中).timestamp()) if 对象.第三买卖线 else int(缠论K线.时间戳对齐(基线, 对象.武.中).timestamp())
-        if type(对象[0]) is 线段 and 对象.本级_第三买卖线 is not None:
-            武_时间戳 = int(缠论K线.时间戳对齐(基线, 对象.本级_第三买卖线.武.中).timestamp())
-        extendRight = False  # if 对象.第三买卖线 else True
-        points = [
-            {"time": int(对象.文.时间戳.timestamp()), "price": 对象.高},
-            {
-                "time": 武_时间戳,
-                "price": 对象.低,
-            },
-        ]
-        text = f"{对象.标识} {对象.序号} 周期: {周期}, 数量: {len(对象)} "
-        if 对象.第三买卖线:
-            text += f"第三卖点值: {对象.第三买卖线.武.分型特征值}, "
-        message["properties"].update(
-            {
-                "backgroundColor": "rgba(242, 54, 69, 0.2)" if 对象.方向 is 相对方向.向下 else "rgba(76, 175, 80, 0.2)",  # 上下上 为 红色，反之为 绿色
-                "color": cls.配色表.get(对象[0].标识, cls.笔),
-                "linewidth": linewidths.get(对象[0].__class__.__name__, 2),
-                "text": text,
-                "textColor": cls.invert_alpha("rgba(156, 39, 176, 1)"),
-                "horzLabelsAlign": "left",
-                "vertLabelsAlign": "bottom",
-                "showLabel": False,
-                "extendRight": extendRight,
-            }
-        )
-
-        message["points"] = points
-
-        return message
-
-
-图表配色 = _图表配色()
-
-
 class 观察者:
     # thread: Any = None
     # queue: Any = asyncio.Queue()
@@ -4160,11 +3989,11 @@ class 观察者:
 
     @property
     def 当前K线(self) -> Optional["K线"]:
-        return self.普通K线序列[-1] if len(self.普通K线序列) else None
+        return self.普通K线序列[-1] if self.普通K线序列 else None
 
     @property
     def 当前缠K(self) -> Optional["缠论K线"]:
-        return self.缠论K线序列[-1] if len(self.缠论K线序列) else None
+        return self.缠论K线序列[-1] if self.缠论K线序列 else None
 
     def _重置基础序列(self):
         self.买卖点字典 = dict()
@@ -4295,7 +4124,8 @@ class 观察者:
         if self.分型序列[-1].中.序号 + 2 < self.当前缠K.序号:
             return
         if self.分型序列[-1].强度 not in "强中":
-            return
+            pass
+
         if len(self.笔序列) >= 3 and self.线段序列 and self.笔序列[-1].武 is self.线段序列[-1].武 and self.线段序列[-1].实_中枢序列:
             进入段, 离开段 = self.笔序列[-3], self.笔序列[-1]
             方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
@@ -4442,45 +4272,111 @@ class 观察者:
             message["close"] = 对象.收盘价
             message["volume"] = 对象.成交量
 
-        if type(对象) is 买卖点:
-            message.update(图表配色.点(对象, 命令, self.基础缠K序列))
+        配色表 = {
+            "笔": "#6C4D7E",
+            "线段": "#FEC187",
+            "线段<线段>": "#8F6048",  # 以线段为基础的特征序列线段
+            "扩展线段": "#09a4ff",  # 以笔为基础的
+            "扩展线段<线段>": "#07d59e",  # 以线段为基础的
+            "扩展线段<扩展线段>": "#ff29e3",
+            "扩展线段<扩展线段<线段>>": "#07d59e",
+        }
+        for k, v in list(配色表.items()):
+            配色表[f"中枢<{k}>"] = v
 
-        if type(对象) is 笔 and self.配置.推送笔:
-            message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
+        if type(对象) is 买卖点:
+            message["type"] = "shape"
+            message["cmd"] = 命令.指令.upper()
+            message["id"] = str(id(对象))
+            message["name"] = "arrow_down" if 对象.类型.是卖点 else "arrow_up"
+            message["points"] = [{"time": int(对象.买卖点K线.时间戳.timestamp()), "price": 对象.买卖点K线.分型特征值}]
+            arrowColor = "#FF2800" if 对象.类型.是卖点 else "#00FF22"
+            text = f"{str(对象.偏移)}, {对象.破位值}, {对象.备注}"
+            message["overrides"] = {
+                "color": "#CC62FF",
+                "arrowColor": arrowColor,
+                "text": text,
+                "title": 对象.备注.split("_")[0],
+                "showLabel": False,
+            }
+
+        if type(对象) is 笔 and not self.配置.推送笔:
+            return
 
         if type(对象) is 线段 and self.配置.推送线段:
-            if 对象.标识 == "线段" and self.配置.图表展示_线段:
-                message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "扩展线段" and self.配置.图表展示_扩展线段:
-                message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "扩展线段<线段>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "线段<线段>" and self.配置.图表展示_线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
+            if 对象.标识 == "线段" and not self.配置.图表展示_线段:
+                return
 
-            if 对象.标识 == "扩展线段<扩展线段>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
+            if 对象.标识 == "扩展线段" and not self.配置.图表展示_扩展线段:
+                return
 
-        if type(对象) is 线段特征:
-            message.update(图表配色.线(对象, 命令, self.周期, self.基础缠K序列))
+            if 对象.标识 == "扩展线段<线段>" and not self.配置.图表展示_扩展线段_线段:
+                return
+
+            if 对象.标识 == "线段<线段>" and not self.配置.图表展示_线段_线段:
+                return
+
+            if 对象.标识 == "扩展线段<扩展线段>" and not self.配置.图表展示_扩展线段_线段:
+                return
 
         if type(对象) is 中枢 and self.配置.推送中枢:
-            if 对象.标识 == "中枢<笔>" and self.配置.图表展示_中枢_笔:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "中枢<线段>" and self.配置.图表展示_中枢_线段:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "中枢<扩展线段>" and self.配置.图表展示_中枢_扩展线段:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "中枢<扩展线段<线段>>" and self.配置.图表展示_中枢_扩展线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
-            if 对象.标识 == "中枢<线段<线段>>" and self.配置.图表展示_中枢_线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
+            if 对象.标识 == "中枢<笔>" and not self.配置.图表展示_中枢_笔:
+                return
+            if 对象.标识 == "中枢<线段>" and not self.配置.图表展示_中枢_线段:
+                return
+            if 对象.标识 == "中枢<扩展线段>" and not self.配置.图表展示_中枢_扩展线段:
+                return
+            if 对象.标识 == "中枢<扩展线段<线段>>" and not self.配置.图表展示_中枢_扩展线段_线段:
+                return
+            if 对象.标识 == "中枢<线段<线段>>" and not self.配置.图表展示_中枢_线段_线段:
+                return
 
-            if 对象.标识 == "中枢<扩展线段<扩展线段>>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
+            if 对象.标识 == "中枢<扩展线段<扩展线段>>" and not self.配置.图表展示_扩展线段_线段:
+                return
 
-            if "_" in 对象.标识 and self.配置.图表展示_中枢_线段内部:
-                message.update(图表配色.面(对象, 命令, self.周期, self.基础缠K序列))
+            if "_" in 对象.标识 and not self.配置.图表展示_中枢_线段内部:
+                return
+
+        if type(对象) in (笔, 线段, 中枢, 线段特征):
+            图标 = 对象.图表标题
+            message["type"] = "shape"
+            message["cmd"] = 命令.指令.upper()
+            message["id"] = 图标
+            message["name"] = "trend_line" if type(对象) is not 中枢 else "rectangle"
+            if 命令.指令 != 指令.删:
+                message["points"] = [
+                    {"time": int(缠论K线.时间戳对齐(self.基础缠K序列, 对象.文.中).timestamp()), "price": 对象.文.分型特征值 if type(对象) is not 中枢 else 对象.高},
+                    {"time": int(缠论K线.时间戳对齐(self.基础缠K序列, 对象.武.中).timestamp()), "price": 对象.武.分型特征值 if type(对象) is not 中枢 else 对象.低},
+                ]
+                linewidths = {"笔": 1, "线段": 2, "走势": 3, "线段特征": 2}
+                message["overrides"] = {
+                    "bold": True,
+                    "linecolor": 配色表.get(对象.标识, 配色表["笔"]),
+                    "textcolor": "#000000",
+                    "text": "",
+                    "title": 图标,
+                    "linewidth": linewidths.get(对象.标识, 2) if type(对象) is not 中枢 else linewidths.get(对象[0].标识, 2),
+                    "backgroundColor": "rgba(242, 54, 69, 0.2)" if 对象.方向 is 相对方向.向下 else "rgba(76, 175, 80, 0.2)",  # 上下上 为 红色，反之为 绿色,
+                    "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
+                    "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
+                }
+
+                if type(对象) is not 线段特征:
+                    message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{对象.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} "
+
+                if type(对象) is 线段:
+                    message["overrides"]["text"] += f" 内部中枢数量:{len(对象.实_中枢序列)}"
+
+                if type(对象) is 线段特征:
+                    message["overrides"].update({"linecolor": "#F1C40F" if 对象.方向 is 相对方向.向下 else "#fbc02d", "linewidth": 4, "linestyle": 1})
+
+                if type(对象) is 中枢:
+                    del message["overrides"]["textcolor"]
+                    del message["overrides"]["linecolor"]
+                else:
+                    del message["overrides"]["textColor"]
+                    del message["overrides"]["backgroundColor"]
+                    del message["overrides"]["color"]
 
         if len(message) < 3:
             return
@@ -4525,6 +4421,27 @@ class 观察者:
                 实例.增加原始K线(k线)
 
         return 实例
+
+    def 将图表数据固化到本地(self, static_shapes):
+        template_path = "./templates/static.html"
+        # 初始化 Jinja2 环境，模板目录为当前目录
+        env = Environment(loader=FileSystemLoader(os.path.dirname(template_path) or "."))
+        template = env.get_template(os.path.basename(template_path))
+        resolution = 时间周期.找到最大可整除周期(self.周期)
+        static_data = {"bars": [[int(k.时间戳.timestamp()), k.开盘价, k.高, k.低, k.收盘价, k.成交量] for k in self.普通K线序列]}
+
+        for item in static_shapes:
+            if item.get("overrides") and item["overrides"].get("intervalsVisibilities"):
+                del item["overrides"]["intervalsVisibilities"]
+        # 渲染
+        rendered_html = template.render(static_data=static_data, static_shapes=static_shapes, symbol=self.符号, interval=resolution, chan_config=self.配置.to_dict())
+
+        output_file = "./new.html"
+        # 写入输出文件
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(rendered_html)
+
+        print(f"✅ 成功生成文件: {output_file}, 需要另行开启服务器 如 python -m http.server 8081")
 
 
 class 立体分析器:
@@ -4571,69 +4488,6 @@ class 立体分析器:
         self._单体分析器[周期].增加原始K线(k线)
         if 当前K线 := self._K线合成器.获取当前K线(周期):
             self._单体分析器[周期].增加原始K线(当前K线)
-
-    def 报信(self, 对象: Any, 命令: 指令, 行号) -> None:
-        if self.数据通道 is None or not self.配置.图表展示:
-            return
-
-        message = dict()
-
-        if type(对象) is K线:
-            message["type"] = "realtime"
-            message["timestamp"] = str(对象.时间戳)
-            message["open"] = 对象.开盘价
-            message["high"] = 对象.高
-            message["low"] = 对象.低
-            message["close"] = 对象.收盘价
-            message["volume"] = 对象.成交量
-
-        if type(对象) is 买卖点:
-            message.update(图表配色.点(对象, 命令))
-
-        if type(对象) is 笔 and self.配置.推送笔:
-            message.update(图表配色.线(对象, 命令, self.周期))
-
-        if type(对象) is 线段 and self.配置.推送线段:
-            if 对象.标识 == "线段" and self.配置.图表展示_线段:
-                message.update(图表配色.线(对象, 命令, self.周期))
-            if 对象.标识 == "扩展线段" and self.配置.图表展示_扩展线段:
-                message.update(图表配色.线(对象, 命令, self.周期))
-            if 对象.标识 == "扩展线段<线段>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期))
-            if 对象.标识 == "线段<线段>" and self.配置.图表展示_线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期))
-
-            if 对象.标识 == "扩展线段<扩展线段>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.线(对象, 命令, self.周期))
-
-        if type(对象) is 线段特征:
-            message.update(图表配色.线(对象, 命令, self.周期))
-
-        if type(对象) is 中枢 and self.配置.推送中枢:
-            if 对象.标识 == "中枢<笔>" and self.配置.图表展示_中枢_笔:
-                message.update(图表配色.面(对象, 命令, self.周期))
-            if 对象.标识 == "中枢<线段>" and self.配置.图表展示_中枢_线段:
-                message.update(图表配色.面(对象, 命令, self.周期))
-            if 对象.标识 == "中枢<扩展线段>" and self.配置.图表展示_中枢_扩展线段:
-                message.update(图表配色.面(对象, 命令, self.周期))
-            if 对象.标识 == "中枢<扩展线段<线段>>" and self.配置.图表展示_中枢_扩展线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期))
-            if 对象.标识 == "中枢<线段<线段>>" and self.配置.图表展示_中枢_线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期))
-
-            if 对象.标识 == "中枢<扩展线段<扩展线段>>" and self.配置.图表展示_扩展线段_线段:
-                message.update(图表配色.面(对象, 命令, self.周期))
-
-            if "_" in 对象.标识 and self.配置.图表展示_中枢_线段内部:
-                message.update(图表配色.面(对象, 命令, self.周期))
-
-        if len(message) < 3:
-            return
-
-        if self.数据通道 is not None and self.配置.图表展示 and self.数据通道.client_state.value == 1:
-            asyncio.set_event_loop(self.当前事件循环)
-            asyncio.ensure_future(self.数据通道.send_text(json.dumps(message)))
-        return
 
 
 class Bitstamp(观察者):
@@ -5347,7 +5201,6 @@ class 代码执行器:
                 "分型": 分型,
                 "分型结构": 分型结构,
                 "回测": 回测,
-                "图表配色": 图表配色,
                 "基础买卖点": 基础买卖点,
                 "平滑异同移动平均线": 平滑异同移动平均线,
                 "指令": 指令,
@@ -5366,8 +5219,11 @@ class 代码执行器:
                 "随机指标": 随机指标,
                 "高级策略基类": 高级策略基类,
                 "图表展示序列": 图表展示序列,
+                "缠论K线": 缠论K线,
+                "K线": K线,
             }
         )
+        self.安全内置函数.update({k: globals().get(k) for k in dir(globals()) if k[0] != "_"})
         # 初始化命名空间
         self.重置()
 
@@ -5616,7 +5472,6 @@ async def 全局消息分发器(websocket: WebSocket, user_id: str):
 
 async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: WebSocket):
     """处理图表消息"""
-    print(消息字典)
     消息类型 = 消息字典.get("type", "")
 
     if 消息类型 == "ready":
@@ -5781,6 +5636,15 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
                 "timestamp": datetime.now().isoformat(),
             },
         )
+
+    elif 消息类型 == "sync_shape_overrides":
+        shapes_data = 消息字典["data"]
+        观察员: 观察者 = 全局连接管理器.获取图表观察员(用户标识)
+        if 观察员:
+            观察员.将图表数据固化到本地(shapes_data)
+            await 全局连接管理器.发送信息(用户标识, {"type": "sync_response", "status": "received", "count": len(shapes_data)})
+        else:
+            print(f"[sync_shape_overrides] 用户 {用户标识} 没有分析器！")
 
     elif 消息类型 == "ping":
         await 全局连接管理器.发送信息(用户标识, {"type": "pong", "timestamp": datetime.now().isoformat()})

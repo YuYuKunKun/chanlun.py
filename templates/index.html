@@ -3,12 +3,12 @@
 <head>
     <title>TradingView Chart with Python Terminal</title>
     <meta charset="utf-8" name="viewport" content=
-    "width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
+            "width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0">
 
     <script type="text/javascript" src=
-    "{{url_for('charting_library',path='/charting_library.standalone.js')}}"></script>
+            "{{url_for('charting_library',path='/charting_library.standalone.js')}}"></script>
     <link rel="stylesheet" href=
-    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+            "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <style>
         /* ----- 现代化全局重置 & 变量 ----- */
@@ -433,108 +433,65 @@
     </style>
 </head>
 <body>
-    <div class="split-container">
-        <!-- 左侧终端区域 -->
-        <div class="chart-area">
-            <div id="tv_chart_container"></div>
-        </div><!-- 可拖动分隔条 -->
-        <div class="splitter" id="splitter"></div><!-- 右侧图表区域 -->
-        <div class="terminal-sidebar" id="terminalSidebar">
-            <div class="terminal-container">
-                <div class="terminal-header">
-                    <div class="terminal-title">
-                        <span>🐍</span> Python 终端
-                    </div>
-                    <div class="terminal-controls">
-                        <button class="terminal-btn" onclick=
-                        "window.pythonWidget.clearCode()">清空</button>
-                        <button class="terminal-btn primary"
-                        onclick="window.pythonWidget.executeCode()"
-                        id="executeBtn">执行 (Ctrl+Enter)</button>
-                    </div>
+<div class="split-container">
+    <!-- 左侧终端区域 -->
+    <div class="chart-area">
+        <div id="tv_chart_container"></div>
+    </div><!-- 可拖动分隔条 -->
+    <div class="splitter" id="splitter"></div><!-- 右侧图表区域 -->
+    <div class="terminal-sidebar" id="terminalSidebar">
+        <div class="terminal-container">
+            <div class="terminal-header">
+                <div class="terminal-title">
+                    <span>🐍</span> Python 终端
                 </div>
-                <div class="terminal-code-area">
-                    <div style=
-                    "display: flex; align-items: center; margin-bottom: 4px;">
+                <div class="terminal-controls">
+                    <button class="terminal-btn" onclick=
+                            "window.pythonWidget.clearCode()">清空
+                    </button>
+                    <button class="terminal-btn primary"
+                            onclick="window.pythonWidget.executeCode()"
+                            id="executeBtn">执行 (Ctrl+Enter)
+                    </button>
+                </div>
+            </div>
+            <div class="terminal-code-area">
+                <div style=
+                             "display: flex; align-items: center; margin-bottom: 4px;">
                         <span class=
-                        "terminal-prompt">&gt;&gt;&gt;</span>
-                    </div>
-                    <textarea class="terminal-input" id="codeInput"
-                    placeholder="# 在这里输入Python代码..." spellcheck=
-                    "false"></textarea>
+                                      "terminal-prompt">&gt;&gt;&gt;</span>
                 </div>
-                <div class="examples-bar">
+                <textarea class="terminal-input" id="codeInput"
+                          placeholder="# 在这里输入Python代码..." spellcheck=
+                                  "false"></textarea>
+            </div>
+            <div class="examples-bar">
                     <span class="example-chip" onclick=
-                    "window.pythonWidget.loadExample('basic')">基础</span>
-                    <span class="example-chip" onclick=
-                    "window.pythonWidget.loadExample('chart')">图表分析</span>
-                    <span class="example-chip" onclick=
-                    "window.pythonWidget.loadExample('indicators')">
+                            "window.pythonWidget.loadExample('basic')">基础</span>
+                <span class="example-chip" onclick=
+                        "window.pythonWidget.loadExample('chart')">图表分析</span>
+                <span class="example-chip" onclick=
+                        "window.pythonWidget.loadExample('indicators')">
                     技术指标</span> <span class="example-chip" onclick=
                     "window.pythonWidget.loadExample('trend')">趋势分析</span>
-                </div>
-                <div class="terminal-output-area" id="outputArea">
-                    <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
-                </div>
-                <div class="terminal-status-bar">
-                    <div>
+            </div>
+            <div class="terminal-output-area" id="outputArea">
+                <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
+            </div>
+            <div class="terminal-status-bar">
+                <div>
                         <span class="status-dot" id=
-                        "statusDot"></span> <span id=
-                        "statusText">连接中...</span>
-                    </div>
-                    <div id="connectionInfo">
-                        Python 3.x
-                    </div>
+                                "statusDot"></span> <span id=
+                                                                  "statusText">连接中...</span>
+                </div>
+                <div id="connectionInfo">
+                    Python 3.x
                 </div>
             </div>
         </div>
     </div>
-    <script type="text/javascript">
-    // ============ 工具函数 ============
-    function hexToRgba(hex, alpha = 1) {
-        hex = hex.replace(/^#/, '');
-        let r = parseInt(hex.substring(0, 2), 16);
-        let g = parseInt(hex.substring(2, 4), 16);
-        let b = parseInt(hex.substring(4, 6), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-
-    function rgbaToHex(rgbaStr) {
-        const values = rgbaStr.match(/\d+(\.\d+)?/g).map(Number);
-        const [r, g, b] = values.slice(0, 3);
-        const hex = ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
-        return `#${hex}`;
-    }
-
-    function invertAlphaToRgba(colorStr) {
-        const hexPattern = /^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
-        const rgbaPattern = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([0-9.]+)\s*)?\)$/i;
-
-        let r, g, b, alpha;
-
-        if (hexPattern.test(colorStr)) {
-            let hex = colorStr.slice(1);
-            if (hex.length === 3 || hex.length === 4) {
-                hex = hex.split('').map(c => c + c).join('');
-            }
-            r = parseInt(hex.substring(0, 2), 16);
-            g = parseInt(hex.substring(2, 4), 16);
-            b = parseInt(hex.substring(4, 6), 16);
-            alpha = hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1;
-        } else if (rgbaPattern.test(colorStr)) {
-            const matches = colorStr.match(rgbaPattern);
-            r = parseInt(matches[1], 10);
-            g = parseInt(matches[2], 10);
-            b = parseInt(matches[3], 10);
-            alpha = matches[4] !== undefined ? parseFloat(matches[4]) : 1;
-        } else {
-            throw new Error('不支持的格式，请输入 HEX 或 RGBA 颜色字符串');
-        }
-
-        let newAlpha = alpha === 0 ? 1 : 0;
-        return `rgba(${r}, ${g}, ${b}, ${newAlpha})`;
-    }
-
+</div>
+<script type="text/javascript">
     // ============ 配置 ============
     class Config {
         static get debug() {
@@ -938,6 +895,17 @@ print("=== 趋势分析 ===")
         }
     }
 
+    // 在 TradingViewManager 类外部或内部定义映射表
+    const SHAPE_MAP = {
+        LineToolTrendLine: {shape: 'trend_line', minPoints: 2},
+        LineToolRectangle: {shape: 'rectangle', minPoints: 2},
+        LineToolArrowMarkDown: {shape: 'arrow_down', minPoints: 1},
+        LineToolArrowMarkUp: {shape: 'arrow_up', minPoints: 1},
+        LineToolPath: {shape: 'path', minPoints: 2},
+        LineToolHorzLine: {shape: 'horizontal_line', minPoints: 1},
+        LineToolVertLine: {shape: 'vertical_line', minPoints: 1},
+        // 可根据需要添加更多...
+    };
 
     // ============ TradingView 图表管理器 ============
     class TradingViewManager {
@@ -950,6 +918,7 @@ print("=== 趋势分析 ===")
             this.websocketManager.on('chart', (message) => {
                 this.handleChartMessage(message);
             });
+            this._defaultPropertiesCache = {};  // { [toolName]: { key: value } }
         }
 
         initDataFeed() {
@@ -1108,7 +1077,7 @@ print("=== 趋势分析 ===")
                 switch (toolName) {
                     case "LineToolTrendLine":
                         shape.setProperties({showLabel: !properties.showLabel});
-                        shape.setProperties({textcolor: invertAlphaToRgba(properties.textcolor)});
+                        //shape.setProperties({textcolor: invertAlphaToRgba(properties.textcolor)});
                         this.websocketManager.sendChartMessage({
                             type: "query_by_index",
                             data_type: properties.title,
@@ -1117,7 +1086,7 @@ print("=== 趋势分析 ===")
                         break;
                     case "LineToolRectangle":
                         shape.setProperties({showLabel: !properties.showLabel});
-                        shape.setProperties({textColor: invertAlphaToRgba(properties.textColor)});
+                        //shape.setProperties({textColor: invertAlphaToRgba(properties.textColor)});
                         this.websocketManager.sendChartMessage({
                             type: "query_by_index",
                             data_type: properties.title,
@@ -1127,7 +1096,7 @@ print("=== 趋势分析 ===")
                     case "LineToolArrowMarkDown":
                     case "LineToolArrowMarkUp":
                         shape.setProperties({showLabel: !properties.showLabel});
-                        shape.setProperties({color: invertAlphaToRgba(properties.color)});
+                        //shape.setProperties({color: invertAlphaToRgba(properties.color)});
                         break;
                     case "LineToolPath":
                         this.websocketManager.sendChartMessage({
@@ -1166,11 +1135,11 @@ print("=== 趋势分析 ===")
                     break;
                 case 'shape':
                     if (message.cmd === "APPEND") {
-                        this.addShape(message.id, message.points, message.options, message.properties);
+                        this.addShape(message.id, message.points, message.name, message.overrides);
                     } else if (message.cmd === "REMOVE") {
                         this.removeShape(message.id);
                     } else if (message.cmd === "MODIFY") {
-                        this.updateShape(message.id, message.points, message.properties);
+                        this.updateShape(message.id, message.points, message.overrides);
                     }
                     break;
                 case 'query_result':
@@ -1185,7 +1154,16 @@ print("=== 趋势分析 ===")
             }
         }
 
-        async addShape(id, points, options, properties) {
+        async addShape(id, points, name, properties) {
+            const options = {
+                shape: name,
+                lock: false,
+                disableSelection: false,
+                disableSave: false,
+                disableUndo: true,
+                overrides: properties || {},
+                //zOrder: 'top',
+            };
             try {
                 if (!this.widget || !this.widget.chart) {
                     return;
@@ -1209,8 +1187,8 @@ print("=== 趋势分析 ===")
                 }
 
                 // 设置属性
-                Utils.log("shapeId:", shape.getProperties());
-                shape.setProperties(properties);
+                //Utils.log("shapeId:", shape.getProperties());
+                //shape.setProperties(properties);
                 shape.bringToFront();
 
                 // 保存映射
@@ -1305,6 +1283,84 @@ print("=== 趋势分析 ===")
             }
         }
 
+
+        async getDefaultsForTool(toolName, points) {
+            if (this._defaultPropertiesCache[toolName]) {
+                return this._defaultPropertiesCache[toolName];
+            }
+
+            const config = SHAPE_MAP[toolName];
+            if (!config) {
+                console.warn(`未映射的工具 ${toolName}，跳过默认属性获取`);
+                this._defaultPropertiesCache[toolName] = {};
+                return {};
+            }
+
+            const chart = this.widget.activeChart();
+            let shapeId = null;
+            this._fetchingDefaults = true;
+
+            try {
+                shapeId = await chart.createMultipointShape(points, {
+                    shape: config.shape,
+                    disableSave: true,
+                    disableUndo: true,
+                    overrides: {visible: false}
+                });
+
+                const shape = chart.getShapeById(shapeId);
+                if (shape) {
+                    this._defaultPropertiesCache[toolName] = {...shape.getProperties()};
+                    chart.removeEntity(shapeId, {disableUndo: true}); // 无需等待删除完成
+                }
+            } catch (error) {
+                console.error(`获取默认属性失败 (${toolName}):`, error);
+                this._defaultPropertiesCache[toolName] = {};
+            } finally {
+                this._fetchingDefaults = false;
+            }
+            return this._defaultPropertiesCache[toolName];
+        }
+
+        async syncShapeOverrides() {
+            if (!this.widget || !this.widget.activeChart()) return;
+
+            const chart = this.widget.activeChart();
+            const shapes = chart.getAllShapes();
+            const payloads = [];
+
+            for (const {name, id} of shapes) {
+                const shape = chart.getShapeById(id);
+                if (!shape) continue;
+
+                const toolName = shape._source.toolname;
+                // 获取（或从缓存）该工具的默认属性
+                const defaultProps = await this.getDefaultsForTool(toolName, shape.getPoints());
+                const currentProps = shape.getProperties();
+
+                const overrides = {};
+                for (const [key, value] of Object.entries(currentProps)) {
+                    // 只对比已缓存的字段，忽略未记录的属性（如内部生成的特殊字段）
+                    if (defaultProps.hasOwnProperty(key) && value !== defaultProps[key]) {
+                        overrides[key] = value;
+                    }
+                }
+
+                payloads.push({
+                    shapeType: SHAPE_MAP[toolName].shape,
+                    points: shape.getPoints().map(p => ({time: p.time, price: p.price})),
+                    overrides
+                });
+            }
+
+            if (payloads.length > 0) {
+                this.websocketManager.sendChartMessage({
+                    type: 'sync_shape_overrides',
+                    data: payloads
+                });
+            }
+        }
+
         createHeaderButtons() {
             const buttonConfigs = [
                 {
@@ -1323,7 +1379,8 @@ print("=== 趋势分析 ===")
                     text: "特征序列",
                     title: "显示隐藏特征序列",
                     handler: () => this.hideShapesByType("特征", "trend_line")
-                }
+                },
+                {text: "📤 固化至本地", title: "发送图形差异属性到服务器", handler: () => this.syncShapeOverrides()}
             ];
 
             buttonConfigs.forEach(config => {
@@ -1770,6 +1827,6 @@ print("=== 趋势分析 ===")
     window.addEventListener("DOMContentLoaded", () => {
         new App().init();
     });
-    </script>
+</script>
 </body>
 </html>

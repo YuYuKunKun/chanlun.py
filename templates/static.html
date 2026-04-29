@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>静态股票图表 (离线版)</title>
+    <style>
+        :root {
+            --bg: #1e1e2e;
+            --surface: #2a2a3e;
+            --border: #3a3a4e;
+            --text: #e0e0e0;
+            --accent: #4a9eff;
+            --green: #00c853;
+            --red: #ff1744;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        #chart-container {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+        }
+
+        #tv-chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg);
+            z-index: 20;
+            transition: opacity 0.4s;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .panel-header .title {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .panel-header .close-btn {
+            cursor: pointer;
+            font-size: 16px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .panel-header .close-btn:hover {
+            opacity: 1;
+        }
+
+        .panel-content .group {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .group-header .arrow {
+            margin-right: 6px;
+            transition: transform 0.2s;
+        }
+
+
+        .group.open .group-items {
+            display: block;
+        }
+
+        .group.open .arrow {
+            transform: rotate(90deg);
+        }
+
+        .item-row input[type="checkbox"] {
+            margin-right: 8px;
+            accent-color: var(--accent);
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+        }
+
+        .item-row label {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .panel-footer {
+            border-top: 1px solid var(--border);
+            padding: 8px 14px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .panel-footer button {
+            flex: 1;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .panel-footer button:hover {
+            background: var(--border);
+        }
+    </style>
+</head>
+<body>
+<div id="chart-container">
+    <div id="tv-chart"></div>
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+</div>
+
+<script>
+    let isFrist = true;
+    let shapesDrawn = new Set();
+    const symbol = "{{ symbol }}";
+    const interval = "{{ interval }}";
+    const chan_config = {{chan_config | tojson }};
+    const STATIC_DATA = {{ static_data | tojson }};
+    const STATIC_SHAPES = {{static_shapes | tojson}};
+
+    function createShape(shape) {
+        const chart = window._tvWidget?.activeChart();
+        if (!chart) return;
+        const shapePoints = shape.points.map(p => ({time: p.time, price: p.price}));
+        const options = {
+            shape: shape.shapeType, lock: false, disableSelection: false,
+            disableSave: false, disableUndo: true, overrides: shape.overrides || {}, zOrder: 'top',
+        };
+        try {
+            const result = chart.createMultipointShape(shapePoints, options);
+            if (!result) return;
+            if (typeof result === 'object' && typeof result.then === 'function') {
+                result.then(id => console.log('图形创建成功, ID:', id));
+            } else {
+                console.log('图形创建成功, ID:', result);
+            }
+        } catch (e) {
+            console.warn('创建图形失败:', e);
+        }
+    }
+
+    function shapeReady(shape, latestTimeMs) {
+        if (!shape.points || shape.points.length === 0) return false;
+        const maxTimeSec = Math.max(...shape.points.map(p => p.time));
+        return maxTimeSec * 1000 <= latestTimeMs;
+    }
+
+    function drawShapesUpTo(latestTime) {
+        STATIC_SHAPES.forEach((shape, idx) => {
+            if (!shapesDrawn.has(idx) && shapeReady(shape, latestTime)) {
+                createShape(shape);
+                shapesDrawn.add(idx);
+            }
+        });
+    }
+
+    class StaticDatafeed {
+        constructor() {
+            this._subscribers = {};
+            this._allBars = STATIC_DATA.bars;
+            this._pushIndex = 0;
+        }
+
+        onReady(callback) {
+            setTimeout(() => callback({
+                supports_search: false, supports_group_request: false,
+                supports_marks: false, supports_timescale_marks: true,
+                supports_time: true, supported_resolutions: [interval],
+            }), 0);
+        }
+
+        resolveSymbol(symbolName, onResolve, onError) {
+            const sym = symbolName.toUpperCase();
+            const symbolInfo = {
+                exchange: "exchange", ticker: symbol, name: symbol,
+                description: symbol, type: "Unknown", session: "24x7",
+                timezone: "Asia/Shanghai", minmov: 1, pricescale: 100,
+                visible_plots_set: "ohlcv", has_no_volume: false,
+                has_weekly_and_monthly: false, supported_resolutions: [interval],
+                volume_precision: 1, has_intraday: true, has_daily: true,
+                monthly_multipliers: [], weekly_multipliers: [], format: "price",
+            };
+            setTimeout(() => onResolve(symbolInfo), 0);
+        }
+
+        searchSymbols(userInput, exchange, symbolType, onResult) {
+        }
+
+        getBars(symbolInfo, resolution, periodParams, onResult, onError) {
+            console.log("[Datafeed.getBars]", symbolInfo, resolution, periodParams);
+            if (isFrist) {
+                const initialCount = Math.min(10, this._allBars.length);
+                const bars = this._allBars.slice(0, initialCount).map(([t, o, h, l, c, v]) => ({
+                    time: t * 1000, open: o, high: h, low: l, close: c, volume: v
+                }));
+                this._pushIndex = initialCount;
+                isFrist = false;
+                setTimeout(() => onResult(bars, {noData: false}), 0);
+            } else {
+                onResult([], {noData: true});
+            }
+        }
+
+        subscribeBars(symbolInfo, resolution, onTick, listenerGuid, onResetCacheNeededCallback) {
+            this.unsubscribeBars(listenerGuid);
+            const bars = this._allBars;
+            let idx = this._pushIndex;
+            if (idx > 0) {
+                const lastBar = bars[idx - 1];          // 最后一条已加载的K线
+                drawShapesUpTo(lastBar[0] * 1000);      // 转为毫秒
+            }
+            const sub = {};
+            sub.timerId = setInterval(() => {
+                if (idx >= bars.length) {
+                    clearInterval(sub.timerId);
+                    return;
+                }
+                const [t, o, h, l, c, v] = bars[idx];
+                const bar = {time: t * 1000, open: o, high: h, low: l, close: c, volume: v};
+                onTick(bar);
+                drawShapesUpTo(bar.time);
+                idx++;
+            }, 20);
+            this._subscribers[listenerGuid] = sub;
+        }
+
+        unsubscribeBars(listenerGuid) {
+            const sub = this._subscribers[listenerGuid];
+            if (sub && sub.timerId) clearInterval(sub.timerId);
+            delete this._subscribers[listenerGuid];
+        }
+
+        getServerTime(callback) {
+            setTimeout(() => callback(Math.floor(Date.now() / 1000)), 0);
+        }
+    }
+
+    // 创建静态图形的函数
+    function createStaticShapes(chart) {
+        STATIC_SHAPES.forEach(shape => {
+            const shapePoints = shape.points.map(p => ({
+                time: p.time,
+                price: p.price
+            }));
+            const options = {
+                shape: shape.shapeType,
+                lock: false,
+                disableSelection: false,
+                disableSave: false,
+                disableUndo: true,
+                overrides: shape.overrides || {},
+                zOrder: 'top',
+            };
+            try {
+                const result = chart.createMultipointShape(shapePoints, options);
+                if (result === null) return;
+                if (typeof result === 'object' && typeof result.then === 'function') {
+                    result.then(id => console.log('图形创建成功, ID:', id));
+                } else {
+                    console.log('图形创建成功, ID:', result);
+                }
+            } catch (e) {
+                console.warn('创建图形失败:', e);
+            }
+        });
+    }
+
+    // ====================== 图形控制面板 ======================
+    function formatPeriod(seconds) {
+        const map = {
+            60: '1分钟', 180: '3分钟', 300: '5分钟', 900: '15分钟', 1800: '30分钟',
+            3600: '1小时', 7200: '2小时', 14400: '4小时', 21600: '6小时',
+            43200: '12小时', 86400: '日线', 259200: '3日线'
+        };
+        return map[seconds] || `${seconds}秒`;
+    }
+
+    function setShapesVisibleByPeriod(rawType, periodSeconds, visible) {
+        if (!window._tvWidget || !window._tvWidget.activeChart()) return;
+        const allShapes = window._tvWidget.activeChart().getAllShapes();
+        allShapes.forEach(({id}) => {
+            const shape = window._tvWidget.activeChart().getShapeById(id);
+            if (!shape) return;
+            const props = shape.getProperties();
+            const title = props.title || '';
+            const parts = title.split(':');
+            if (parts.length < 3) return;
+            const [, periodStr, typeFromTitle] = parts;
+            const periodFromTitle = Number(periodStr);
+            if (typeFromTitle === rawType && periodFromTitle === periodSeconds) {
+                shape.setProperties({visible});
+            }
+        });
+    }
+
+    function isPeriodVisible(rawType, periodSeconds) {
+        if (!window._tvWidget || !window._tvWidget.activeChart()) return true;
+        const allShapes = window._tvWidget.activeChart().getAllShapes();
+        let hasAny = false;
+        for (const {id} of allShapes) {
+            const shape = window._tvWidget.activeChart().getShapeById(id);
+            if (!shape) continue;
+            const props = shape.getProperties();
+            const title = props.title || '';
+            const parts = title.split(':');
+            if (parts.length < 3) continue;
+            const [, periodStr, typeFromTitle] = parts;
+            const periodFromTitle = Number(periodStr);
+            if (typeFromTitle === rawType && periodFromTitle === periodSeconds) {
+                hasAny = true;
+                if (props.visible === false) return false;
+            }
+        }
+        return hasAny;
+    }
+
+    function setupCustomDropdown(triggerElement, widget) {
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+        position: absolute; z-index: 10000;
+        background: ${widget.getTheme() === 'dark' ? '#1e2532' : '#ffffff'};
+        border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        padding: 8px 0; min-width: 240px; max-height: 70vh; overflow-y: auto;
+        border: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
+        color: ${widget.getTheme() === 'dark' ? '#d1d9e6' : '#131722'};
+        font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
+        display: none;
+        backdrop-filter: blur(4px);
+    `;
+        document.body.appendChild(panel);
+
+        const refreshMenu = () => {
+            panel.innerHTML = '';
+            if (!window._tvWidget || !window._tvWidget.activeChart()) return;
+            const allShapes = window._tvWidget.activeChart().getAllShapes();
+
+            const typePeriods = {}; // { rawType -> Set of periods }
+
+            allShapes.forEach(({id}) => {
+                const shape = window._tvWidget.activeChart().getShapeById(id);
+                if (!shape) return;
+                const props = shape.getProperties();
+                const title = props.title || '';
+                const parts = title.split(':');
+                if (parts.length < 3) return;
+                const period = Number(parts[1]);
+                const rawType = parts[2];          // 直接使用第三段
+                if (!typePeriods[rawType]) typePeriods[rawType] = new Set();
+                typePeriods[rawType].add(period);
+            });
+
+            if (Object.keys(typePeriods).length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = '暂无图形数据';
+                empty.style.padding = '12px 16px';
+                empty.style.opacity = '0.7';
+                panel.appendChild(empty);
+                return;
+            }
+
+            // 为每个基础类型创建折叠组
+            Object.keys(typePeriods).sort().forEach(baseType => {
+                const section = document.createElement('div');
+                const header = document.createElement('div');
+                header.style.cssText = `
+                padding: 10px 16px; cursor: pointer; display: flex; align-items: center;
+                justify-content: space-between; user-select: none;
+                background: ${widget.getTheme() === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'};
+                border-bottom: 1px solid rgba(128,128,128,0.2);
+            `;
+                header.innerHTML = `<span style="font-weight:600;">${baseType}</span><span class="toggle-arrow" style="transition: transform 0.2s;">▼</span>`;
+                const content = document.createElement('div');
+                content.style.display = 'block';
+
+                header.addEventListener('click', () => {
+                    const arrow = header.querySelector('.toggle-arrow');
+                    if (content.style.display === 'none') {
+                        content.style.display = 'block';
+                        arrow.style.transform = 'rotate(0deg)';
+                    } else {
+                        content.style.display = 'none';
+                        arrow.style.transform = 'rotate(-90deg)';
+                    }
+                });
+
+                const periods = Array.from(typePeriods[baseType]).sort((a, b) => a - b);
+                periods.forEach(period => {
+                    const row = document.createElement('div');
+                    row.style.cssText = `
+                    padding: 6px 16px 6px 28px; display: flex; align-items: center;
+                    cursor: pointer; transition: background 0.15s;
+                `;
+                    row.addEventListener('mouseenter', () => row.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
+                    row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = isPeriodVisible(baseType, period);
+                    checkbox.style.cssText = `
+                    margin-right: 12px; accent-color: #2962ff;
+                    width: 16px; height: 16px; cursor: pointer;
+                `;
+
+                    const label = document.createElement('span');
+                    label.textContent = formatPeriod(period);
+                    label.style.flex = '1';
+
+                    row.appendChild(checkbox);
+                    row.appendChild(label);
+
+                    row.addEventListener('click', (e) => {
+                        if (e.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                        }
+                        setShapesVisibleByPeriod(baseType, period, checkbox.checked);
+                    });
+
+                    content.appendChild(row);
+                });
+
+                section.appendChild(header);
+                section.appendChild(content);
+                panel.appendChild(section);
+            });
+
+            // 底部全局控制按钮
+            const footer = document.createElement('div');
+            footer.style.cssText = `
+            border-top: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
+            padding: 8px 16px; display: flex; gap: 8px;
+        `;
+            const showAllBtn = document.createElement('button');
+            showAllBtn.textContent = '全部显示';
+            showAllBtn.style.cssText = `flex:1; padding: 4px; background: #2563eb; color:white; border:none; border-radius: 4px; cursor:pointer;`;
+            showAllBtn.addEventListener('click', () => {
+                Object.keys(typePeriods).forEach(baseType => {
+                    typePeriods[baseType].forEach(period => {
+                        setShapesVisibleByPeriod(baseType, period, true);
+                    });
+                });
+                refreshMenu();
+            });
+            const hideAllBtn = document.createElement('button');
+            hideAllBtn.textContent = '全部隐藏';
+            hideAllBtn.style.cssText = `flex:1; padding: 4px; background: #ef4444; color:white; border:none; border-radius: 4px; cursor:pointer;`;
+            hideAllBtn.addEventListener('click', () => {
+                Object.keys(typePeriods).forEach(baseType => {
+                    typePeriods[baseType].forEach(period => {
+                        setShapesVisibleByPeriod(baseType, period, false);
+                    });
+                });
+                refreshMenu();
+            });
+            footer.appendChild(showAllBtn);
+            footer.appendChild(hideAllBtn);
+            panel.appendChild(footer);
+        };
+
+        const showPanel = () => {
+            refreshMenu();
+            panel.style.display = 'block';
+            const rect = triggerElement.getBoundingClientRect();
+            // 等待 layout 完成以获取正确的 panel 宽度
+            requestAnimationFrame(() => {
+                const panelWidth = panel.offsetWidth;
+                let left = rect.right - panelWidth;
+                if (left < 0) left = 5;
+                panel.style.top = `${rect.bottom + 4}px`;
+                panel.style.left = `${left}px`;
+            });
+        };
+        const hidePanel = () => {
+            panel.style.display = 'none';
+        };
+
+        triggerElement.addEventListener('click', (e) => {
+            e.stopPropagation();
+            panel.style.display === 'block' ? hidePanel() : showPanel();
+        });
+        document.addEventListener('click', (e) => {
+            if (!panel.contains(e.target) && e.target !== triggerElement) hidePanel();
+        });
+        window.addEventListener('resize', () => {
+            if (panel.style.display === 'block') showPanel();
+        });
+
+        // 保存引用以便外部强制刷新
+        this.refreshDropdown = refreshMenu;
+    }
+
+    function createButton() {
+        // 创建自定义按钮（注意：useTradingViewStyle 省略或设为 false）
+        const customBtn = window._tvWidget.createButton({
+            align: 'right' // 可选 'left' 或 'right'
+        });
+
+        // 设置按钮内容与样式
+        customBtn.innerHTML = `⚙️ 图表工具`;
+        customBtn.style.cssText = `
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                height: 32px;
+                padding: 0 12px;
+                margin: 0 4px;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 500;
+                color: ${window._tvWidget.getTheme() === 'dark' ? '#d1d4dc' : '#131722'};
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                transition: background 0.2s, color 0.2s;
+                font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+                user-select: none;
+            `;
+
+        customBtn.addEventListener('mouseenter', () => {
+            customBtn.style.background = window._tvWidget.getTheme() === 'dark'
+                    ? 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(0, 0, 0, 0.05)';
+        });
+        customBtn.addEventListener('mouseleave', () => {
+            customBtn.style.background = 'transparent';
+        });
+
+        // 现在你可以安全地使用 customBtn 作为触发器
+        this.setupCustomDropdown(customBtn, window._tvWidget);
+    }
+
+    function initChart() {
+        if (typeof TradingView === 'undefined') {
+            document.getElementById('tv-chart').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;">请将 charting_library 放在同级目录</div>';
+            document.getElementById('loading-overlay').classList.add('hidden');
+            return;
+        }
+
+        const widget = new TradingView.widget({
+            container: 'tv-chart', library_path: 'charting_library/', locale: 'zh',
+            datafeed: new StaticDatafeed(), symbol, interval,
+            favorites: {drawingTools: ["LineToolPath", "LineToolRectangle", "LineToolTrendLine"]},
+            disabled_features: [
+                "use_localstorage_for_settings", "header_symbol_search",
+                "header_undo_redo", "header_screenshot", "header_compare",
+                "header_chart_type", "go_to_date",
+            ],
+            theme: 'dark', fullscreen: false, autosize: true, toolbar_bg: '#2a2a3e',
+            overrides: {
+                'paneProperties.background': '#1e1e2e',
+                'mainSeriesProperties.candleStyle.upColor': '#00c853',
+                'mainSeriesProperties.candleStyle.downColor': '#ff1744',
+            }
+        });
+        window._tvWidget = widget;
+
+        widget.onChartReady(() => {
+            document.getElementById('loading-overlay').classList.add('hidden');
+            console.log('✅ 开始实时回放');
+        });
+
+        widget.headerReady().then(() => {
+            widget.activeChart().createStudy("MACD", false, false, {
+                in_0: 13, in_1: 31, in_2: 11, in_3: "close"
+            });
+            createButton();
+        });
+    }
+
+    window.addEventListener('DOMContentLoaded', initChart);
+</script>
+<script src="charting_library/charting_library.js"></script>
+</body>
+</html>
