@@ -5,145 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>静态股票图表 (离线版)</title>
     <style>
-        :root {
-            --bg: #1e1e2e;
-            --surface: #2a2a3e;
-            --border: #3a3a4e;
-            --text: #e0e0e0;
-            --accent: #4a9eff;
-            --green: #00c853;
-            --red: #ff1744;
-        }
-
-        * {
+        html, body {
+            height: 100%;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .spacer {
-            flex: 1;
-        }
-
-        #chart-container {
-            flex: 1;
-            position: relative;
-            min-height: 0;
-        }
-
-        #tv-chart {
+        #chart-container, #tv-chart {
             width: 100%;
             height: 100%;
-        }
-
-        .loading-overlay {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg);
-            z-index: 20;
-            transition: opacity 0.4s;
-        }
-
-        .loading-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .panel-header .title {
-            font-weight: 600;
-            color: var(--text);
-        }
-
-        .panel-header .close-btn {
-            cursor: pointer;
-            font-size: 16px;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-        }
-
-        .panel-header .close-btn:hover {
-            opacity: 1;
-        }
-
-        .panel-content .group {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .group-header .arrow {
-            margin-right: 6px;
-            transition: transform 0.2s;
-        }
-
-
-        .group.open .group-items {
-            display: block;
-        }
-
-        .group.open .arrow {
-            transform: rotate(90deg);
-        }
-
-        .item-row input[type="checkbox"] {
-            margin-right: 8px;
-            accent-color: var(--accent);
-            width: 15px;
-            height: 15px;
-            cursor: pointer;
-        }
-
-        .item-row label {
-            flex: 1;
-            cursor: pointer;
-        }
-
-        .panel-footer {
-            border-top: 1px solid var(--border);
-            padding: 8px 14px;
-            display: flex;
-            gap: 8px;
-        }
-
-        .panel-footer button {
-            flex: 1;
-            padding: 4px 8px;
-            border-radius: 4px;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            color: var(--text);
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .panel-footer button:hover {
-            background: var(--border);
         }
     </style>
 </head>
@@ -160,9 +30,9 @@
     let shapesDrawn = new Set();
     const symbol = "{{ symbol }}";
     const interval = "{{ interval }}";
-    const chan_config = {{chan_config | tojson }};
+    const chan_config = {{ chan_config | tojson }};
     const STATIC_DATA = {{ static_data | tojson }};
-    const STATIC_SHAPES = {{static_shapes | tojson}};
+    const STATIC_SHAPES = {{ static_shapes | tojson }};
 
     function createShape(shape) {
         const chart = window._tvWidget?.activeChart();
@@ -590,11 +460,13 @@
                 "header_undo_redo", "header_screenshot", "header_compare",
                 "header_chart_type", "go_to_date",
             ],
-            theme: 'dark', fullscreen: false, autosize: true, toolbar_bg: '#2a2a3e',
+            theme: "light",
+            fullscreen: false, autosize: true,
+            //toolbar_bg: '#2a2a3e',
             overrides: {
-                'paneProperties.background': '#1e1e2e',
-                'mainSeriesProperties.candleStyle.upColor': '#00c853',
-                'mainSeriesProperties.candleStyle.downColor': '#ff1744',
+                //'paneProperties.background': '#1e1e2e',
+                //'mainSeriesProperties.candleStyle.upColor': '#00c853',
+                //'mainSeriesProperties.candleStyle.downColor': '#ff1744',
             }
         });
         window._tvWidget = widget;
