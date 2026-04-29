@@ -3561,7 +3561,7 @@ class 线段(object):
 
         def _添加线段(待添加线段: "线段", 行号):
             if 线段序列 and not 线段序列[-1].之后是(待添加线段):
-                raise ValueError(f"线段.向序列中添加 不连续[{行号}]", 线段序列[-1].武, 待添加线段.文)
+                raise ValueError(f"{线段序列[-1].标识}.向序列中添加 不连续[{行号}]", 线段序列[-1].武, 待添加线段.文)
 
             待添加线段.模式 = "高低"
             待添加线段.标识 = f"扩展{待添加线段.标识}" if type(待添加线段[0]) is not 笔 else "扩展线段"
@@ -3613,6 +3613,7 @@ class 线段(object):
                 _弹出线段(当前线段, sys._getframe().f_lineno)
                 return 线段递归扩展分析(虚线序列, 线段序列, 配置)
 
+        当前线段._武终(sys._getframe().f_lineno)
         if 当前线段[-1].序号 + 3 > 虚线序列[-1].序号:
             return None
 
@@ -3975,7 +3976,7 @@ class 中枢(list):
 class 观察者:
     # thread: Any = None
     # queue: Any = asyncio.Queue()
-    当前事件循环: Any = None if __name__ == "__main__" else asyncio.get_event_loop()
+    当前事件循环: Any = None  # if __name__ == "__main__" else asyncio.get_event_loop()
     延迟时间: float = 0.01
 
     def __init__(self, 符号: str, 周期: int, 数据通道: Optional[WebSocket], 配置: 缠论配置, 数据队列: Optional[queue.Queue] = None):
@@ -4417,9 +4418,17 @@ class 观察者:
     @classmethod
     def 读取数据文件(cls, 文件路径: str, ws=None, 配置=缠论配置()) -> Self:
         # btcusd-300-1631772074-1632222374.nb
+        if "_err-" in str(文件路径):
+            try:
+                配置 = 缠论配置.加载配置(str(文件路径).replace(".nb", ".json"))
+                print("加载异常配置")
+            except:
+                pass
+
         name = Path(文件路径).name.split(".")[0]
         符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
         实例 = cls(符号=符号, 周期=int(周期), 数据通道=ws, 配置=配置)
+
         with open(文件路径, "rb") as f:
             buffer = f.read()
             size = struct.calcsize(">6d")
@@ -5828,6 +5837,7 @@ async def 主页(
     generator: str = "True",
 ):
     """主页面"""
+    观察者.当前事件循环 = asyncio.get_event_loop()
     resolutions = {
         60: "1",
         180: "3",
