@@ -70,7 +70,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from humanfriendly.terminal import message
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
 from termcolor import colored
 
