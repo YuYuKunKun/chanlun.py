@@ -4126,25 +4126,7 @@ class 观察者:
         if self.分型序列[-1].强度 not in "强中":
             pass
 
-        if 笔内部背驰判断(self.普通K线序列, self.笔序列[-1]):
-            self.添加买卖点("笔", self.笔序列[-1].武, "一", "次次级")
 
-        if not self.线段序列:
-            return
-
-        if 笔内部背驰判断(self.普通K线序列, self.线段序列[-1]):
-            0 and self.添加买卖点("笔", self.线段序列[-1].武, "一", "次级")
-
-        if 线段背驰判断(self.普通K线序列, self.线段序列[-1]):
-            self.添加买卖点("线段", self.线段序列[-1].武, "一", "次级")
-
-        if not self.线段_线段序列:
-            return
-
-        if 笔内部背驰判断(self.普通K线序列, self.线段_线段序列[-1]):
-            self.添加买卖点("笔", self.线段_线段序列[-1].武, "一", "本级")
-
-        return
         if len(self.笔序列) >= 3 and self.线段序列 and self.笔序列[-1].武 is self.线段序列[-1].武 and self.线段序列[-1].实_中枢序列:
             进入段, 离开段 = self.笔序列[-3], self.笔序列[-1]
             方向 = 相对方向.分析(进入段.高, 进入段.低, 离开段.高, 离开段.低)
@@ -4380,8 +4362,6 @@ class 观察者:
                     "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                     "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                 }
-                if type(对象) is 笔:
-                    message["overrides"]["text"] += " " + str(笔内部背驰判断(self.普通K线序列, 对象))
 
                 if type(对象) is not 线段特征:
                     message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{对象.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} "
@@ -4500,8 +4480,6 @@ class 观察者:
                         "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                         "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
                     }
-                    if type(对象) is 笔:
-                        message["overrides"]["text"] += " " + str(笔内部背驰判断(self.普通K线序列, 对象))
 
                     if type(对象) is not 线段特征:
                         message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{对象.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} "
