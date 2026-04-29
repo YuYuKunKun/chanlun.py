@@ -2594,7 +2594,7 @@ class 笔(object):
         if 配置.笔内起始分型包含整笔:
             有效序列 = [k线 for k线 in (self.文.左, self.文.中, self.文.右) if k线 is not None]
             文 = 缺口(max(有效序列, key=lambda k: k.高).高, min(有效序列, key=lambda k: k.低).低)
-            有效序列 = [k线 for k线 in (self.武.左, self.武.中) if k线 is not None] # 排除 右
+            有效序列 = [k线 for k线 in (self.武.左, self.武.中) if k线 is not None]  # 排除 右
             武 = 缺口(max(有效序列, key=lambda k: k.高).高, min(有效序列, key=lambda k: k.低).低)
             相对关系 = 相对方向.分析(文.高, 文.低, 武.高, 武.低)
         else:
@@ -3605,8 +3605,13 @@ class 线段(object):
             return 线段递归扩展分析(虚线序列, 线段序列, 配置)
 
         if not 配置.扩展线段_当下分析:
-            当前线段[:] = 当前线段[:3]
-            当前线段._武终(sys._getframe().f_lineno)
+            左, 中, 右 = 当前线段[:3]
+            if not 相对方向.分析(左.高, 左.低, 右.高, 右.低).是否缺口():
+                当前线段[:] = 当前线段[:3]
+                当前线段._武终(sys._getframe().f_lineno)
+            else:
+                _弹出线段(当前线段, sys._getframe().f_lineno)
+                return 线段递归扩展分析(虚线序列, 线段序列, 配置)
 
         if 当前线段[-1].序号 + 3 > 虚线序列[-1].序号:
             return None
