@@ -11,7 +11,7 @@
             "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <style>
-        /* ----- 现代化全局重置 & 变量 ----- */
+        /* 全局重置 */
         * {
             margin: 0;
             padding: 0;
@@ -26,270 +26,264 @@
             background: #0b0e14;
         }
 
-        /* 等宽字体用于代码 */
-        .terminal-input, .output-line, .terminal-prompt, .example-chip {
-            font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', 'Courier New', monospace;
-        }
-
-        /* 分割容器 — 现代化渐变背景 */
-        .split-container {
-            display: flex;
+        .chart-area {
             width: 100%;
             height: 100%;
-            position: relative;
-            background: radial-gradient(circle at 20% 30%, #1a1f2b, #0f131a);
-        }
-
-        /* ----- 图表区域 (左侧) ----- */
-        .chart-area {
-            flex: 1;
-            height: 100%;
-            position: relative;
             background: #131821;
-            border-radius: 0 20px 20px 0;
             overflow: hidden;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 30px rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(2px);
-            margin: 8px 0 8px 8px;
-            transition: box-shadow 0.3s ease;
-        }
-
-        .chart-area:hover {
-            box-shadow: inset 0 0 0 1px rgba(100, 150, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.7);
         }
 
         #tv_chart_container {
             width: 100%;
             height: 100%;
-            border-radius: inherit;
         }
 
-        /* ----- 右侧终端 — 毛玻璃 + 现代卡片 ----- */
-        .terminal-sidebar {
-            width: 420px;
-            min-width: 240px;
-            max-width: 850px;
-            height: 100%;
-            background: rgba(18, 25, 35, 0.85);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
+        /* ----- Python 浮动面板样式 (主题自适应，修复深色文字可见性) ----- */
+        .python-panel {
+            position: fixed;
+            z-index: 20000;
+            width: 560px;
+            max-width: 85vw;
+            height: 640px;
+            max-height: 80vh;
+            border-radius: 24px;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            border-left: 1px solid rgba(72, 120, 255, 0.2);
-            box-shadow: -5px 0 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
-            margin: 8px 8px 8px 0;
-            border-radius: 20px;
-            transition: all 0.2s;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+            font-family: inherit;
         }
 
-        /* 分隔条 — 极简科幻 */
-        .splitter {
-            width: 6px;
-            height: 100%;
-            background: transparent;
-            cursor: col-resize;
-            z-index: 25;
-            position: relative;
-            transition: background 0.2s;
-            margin: 8px 0;
+        .python-panel.dark-theme {
+            background: rgba(18, 25, 35, 0.96);
+            backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(72, 120, 255, 0.5);
+            box-shadow: 0 25px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            color: #e2e9ff; /* 基础文字颜色亮色 */
         }
 
-        .splitter::after {
-            content: '';
-            position: absolute;
-            top: 10%;
-            left: 2px;
-            width: 2px;
-            height: 80%;
-            background: rgba(120, 160, 255, 0.2);
-            border-radius: 2px;
-            transition: all 0.2s;
+        .python-panel.light-theme {
+            background: rgba(245, 248, 250, 0.96);
+            backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(41, 98, 255, 0.3);
+            box-shadow: 0 25px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.5);
+            color: #1e293b;
         }
 
-        .splitter:hover::after,
-        .splitter.active::after {
-            background: #3b82f6;
-            box-shadow: 0 0 12px #3b82f6;
-            width: 3px;
-            left: 1.5px;
-        }
-
-        /* ----- 终端内部组件 ----- */
-        .terminal-container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            background: transparent;
-            color: #e3e9f5;
-        }
-
-        .terminal-header {
-            padding: 16px 18px 12px;
-            background: transparent;
-            border-bottom: 1px solid rgba(100, 150, 255, 0.18);
+        .python-panel-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            backdrop-filter: blur(5px);
+            cursor: grab;
+            user-select: none;
         }
 
-        .terminal-title {
+        .dark-theme .python-panel-header {
+            background: rgba(12, 20, 30, 0.85);
+            border-bottom-color: rgba(100, 150, 255, 0.35);
+        }
+
+        .light-theme .python-panel-header {
+            background: rgba(240, 245, 250, 0.85);
+            border-bottom-color: rgba(41, 98, 255, 0.2);
+        }
+
+        .panel-title {
             display: flex;
             align-items: center;
             gap: 10px;
-            font-weight: 500;
-            letter-spacing: 0.3px;
+            font-weight: 600;
+            font-size: 15px;
         }
 
-        .terminal-title i {
-            color: #3b82f6;
-            font-size: 20px;
-            filter: drop-shadow(0 0 6px #3b82f680);
-        }
-
-        .terminal-title span {
+        .dark-theme .panel-title {
             background: linear-gradient(135deg, #a0c0ff, #6ea8fe);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            font-weight: 600;
         }
 
-        .terminal-controls {
-            display: flex;
-            gap: 10px;
+        .light-theme .panel-title {
+            background: linear-gradient(135deg, #1e4bd2, #3b82f6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
-        .terminal-btn {
-            background: rgba(40, 55, 80, 0.6);
-            color: #d0e0ff;
-            border: 0.5px solid rgba(100, 160, 255, 0.25);
+        .panel-title i {
+            font-size: 18px;
+            background: none;
+            -webkit-background-clip: unset;
+        }
+
+        .dark-theme .panel-title i {
+            color: #3b82f6;
+        }
+
+        .light-theme .panel-title i {
+            color: #2962ff;
+        }
+
+        .panel-close {
             border-radius: 30px;
-            padding: 6px 16px;
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 500;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
-            backdrop-filter: blur(5px);
-            transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s;
         }
 
-        .terminal-btn:hover {
-            background: rgba(60, 90, 140, 0.7);
-            border-color: #3b82f6;
+        .dark-theme .panel-close {
+            background: rgba(40, 55, 80, 0.8);
+            color: #cbd5ff;
+        }
+
+        .light-theme .panel-close {
+            background: rgba(220, 230, 245, 0.8);
+            color: #2c3e66;
+        }
+
+        .panel-close:hover {
+            background: #dc2626;
             color: white;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-            transform: translateY(-1px);
         }
 
-        .terminal-btn.primary {
-            background: linear-gradient(145deg, #1e4bd2, #3b82f6);
-            border: none;
-            color: white;
-            box-shadow: 0 4px 12px #1e4bd280;
-        }
-
-        .terminal-btn.primary:hover {
-            background: linear-gradient(145deg, #2563eb, #6094fa);
-            box-shadow: 0 6px 16px #3b82f6b3;
-        }
-
-        /* 代码编辑区 — 类IDE */
         .terminal-code-area {
             flex: 1;
-            padding: 18px 16px;
-            background: rgba(8, 14, 22, 0.4);
-            border-bottom: 1px solid rgba(72, 120, 255, 0.15);
+            padding: 16px;
             display: flex;
             flex-direction: column;
+            min-height: 0;
+        }
+
+        .dark-theme .terminal-code-area {
+            background: rgba(8, 14, 22, 0.5);
+        }
+
+        .light-theme .terminal-code-area {
+            background: rgba(230, 240, 250, 0.5);
         }
 
         .terminal-prompt {
-            color: #6abf69;
-            margin-right: 10px;
-            user-select: none;
+            margin-bottom: 6px;
             font-weight: 600;
-            text-shadow: 0 0 8px #6abf6980;
+        }
+
+        .dark-theme .terminal-prompt {
+            color: #6abf69;
+        }
+
+        .light-theme .terminal-prompt {
+            color: #2b7e2e;
         }
 
         .terminal-input {
             width: 100%;
             flex: 1;
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(100, 160, 255, 0.2);
-            border-radius: 14px;
-            color: #e2e9ff;
-            font-size: 14px;
-            line-height: 1.6;
+            border-radius: 16px;
+            font-size: 13px;
+            line-height: 1.5;
             resize: none;
             outline: none;
-            padding: 16px;
-            tab-size: 4;
-            backdrop-filter: blur(5px);
-            transition: border 0.2s, box-shadow 0.2s;
-            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .dark-theme .terminal-input {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(100, 160, 255, 0.4);
+            color: #e2e9ff;
+        }
+
+        .dark-theme .terminal-input::placeholder {
+            color: #8aa0c0;
+        }
+
+        .light-theme .terminal-input {
+            background: white;
+            border: 1px solid #cbd5e1;
+            color: #1e293b;
+        }
+
+        .light-theme .terminal-input::placeholder {
+            color: #94a3b8;
         }
 
         .terminal-input:focus {
             border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), inset 0 2px 8px #0000004d;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
         }
 
-        .terminal-input::placeholder {
-            color: #6f85a0;
-            font-style: italic;
-            opacity: 0.7;
-        }
-
-        /* 示例chips — 胶囊标签 */
         .examples-bar {
-            padding: 12px 16px;
-            background: rgba(10, 18, 28, 0.5);
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px 16px;
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
         }
 
+        .dark-theme .examples-bar {
+            background: rgba(10, 18, 28, 0.7);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .light-theme .examples-bar {
+            background: rgba(230, 240, 250, 0.6);
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
         .example-chip {
             padding: 5px 14px;
-            background: rgba(30, 45, 70, 0.6);
-            border: 0.5px solid rgba(80, 140, 255, 0.3);
             border-radius: 40px;
-            color: #b4ccff;
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
-            backdrop-filter: blur(8px);
-            transition: all 0.15s;
-            box-shadow: 0 2px 6px #0000001a;
+            transition: 0.15s;
+        }
+
+        .dark-theme .example-chip {
+            background: rgba(30, 45, 70, 0.8);
+            border: 0.5px solid rgba(80, 140, 255, 0.5);
+            color: #b4ccff;
+        }
+
+        .light-theme .example-chip {
+            background: rgba(220, 230, 245, 0.9);
+            border: 0.5px solid rgba(41, 98, 255, 0.3);
+            color: #1e3a8a;
         }
 
         .example-chip:hover {
             background: #2e4a8e;
-            border-color: #3b82f6;
             color: white;
             transform: scale(1.02);
-            box-shadow: 0 4px 10px #1e3a8a80;
         }
 
-        /* 输出区域 — 类终端历史 */
         .terminal-output-area {
-            height: 220px;
-            background: rgba(4, 10, 18, 0.7);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid #2a3a55;
+            height: 210px;
             overflow-y: auto;
-            padding: 12px 16px;
-            font-size: 13px;
-            scroll-behavior: smooth;
+            padding: 12px 14px;
+            font-size: 12px;
         }
 
-        /* 自定义滚动条 */
+        .dark-theme .terminal-output-area {
+            background: rgba(4, 10, 18, 0.75);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid #2a3a55;
+            color: #e2e9ff; /* 确保输出文字明亮 */
+        }
+
+        .light-theme .terminal-output-area {
+            background: rgba(240, 248, 255, 0.8);
+            border-top: 1px solid #d4dcec;
+            color: #1e293b;
+        }
+
         .terminal-output-area::-webkit-scrollbar {
-            width: 6px;
+            width: 5px;
         }
 
         .terminal-output-area::-webkit-scrollbar-track {
@@ -303,194 +297,135 @@
 
         .output-line {
             margin: 6px 0;
-            padding: 8px 12px;
+            padding: 6px 12px;
             border-radius: 10px;
-            background: rgba(20, 30, 45, 0.4);
-            backdrop-filter: blur(5px);
             border-left: 4px solid;
             white-space: pre-wrap;
             word-break: break-word;
-            transition: background 0.15s;
-            box-shadow: 0 1px 3px #0000001a;
+        }
+
+        .dark-theme .output-line {
+            background: rgba(20, 30, 45, 0.5);
+            color: inherit;
+        }
+
+        .light-theme .output-line {
+            background: rgba(255, 255, 255, 0.7);
+            color: inherit;
         }
 
         .output-line.success {
             border-left-color: #10b981;
-            background: rgba(16, 185, 129, 0.08);
         }
 
         .output-line.error {
             border-left-color: #f43f5e;
-            background: rgba(244, 63, 94, 0.08);
         }
 
         .output-line.info {
             border-left-color: #3b82f6;
-            background: rgba(59, 130, 246, 0.08);
         }
 
-        .output-line.warning {
-            border-left-color: #fbbf24;
-            background: rgba(251, 191, 36, 0.08);
-        }
-
-        /* 状态栏 — 极简状态 */
         .terminal-status-bar {
-            padding: 10px 18px;
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid #2a3a55;
-            font-size: 12px;
-            color: #9ab3d0;
+            padding: 8px 16px;
+            font-size: 11px;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+        }
+
+        .dark-theme .terminal-status-bar {
+            background: rgba(0, 0, 0, 0.4);
+            border-top: 1px solid #2a3a55;
+            color: #9ab3d0;
+        }
+
+        .light-theme .terminal-status-bar {
+            background: rgba(230, 240, 250, 0.7);
+            border-top: 1px solid #d1d9e6;
+            color: #334155;
         }
 
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 9px;
+            height: 9px;
             border-radius: 10px;
-            background: #f87171;
             display: inline-block;
-            margin-right: 8px;
+            margin-right: 6px;
             box-shadow: 0 0 6px currentColor;
-            transition: all 0.3s;
         }
 
         .status-dot.connected {
             background: #10b981;
             box-shadow: 0 0 12px #10b981;
-            animation: pulse-glow 2s infinite;
+            animation: pulse-glow 1.8s infinite;
+        }
+
+        .status-dot.disconnected {
+            background: #f87171;
         }
 
         @keyframes pulse-glow {
             0% {
-                opacity: 0.9;
+                opacity: 0.8;
                 box-shadow: 0 0 5px #10b981;
-            }
-            50% {
-                opacity: 1;
-                box-shadow: 0 0 16px #34d399;
             }
             100% {
-                opacity: 0.9;
-                box-shadow: 0 0 5px #10b981;
+                opacity: 1;
+                box-shadow: 0 0 14px #34d399;
             }
         }
 
-        #connectionInfo {
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .terminal-btn {
+            border-radius: 30px;
+            padding: 4px 14px;
+            font-size: 12px;
             font-weight: 500;
-            background: #1e2b41;
-            padding: 2px 12px;
-            border-radius: 40px;
-            color: #b9d1ff;
+            cursor: pointer;
+            transition: 0.2s;
         }
 
-        /* 响应式 — 移动端优化 */
-        @media (max-width: 800px) {
-            .split-container {
-                flex-direction: column;
-            }
-
-            .chart-area {
-                margin: 8px 8px 0 8px;
-                border-radius: 20px 20px 0 0;
-                height: 55%;
-            }
-
-            .terminal-sidebar {
-                width: 100% !important;
-                max-width: 100%;
-                height: 45%;
-                margin: 0 8px 8px 8px;
-                border-radius: 0 0 20px 20px;
-                border-left: none;
-                border-top: 1px solid rgba(72, 120, 255, 0.25);
-            }
-
-            .splitter {
-                width: 100%;
-                height: 6px;
-                cursor: row-resize;
-                margin: 0;
-            }
-
-            .splitter::after {
-                top: 2px;
-                left: 10%;
-                width: 80%;
-                height: 2px;
-            }
+        .dark-theme .terminal-btn {
+            background: rgba(40, 55, 80, 0.9);
+            color: #d0e0ff;
+            border: 0.5px solid rgba(100, 160, 255, 0.5);
         }
 
-        /* 辅助 — 隐藏原始内联样式中过时的部分（由新样式覆盖） */
-        .terminal-sidebar .terminal-container .terminal-header,
-        .terminal-sidebar .terminal-container .terminal-code-area {
-            background: transparent; /* 确保透明让毛玻璃透出 */
+        .light-theme .terminal-btn {
+            background: rgba(220, 230, 245, 0.9);
+            color: #1e2c4a;
+            border: 0.5px solid rgba(41, 98, 255, 0.3);
         }
 
+        .terminal-btn:hover {
+            background: rgba(59, 130, 246, 0.8);
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .terminal-btn.primary {
+            background: linear-gradient(145deg, #1e4bd2, #3b82f6);
+            border: none;
+            color: white;
+            box-shadow: 0 2px 8px #1e4bd280;
+        }
+
+        .terminal-btn.primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
-<div class="split-container">
-    <!-- 左侧终端区域 -->
-    <div class="chart-area">
-        <div id="tv_chart_container"></div>
-    </div><!-- 可拖动分隔条 -->
-    <div class="splitter" id="splitter"></div><!-- 右侧图表区域 -->
-    <div class="terminal-sidebar" id="terminalSidebar">
-        <div class="terminal-container">
-            <div class="terminal-header">
-                <div class="terminal-title">
-                    <span>🐍</span> Python 终端
-                </div>
-                <div class="terminal-controls">
-                    <button class="terminal-btn" onclick=
-                            "window.pythonWidget.clearCode()">清空
-                    </button>
-                    <button class="terminal-btn primary"
-                            onclick="window.pythonWidget.executeCode()"
-                            id="executeBtn">执行 (Ctrl+Enter)
-                    </button>
-                </div>
-            </div>
-            <div class="terminal-code-area">
-                <div style=
-                             "display: flex; align-items: center; margin-bottom: 4px;">
-                        <span class=
-                                      "terminal-prompt">&gt;&gt;&gt;</span>
-                </div>
-                <textarea class="terminal-input" id="codeInput"
-                          placeholder="# 在这里输入Python代码..." spellcheck=
-                                  "false"></textarea>
-            </div>
-            <div class="examples-bar">
-                    <span class="example-chip" onclick=
-                            "window.pythonWidget.loadExample('basic')">基础</span>
-                <span class="example-chip" onclick=
-                        "window.pythonWidget.loadExample('chart')">图表分析</span>
-                <span class="example-chip" onclick=
-                        "window.pythonWidget.loadExample('indicators')">
-                    技术指标</span> <span class="example-chip" onclick=
-                    "window.pythonWidget.loadExample('trend')">趋势分析</span>
-            </div>
-            <div class="terminal-output-area" id="outputArea">
-                <div class="output-line info" style="border-left-color: #569cd6;">就绪 - 输入代码并点击执行</div>
-            </div>
-            <div class="terminal-status-bar">
-                <div>
-                        <span class="status-dot" id=
-                                "statusDot"></span> <span id=
-                                                                  "statusText">连接中...</span>
-                </div>
-                <div id="connectionInfo">
-                    Python 3.x
-                </div>
-            </div>
-        </div>
-    </div>
+<div class="chart-area">
+    <div id="tv_chart_container"></div>
 </div>
+
 <script type="text/javascript">
     // ============ 配置 ============
     class Config {
@@ -1441,94 +1376,149 @@ print("=== 趋势分析 ===")
         /**
          * 创建动态下拉菜单（按基础类型 + 周期分组）
          */
-        setupCustomDropdown(triggerElement, widget) {
-            const panel = document.createElement('div');
-            panel.style.cssText = `
-        position: absolute; z-index: 10000;
-        background: ${widget.getTheme() === 'dark' ? '#1e2532' : '#ffffff'};
-        border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-        padding: 8px 0; min-width: 240px; max-height: 70vh; overflow-y: auto;
-        border: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
-        color: ${widget.getTheme() === 'dark' ? '#d1d9e6' : '#131722'};
-        font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
-        display: none;
-        backdrop-filter: blur(4px);
-    `;
-            document.body.appendChild(panel);
+        setupCustomDropdown(tvWidget) {
+            if (!tvWidget) return;
 
-            const refreshMenu = () => {
+            // ---------- 辅助函数：获取当前主题相关样式 ----------
+            const isDark = () => tvWidget.getTheme() === 'dark';
+            const getThemeColor = (light, dark) => isDark() ? dark : light;
+
+            // ---------- 1. 创建工具栏按钮 ----------
+            const createButton = () => {
+                const btn = tvWidget.createButton({align: 'right'});
+                btn.innerHTML = `⚙️ 图表工具`;
+                btn.style.cssText = `
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 32px;
+                    padding: 0 12px;
+                    margin: 0 4px;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: ${getThemeColor('#131722', '#d1d4dc')};
+                    background: transparent;
+                    border: none;
+                    cursor: pointer;
+                    transition: background 0.2s, color 0.2s;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+                    user-select: none;
+                `;
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.background = isDark() ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.background = 'transparent';
+                });
+                return btn;
+            };
+
+            // ---------- 2. 创建下拉面板 DOM ----------
+            const createPanel = () => {
+                const panel = document.createElement('div');
+                panel.style.cssText = `
+                    position: absolute;
+                    z-index: 10000;
+                    background: ${getThemeColor('#ffffff', '#1e2532')};
+                    border-radius: 8px;
+                    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+                    padding: 8px 0;
+                    min-width: 240px;
+                    max-height: 70vh;
+                    overflow-y: auto;
+                    border: 1px solid ${getThemeColor('#d1d4dc', '#3a4a6a')};
+                    color: ${getThemeColor('#131722', '#d1d9e6')};
+                    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
+                    display: none;
+                    backdrop-filter: blur(4px);
+                `;
+                document.body.appendChild(panel);
+                return panel;
+            };
+
+            // ---------- 3. 刷新菜单内容（核心逻辑）----------
+            const refreshMenu = (panel, triggerBtn) => {
                 panel.innerHTML = '';
-                if (!this.widget || !this.widget.activeChart()) return;
-                const allShapes = this.widget.activeChart().getAllShapes();
+                const chart = tvWidget.activeChart();
+                if (!chart) return;
 
-                // 收集 { baseType -> Set of periods }
-
-                const typePeriods = {}; // { rawType -> Set of periods }
-
-                allShapes.forEach(({id}) => {
-                    const shape = this.widget.activeChart().getShapeById(id);
+                // 收集图形数据：{ 基础类型: Set(周期) }
+                const typePeriods = {};
+                chart.getAllShapes().forEach(({id}) => {
+                    const shape = chart.getShapeById(id);
                     if (!shape) return;
                     const props = shape.getProperties();
                     const title = props.title || '';
                     const parts = title.split(':');
                     if (parts.length < 3) return;
                     const period = Number(parts[1]);
-                    const rawType = parts[2];          // 直接使用第三段
+                    const rawType = parts[2];
                     if (!typePeriods[rawType]) typePeriods[rawType] = new Set();
                     typePeriods[rawType].add(period);
                 });
 
                 if (Object.keys(typePeriods).length === 0) {
-                    const empty = document.createElement('div');
-                    empty.textContent = '暂无图形数据';
-                    empty.style.padding = '12px 16px';
-                    empty.style.opacity = '0.7';
-                    panel.appendChild(empty);
+                    const emptyDiv = document.createElement('div');
+                    emptyDiv.textContent = '暂无图形数据';
+                    emptyDiv.style.padding = '12px 16px';
+                    emptyDiv.style.opacity = '0.7';
+                    panel.appendChild(emptyDiv);
                     return;
                 }
 
-                // 为每个基础类型创建折叠组
+                // 为每个基础类型创建可折叠分组
                 Object.keys(typePeriods).sort().forEach(baseType => {
                     const section = document.createElement('div');
                     const header = document.createElement('div');
                     header.style.cssText = `
-                padding: 10px 16px; cursor: pointer; display: flex; align-items: center;
-                justify-content: space-between; user-select: none;
-                background: ${widget.getTheme() === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'};
-                border-bottom: 1px solid rgba(128,128,128,0.2);
-            `;
+                        padding: 10px 16px;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        user-select: none;
+                        background: ${isDark() ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'};
+                        border-bottom: 1px solid rgba(128,128,128,0.2);
+                    `;
                     header.innerHTML = `<span style="font-weight:600;">${baseType}</span><span class="toggle-arrow" style="transition: transform 0.2s;">▼</span>`;
                     const content = document.createElement('div');
                     content.style.display = 'block';
 
                     header.addEventListener('click', () => {
                         const arrow = header.querySelector('.toggle-arrow');
-                        if (content.style.display === 'none') {
-                            content.style.display = 'block';
-                            arrow.style.transform = 'rotate(0deg)';
-                        } else {
-                            content.style.display = 'none';
-                            arrow.style.transform = 'rotate(-90deg)';
-                        }
+                        const isHidden = content.style.display === 'none';
+                        content.style.display = isHidden ? 'block' : 'none';
+                        arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
                     });
 
                     const periods = Array.from(typePeriods[baseType]).sort((a, b) => a - b);
                     periods.forEach(period => {
                         const row = document.createElement('div');
                         row.style.cssText = `
-                    padding: 6px 16px 6px 28px; display: flex; align-items: center;
-                    cursor: pointer; transition: background 0.15s;
-                `;
-                        row.addEventListener('mouseenter', () => row.style.background = widget.getTheme() === 'dark' ? '#2a374b' : '#f0f3fa');
-                        row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+                            padding: 6px 16px 6px 28px;
+                            display: flex;
+                            align-items: center;
+                            cursor: pointer;
+                            transition: background 0.15s;
+                        `;
+                        row.addEventListener('mouseenter', () => {
+                            row.style.background = isDark() ? '#2a374b' : '#f0f3fa';
+                        });
+                        row.addEventListener('mouseleave', () => {
+                            row.style.background = 'transparent';
+                        });
 
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.checked = this.isPeriodVisible(baseType, period);
                         checkbox.style.cssText = `
-                    margin-right: 12px; accent-color: #2962ff;
-                    width: 16px; height: 16px; cursor: pointer;
-                `;
+                            margin-right: 12px;
+                            accent-color: #2962ff;
+                            width: 16px;
+                            height: 16px;
+                            cursor: pointer;
+                        `;
 
                         const label = document.createElement('span');
                         label.textContent = Config.formatPeriod(period);
@@ -1536,14 +1526,10 @@ print("=== 趋势分析 ===")
 
                         row.appendChild(checkbox);
                         row.appendChild(label);
-
                         row.addEventListener('click', (e) => {
-                            if (e.target !== checkbox) {
-                                checkbox.checked = !checkbox.checked;
-                            }
+                            if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
                             this.setShapesVisibleByPeriod(baseType, period, checkbox.checked);
                         });
-
                         content.appendChild(row);
                     });
 
@@ -1555,9 +1541,11 @@ print("=== 趋势分析 ===")
                 // 底部全局控制按钮
                 const footer = document.createElement('div');
                 footer.style.cssText = `
-            border-top: 1px solid ${widget.getTheme() === 'dark' ? '#3a4a6a' : '#d1d4dc'};
-            padding: 8px 16px; display: flex; gap: 8px;
-        `;
+                    border-top: 1px solid ${isDark() ? '#3a4a6a' : '#d1d4dc'};
+                    padding: 8px 16px;
+                    display: flex;
+                    gap: 8px;
+                `;
                 const showAllBtn = document.createElement('button');
                 showAllBtn.textContent = '全部显示';
                 showAllBtn.style.cssText = `flex:1; padding: 4px; background: #2563eb; color:white; border:none; border-radius: 4px; cursor:pointer;`;
@@ -1567,8 +1555,9 @@ print("=== 趋势分析 ===")
                             this.setShapesVisibleByPeriod(baseType, period, true);
                         });
                     });
-                    refreshMenu();
+                    refreshMenu(panel, triggerBtn); // 递归刷新以更新复选框状态
                 });
+
                 const hideAllBtn = document.createElement('button');
                 hideAllBtn.textContent = '全部隐藏';
                 hideAllBtn.style.cssText = `flex:1; padding: 4px; background: #ef4444; color:white; border:none; border-radius: 4px; cursor:pointer;`;
@@ -1578,18 +1567,19 @@ print("=== 趋势分析 ===")
                             this.setShapesVisibleByPeriod(baseType, period, false);
                         });
                     });
-                    refreshMenu();
+                    refreshMenu(panel, triggerBtn);
                 });
+
                 footer.appendChild(showAllBtn);
                 footer.appendChild(hideAllBtn);
                 panel.appendChild(footer);
             };
 
-            const showPanel = () => {
-                refreshMenu();
+            // ---------- 4. 面板显示/隐藏及定位 ----------
+            const showPanel = (panel, triggerBtn) => {
+                refreshMenu(panel, triggerBtn);
                 panel.style.display = 'block';
-                const rect = triggerElement.getBoundingClientRect();
-                // 等待 layout 完成以获取正确的 panel 宽度
+                const rect = triggerBtn.getBoundingClientRect();
                 requestAnimationFrame(() => {
                     const panelWidth = panel.offsetWidth;
                     let left = rect.right - panelWidth;
@@ -1598,184 +1588,368 @@ print("=== 趋势分析 ===")
                     panel.style.left = `${left}px`;
                 });
             };
-            const hidePanel = () => {
+
+            const hidePanel = (panel) => {
                 panel.style.display = 'none';
             };
 
-            triggerElement.addEventListener('click', (e) => {
+            // ---------- 5. 组装并绑定事件 ----------
+            const customBtn = createButton();
+            const panelDiv = createPanel();
+            let isPanelVisible = false;
+
+            customBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                panel.style.display === 'block' ? hidePanel() : showPanel();
-            });
-            document.addEventListener('click', (e) => {
-                if (!panel.contains(e.target) && e.target !== triggerElement) hidePanel();
-            });
-            window.addEventListener('resize', () => {
-                if (panel.style.display === 'block') showPanel();
+                if (isPanelVisible) {
+                    hidePanel(panelDiv);
+                    isPanelVisible = false;
+                } else {
+                    showPanel(panelDiv, customBtn);
+                    isPanelVisible = true;
+                }
             });
 
-            // 保存引用以便外部强制刷新
-            this.refreshDropdown = refreshMenu;
+            // 点击外部关闭面板
+            document.addEventListener('click', (e) => {
+                if (!panelDiv.contains(e.target) && e.target !== customBtn && isPanelVisible) {
+                    hidePanel(panelDiv);
+                    isPanelVisible = false;
+                }
+            });
+
+            // 窗口大小变化时重新定位
+            window.addEventListener('resize', () => {
+                if (isPanelVisible) {
+                    showPanel(panelDiv, customBtn);
+                }
+            });
+
+            // 保存刷新函数供外部调用（可选）
+            this.refreshDropdown = () => refreshMenu(panelDiv, customBtn);
+        }
+
+        // 创建 Python 终端按钮 + 浮动面板
+        setupPythonTerminal(tvWidget) {
+            if (!tvWidget) return;
+
+            // 私有状态变量
+            let panelDiv = null;
+            let panelVisible = false;
+            let triggerButton = null;
+            let resizeHandler = null;
+            let panelPythonHandler = null;
+
+            // 获取当前主题 (实时)
+            const getCurrentTheme = () => tvWidget.getTheme ? tvWidget.getTheme() : 'dark';
+
+            // 应用主题样式到面板 (确保文字颜色正确)
+            const applyThemeToPanel = () => {
+                if (!panelDiv) return;
+                const theme = getCurrentTheme();
+                panelDiv.classList.remove('dark-theme', 'light-theme');
+                panelDiv.classList.add(theme === 'dark' ? 'dark-theme' : 'light-theme');
+                // 额外确保连接状态点样式
+                const statusDot = panelDiv.querySelector('#panelStatusDot');
+                if (statusDot && this.websocketManager.isConnected) {
+                    statusDot.classList.add('connected');
+                }
+            };
+
+            // 智能定位面板 (确保在可视区域内)
+            const repositionPanel = () => {
+                if (!panelDiv || !triggerButton) return;
+                const btnRect = triggerButton.getBoundingClientRect();
+                const wasVisible = panelDiv.style.display === 'flex';
+                if (!wasVisible) {
+                    panelDiv.style.visibility = 'hidden';
+                    panelDiv.style.display = 'flex';
+                }
+                const panelWidth = panelDiv.offsetWidth;
+                const panelHeight = panelDiv.offsetHeight;
+                let left = btnRect.right - panelWidth;
+                let top = btnRect.bottom + 8;
+                if (left < 10) left = 10;
+                if (left + panelWidth > window.innerWidth - 10)
+                    left = window.innerWidth - panelWidth - 10;
+                if (top + panelHeight > window.innerHeight - 10) {
+                    top = btnRect.top - panelHeight - 8;
+                    if (top < 10) top = 10;
+                }
+                panelDiv.style.left = `${left}px`;
+                panelDiv.style.top = `${top}px`;
+                if (!wasVisible) {
+                    panelDiv.style.display = 'none';
+                    panelDiv.style.visibility = '';
+                }
+            };
+
+            // 显示面板
+            const showPanel = () => {
+                if (!panelDiv) return;
+                applyThemeToPanel();      // 确保主题样式最新
+                repositionPanel();        // 校准位置
+                panelDiv.style.display = 'flex';
+                panelVisible = true;
+
+                // 点击外部关闭
+                const outsideClickListener = (e) => {
+                    if (!panelDiv.contains(e.target) && !triggerButton.contains(e.target)) {
+                        hidePanel();
+                        document.removeEventListener('click', outsideClickListener);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', outsideClickListener), 50);
+
+                resizeHandler = () => {
+                    if (panelVisible) repositionPanel();
+                };
+                window.addEventListener('resize', resizeHandler);
+            };
+
+            // 隐藏面板
+            const hidePanel = () => {
+                if (panelDiv) {
+                    panelDiv.style.display = 'none';
+                    panelVisible = false;
+                    if (resizeHandler) {
+                        window.removeEventListener('resize', resizeHandler);
+                        resizeHandler = null;
+                    }
+                }
+            };
+
+            // 创建面板 DOM 并绑定事件 (只执行一次)
+            const createPanelDOM = () => {
+                const panel = document.createElement('div');
+                panel.className = 'python-panel';
+                panel.style.display = 'none';
+                panel.innerHTML = `
+                            <div class="python-panel-header" id="pythonPanelHeader">
+                                <div class="panel-title">
+                                    <i class="fab fa-python"></i> Python 交互式终端
+                                </div>
+                                <div class="terminal-controls" style="gap: 8px;">
+                                    <button class="terminal-btn" id="clearPanelCodeBtn">清空</button>
+                                    <button class="terminal-btn primary" id="executePanelCodeBtn">执行 (Ctrl+Enter)</button>
+                                    <div class="panel-close" id="closePythonPanelBtn"><i class="fas fa-times"></i></div>
+                                </div>
+                            </div>
+                            <div class="terminal-code-area">
+                                <div class="terminal-prompt">>>> Python 3.x 环境 | 支持动态执行</div>
+                                <textarea class="terminal-input" id="pythonCodeTextarea" placeholder="# 输入 Python 代码，点击执行或按 Ctrl+Enter"></textarea>
+                            </div>
+                            <div class="examples-bar">
+                                <span class="example-chip" data-python-example="basic">基础示例</span>
+                                <span class="example-chip" data-python-example="chart">图表分析</span>
+                                <span class="example-chip" data-python-example="indicators">技术指标</span>
+                                <span class="example-chip" data-python-example="trend">趋势分析</span>
+                            </div>
+                            <div class="terminal-output-area" id="pythonOutputArea">
+                                <div class="output-line info">✨ 就绪 — 点击按钮执行代码，支持 Ctrl+Enter</div>
+                            </div>
+                            <div class="terminal-status-bar">
+                                <div><span class="status-dot" id="panelStatusDot"></span> <span id="panelStatusText">连接中...</span></div>
+                                <div>Python 3.x | WebSocket</div>
+                            </div>
+                        `;
+                document.body.appendChild(panel);
+                panelDiv = panel;
+
+                // 获取内部元素
+                const textarea = panel.querySelector('#pythonCodeTextarea');
+                const executeBtn = panel.querySelector('#executePanelCodeBtn');
+                const clearBtn = panel.querySelector('#clearPanelCodeBtn');
+                const closeBtn = panel.querySelector('#closePythonPanelBtn');
+                const outputArea = panel.querySelector('#pythonOutputArea');
+                const statusDot = panel.querySelector('#panelStatusDot');
+                const statusText = panel.querySelector('#panelStatusText');
+
+                // 辅助输出函数
+                const appendOutput = (text, type = 'info') => {
+                    const line = document.createElement('div');
+                    line.className = `output-line ${type}`;
+                    line.textContent = text;
+                    outputArea.appendChild(line);
+                    outputArea.scrollTop = outputArea.scrollHeight;
+                    if (outputArea.children.length > 150) outputArea.removeChild(outputArea.children[0]);
+                };
+
+                // 执行代码
+                const executeCode = () => {
+                    const code = textarea.value.trim();
+                    if (!code) {
+                        appendOutput('❌ 请输入代码', 'error');
+                        return;
+                    }
+                    executeBtn.disabled = true;
+                    executeBtn.textContent = '执行中...';
+                    appendOutput(`[${new Date().toLocaleTimeString()}] 执行代码...`, 'info');
+                    this.websocketManager.sendPythonMessage('execute', {code});
+                };
+
+                executeBtn.addEventListener('click', executeCode);
+                clearBtn.addEventListener('click', () => {
+                    textarea.value = '';
+                    appendOutput('✏️ 代码已清空', 'info');
+                });
+                closeBtn.addEventListener('click', () => hidePanel());
+                textarea.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                        e.preventDefault();
+                        executeCode();
+                    }
+                });
+
+                // 示例代码
+                const examples = {
+                    basic: `# 基础测试
+print("Hello TradingView 图表!")
+import math
+print(f"圆周率: {math.pi}")
+numbers = [1,2,3,4,5]
+print(f"列表总和: {sum(numbers)}")
+print("Python 终端集成成功")`,
+                    chart: `# 图表分析示例
+print("=== 图表数据上下文 ===")
+print(f"当前周期: ${Config.cover}")
+print(f"品种: ${Config.symbol}")
+print(f"EMA 长度: ${Config.EMA_LENGTH}")`,
+                    indicators: `# 技术指标模拟`,
+                    trend: `# 趋势分析`
+                };
+                panel.querySelectorAll('.example-chip').forEach(chip => {
+                    const exName = chip.getAttribute('data-python-example');
+                    chip.addEventListener('click', () => {
+                        if (examples[exName]) {
+                            textarea.value = examples[exName];
+                            appendOutput(`📁 已加载示例: ${exName}`, 'info');
+                        } else {
+                            appendOutput(`示例 ${exName} 不存在`, 'warning');
+                        }
+                    });
+                });
+
+                // WebSocket 连接状态更新
+                const updateStatus = (connected) => {
+                    if (connected) {
+                        statusDot.className = 'status-dot connected';
+                        statusText.textContent = '已连接';
+                    } else {
+                        statusDot.className = 'status-dot disconnected';
+                        statusText.textContent = '离线';
+                    }
+                };
+                window.addEventListener('websocket-status', (e) => updateStatus(e.detail.connected));
+                updateStatus(this.websocketManager.isConnected);
+
+                // Python 执行结果处理
+                panelPythonHandler = (msg) => {
+                    if (executeBtn) {
+                        executeBtn.disabled = false;
+                        executeBtn.textContent = '执行 (Ctrl+Enter)';
+                    }
+                    if (msg.type === 'execution_result') {
+                        if (msg.success) {
+                            if (msg.output) appendOutput(msg.output, 'success');
+                            else appendOutput('✅ 执行成功 (无输出)', 'success');
+                        } else {
+                            let errMsg = msg.error?.message || msg.message || '执行错误';
+                            appendOutput(`❌ 执行失败: ${errMsg}`, 'error');
+                            if (msg.output) appendOutput(msg.output, 'error');
+                        }
+                    } else if (msg.type === 'environment_info') {
+                        appendOutput(`ℹ️ 环境信息: ${msg.execution_count} 次执行`, 'info');
+                    } else if (msg.type === 'environment_reset') {
+                        appendOutput(msg.message, 'info');
+                    }
+                };
+                this.websocketManager.on('python', panelPythonHandler);
+
+                // 拖拽功能
+                const header = panel.querySelector('#pythonPanelHeader');
+                let isDragging = false, dragStartX, dragStartY, startLeft, startTop;
+                header.addEventListener('mousedown', (e) => {
+                    if (e.target.closest('.terminal-controls') || e.target.closest('.panel-close')) return;
+                    e.preventDefault();
+                    isDragging = true;
+                    dragStartX = e.clientX;
+                    dragStartY = e.clientY;
+                    const left = panel.style.left;
+                    const top = panel.style.top;
+                    startLeft = left ? parseInt(left) : panel.offsetLeft;
+                    startTop = top ? parseInt(top) : panel.offsetTop;
+                    document.body.style.userSelect = 'none';
+                    header.style.cursor = 'grabbing';
+                });
+                window.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    let newLeft = startLeft + (e.clientX - dragStartX);
+                    let newTop = startTop + (e.clientY - dragStartY);
+                    newLeft = Math.min(window.innerWidth - panel.offsetWidth - 15, Math.max(15, newLeft));
+                    newTop = Math.min(window.innerHeight - panel.offsetHeight - 15, Math.max(15, newTop));
+                    panel.style.left = `${newLeft}px`;
+                    panel.style.top = `${newTop}px`;
+                });
+                window.addEventListener('mouseup', () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        document.body.style.userSelect = '';
+                        header.style.cursor = 'grab';
+                    }
+                });
+            };
+
+            // 创建工具栏按钮
+            const createToolbarButton = () => {
+                const btn = tvWidget.createButton({align: 'right'});
+                btn.innerHTML = `<i class="fab fa-python" style="margin-right: 6px;"></i>Python 终端`;
+                btn.style.cssText = `
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 32px;
+                            padding: 0 14px;
+                            margin: 0 6px;
+                            border-radius: 6px;
+                            font-size: 13px;
+                            font-weight: 500;
+                            background: rgba(30, 60, 100, 0.85);
+                            color: #e0edff;
+                            border: 1px solid rgba(59, 130, 246, 0.6);
+                            cursor: pointer;
+                            transition: all 0.2s;
+                            backdrop-filter: blur(4px);
+                            z-index: 100;
+                        `;
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.background = 'rgba(59, 130, 246, 0.9)';
+                    btn.style.color = 'white';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.background = 'rgba(30, 60, 100, 0.85)';
+                    btn.style.color = '#e0edff';
+                });
+                return btn;
+            };
+
+            // 最终初始化：创建按钮和面板
+            if (!panelDiv) createPanelDOM();
+            triggerButton = createToolbarButton();
+            triggerButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (panelVisible) hidePanel();
+                else showPanel();
+            });
         }
 
         async createButton() {
-            // 创建自定义按钮（注意：useTradingViewStyle 省略或设为 false）
-            const customBtn = this.widget.createButton({
-                align: 'right' // 可选 'left' 或 'right'
-            });
-
-            // 设置按钮内容与样式
-            customBtn.innerHTML = `⚙️ 图表工具`;
-            customBtn.style.cssText = `
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                height: 32px;
-                padding: 0 12px;
-                margin: 0 4px;
-                border-radius: 4px;
-                font-size: 14px;
-                font-weight: 500;
-                color: ${this.widget.getTheme() === 'dark' ? '#d1d4dc' : '#131722'};
-                background: transparent;
-                border: none;
-                cursor: pointer;
-                transition: background 0.2s, color 0.2s;
-                font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
-                user-select: none;
-            `;
-
-            // 悬停效果
-            customBtn.addEventListener('mouseenter', () => {
-                customBtn.style.background = this.widget.getTheme() === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.05)';
-            });
-            customBtn.addEventListener('mouseleave', () => {
-                customBtn.style.background = 'transparent';
-            });
-
             // 现在你可以安全地使用 customBtn 作为触发器
-            this.setupCustomDropdown(customBtn, this.widget);
+            this.setupCustomDropdown(this.widget);
+            // Python 终端按钮（核心）
+            this.setupPythonTerminal(this.widget);
         }
 
 
-    }
-
-    // ============ 可拖动分隔条逻辑 ============
-    function initSplitter() {
-        const splitter = document.getElementById('splitter');
-        const sidebar = document.getElementById('terminalSidebar');
-        let isDragging = false;
-        let startPos = 0;        // 记录起始坐标（水平或垂直）
-        let startSize = 0;       // 记录起始尺寸
-        let isVertical = window.innerWidth > 800; // 初始方向（根据响应式判断）
-
-        // 监听窗口大小变化，更新方向
-        window.addEventListener('resize', () => {
-            isVertical = window.innerWidth > 800;
-        });
-
-        // 创建遮罩层（在拖动时覆盖整个页面，防止鼠标事件丢失）
-        const mask = document.createElement('div');
-        mask.style.position = 'fixed';
-        mask.style.top = '0';
-        mask.style.left = '0';
-        mask.style.width = '100%';
-        mask.style.height = '100%';
-        mask.style.zIndex = '9999';
-        mask.style.display = 'none';
-        mask.style.cursor = isVertical ? 'col-resize' : 'row-resize';
-        mask.style.background = 'transparent'; // 透明，不影响视觉
-        document.body.appendChild(mask);
-
-        splitter.addEventListener('mousedown', (e) => {
-            e.preventDefault(); // 防止文本选择
-            isDragging = true;
-            splitter.classList.add('active');
-
-            // 锁定指针到分隔条
-            splitter.setPointerCapture(e.pointerId);
-
-            // 记录起始位置和尺寸
-            if (isVertical) {
-                startPos = e.clientX;
-                startSize = sidebar.offsetWidth;
-                mask.style.cursor = 'col-resize';
-            } else {
-                startPos = e.clientY;
-                startSize = sidebar.offsetHeight;
-                mask.style.cursor = 'row-resize';
-            }
-
-            // 显示遮罩层
-            mask.style.display = 'block';
-
-            // 禁止页面选择
-            document.body.style.userSelect = 'none';
-        });
-
-        splitter.addEventListener('pointermove', (e) => {
-            if (!isDragging) return;
-
-            e.preventDefault(); // 防止默认行为
-
-            let delta, newSize;
-            if (isVertical) {
-                delta = e.clientX - startPos;
-                newSize = startSize + delta;
-                // 限制在最小和最大宽度之间
-                const minWidth = parseInt(getComputedStyle(sidebar).minWidth) || 200;
-                const maxWidth = parseInt(getComputedStyle(sidebar).maxWidth) || 800;
-                newSize = Math.min(Math.max(newSize, minWidth), maxWidth);
-                sidebar.style.width = newSize + 'px';
-            } else {
-                delta = e.clientY - startPos;
-                newSize = startSize + delta;
-                // 限制在最小和最大高度之间
-                const minHeight = 150; // 可自定义
-                const maxHeight = window.innerHeight - 100;
-                newSize = Math.min(Math.max(newSize, minHeight), maxHeight);
-                sidebar.style.height = newSize + 'px';
-            }
-        });
-
-        splitter.addEventListener('pointerup', (e) => {
-            if (!isDragging) return;
-
-            isDragging = false;
-            splitter.classList.remove('active');
-            splitter.releasePointerCapture(e.pointerId);
-
-            // 隐藏遮罩层
-            mask.style.display = 'none';
-
-            // 恢复页面选择
-            document.body.style.userSelect = '';
-        });
-
-        // 防止指针取消（如突然失去焦点）
-        splitter.addEventListener('pointercancel', (e) => {
-            if (isDragging) {
-                isDragging = false;
-                splitter.classList.remove('active');
-                splitter.releasePointerCapture(e.pointerId);
-                mask.style.display = 'none';
-                document.body.style.userSelect = '';
-            }
-        });
-
-        // 对于触摸设备，确保触摸事件也能正常工作
-        splitter.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            // 手动触发 mousedown 逻辑（通过事件模拟）
-            const touch = e.touches[0];
-            const mouseEvent = new MouseEvent('mousedown', {
-                clientX: touch.clientX,
-                clientY: touch.clientY,
-                pointerId: 1, // 模拟 pointerId
-            });
-            splitter.dispatchEvent(mouseEvent);
-        });
     }
 
     // ============ 主应用程序 ============
@@ -1789,8 +1963,6 @@ print("=== 趋势分析 ===")
         init() {
             this.websocketManager.connect();
             this.initTradingView();
-            this.initPythonTerminal();
-            initSplitter(); // 初始化分隔条
         }
 
         initTradingView() {
@@ -1817,10 +1989,6 @@ print("=== 趋势分析 ===")
             });
         }
 
-        initPythonTerminal() {
-            this.pythonTerminalManager = new PythonTerminalManager(this.websocketManager);
-            window.pythonTerminalManager = this.pythonTerminalManager;
-        }
     }
 
     // ============ 启动应用 ============
