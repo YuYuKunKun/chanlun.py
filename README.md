@@ -5,7 +5,7 @@
 
 ## 📖 简介
 
-`chanlun.py` 是一个基于缠中说禅理论的股票/数字货币技术分析工具。实现了**笔**、**段**、**中枢**的自动识别，并集成了 **TradingView 风格的前端可视化** 以及 **Backtrader 实时数据回测** 功能。通过简单的 Web API 即可获取任意交易品种的结构化分析结果。
+`chanlun.py` 是一个基于缠中说禅理论的股票/数字货币技术分析工具。实现了**笔**、**段**、**中枢**、**简单标注买卖点**的自动识别，并集成了 **TradingView 风格的前端可视化** 以及 **Backtrader 实时数据回测** 功能。通过简单的 Web API 即可获取任意交易品种的结构化分析结果。
 
 ## ✨ 特性
 
@@ -26,7 +26,7 @@ pip install -r requirements.txt
 ### 启动服务
 
 ```bash
-uvicorn chan:app --reload --port 8080 --host localhost
+uvicorn main:app --reload --port 8080 --host localhost
 ```
 
 服务启动后，访问 `http://127.0.0.1:8080` 即可看到前端可视化界面。
