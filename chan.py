@@ -2356,6 +2356,12 @@ class 虚线(object):
             return 分型.判断分型(self.武, 之后.文)
         return False
 
+    def 获取普K序列(self, 观察员: "观察者") -> List[K线]:
+        return K线.截取(观察员.普通K线序列, self.文.中.标的K线, self.武.中.标的K线)
+
+    def 获取缠K序列(self, 观察员: "观察者") -> List[缠论K线]:
+        return 缠论K线.截取(观察员.缠论K线序列, self.文.中, self.武.中)
+
     @classmethod
     def 创建笔(cls, 文: 分型, 武: 分型, 有效性: bool = True) -> "虚线":
         return 虚线(0, "笔", 文, 武, 1, 有效性)
@@ -2460,6 +2466,10 @@ class 笔(object):
     @classmethod
     def 分析(cls, 当前分型: Optional[分型], 分型序列: List[分型], 笔序列: List[虚线], 缠K序列: List[缠论K线], 普K序列: List[K线], 递归层次: int, 配置: 缠论配置):
         if 当前分型 is None:
+            return 递归层次
+
+        if 递归层次 > 256:
+            print("笔.分析 递归深度超出 256")
             return 递归层次
 
         if 当前分型.结构 not in (分型结构.顶, 分型结构.底):
@@ -2938,7 +2948,7 @@ class 线段(object):
         if 第三买卖线 and 所属中枢:
             第三买卖线.reverse()
             所属中枢.本级_第三买卖线 = 第三买卖线[0]
-            所属中枢.本级_第三买卖线.备注 = 所属中枢.标识
+            # 所属中枢.本级_第三买卖线.备注 = 所属中枢.标识
 
         if 后:
             if 段.方向.是否向上():
@@ -3060,7 +3070,9 @@ class 线段(object):
         无缺口: 即笔破坏
             笔破坏不去处理特征序列的逆序包含
         """
-        if 层级 > 20:
+        if 层级 > 256:
+            print("线段.分析 递归深度超出 256")
+            return None
             raise RuntimeError("线段分析 层级过深")
 
         线段递归分析 = 线段.分析

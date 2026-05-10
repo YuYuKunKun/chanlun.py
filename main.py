@@ -625,8 +625,11 @@ class 观察者(观察者):
         self.配置.分析扩展线段 and 线段.扩展分析(self.扩展线段序列, self.扩展线段序列_扩展线段, self.配置)
         self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_扩展线段, self.扩展中枢序列_扩展线段)
 
+        self.图表刷新()
         try:
             self.识别买卖点()
+            买卖点识别器.计算(self)
+            self.标注买卖点()
         except:
             print("~~~~~~~~~~~~~~", self.当前K线)
             traceback.print_exc()
@@ -795,11 +798,10 @@ class 观察者(观察者):
                 if 对象.标识 in ("笔", "线段", "线段<线段>", "中枢<笔>", "中枢<线段>"):
                     message["overrides"]["visible"] = True
 
-
                 if type(对象) is not 线段特征:
                     message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} {getattr(对象, '备注', '')}"
 
-                if 对象.标识 in ( "线段", "线段<线段>"):
+                if 对象.标识 in ("线段", "线段<线段>"):
                     message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期} {线段.四象(对象)} {线段.特征序列状态(对象)} {getattr(对象, '级别', '')} {getattr(对象, '备注', '')}"
 
                 if 对象.标识 in ("线段", "线段<线段>", "线段<线段<线段>>"):
@@ -867,10 +869,6 @@ class 观察者(观察者):
             买卖点序列.add(当前买卖点)
             当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
             self.报信(当前买卖点, 指令.添加(当前买卖点.备注), sys._getframe().f_lineno)
-
-    def 识别买卖点(self):
-        买卖点识别器.计算(self)
-        self.标注买卖点()
 
     def 标注买卖点(self):
         """将 BSP字典 中的买卖点推送到图表。与旧的 添加买卖点/报信 独立。"""
@@ -1009,6 +1007,9 @@ class 观察者(观察者):
             f.write(rendered_html)
 
         print(f"✅ 成功生成文件: {output_file}, 需要另行开启服务器 如 python -m http.server 8081")
+
+
+__代码执行器_全局声明__ = dir()
 
 
 def 随机配置(随机源: Optional[random.Random] = None):
@@ -2487,8 +2488,6 @@ async def 主页(
         },
     )
 
-
-__代码执行器_全局声明__ = dir()
 
 if __name__ == "__main__":
 
