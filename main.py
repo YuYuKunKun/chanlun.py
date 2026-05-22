@@ -1,3 +1,5 @@
+import importlib.metadata
+import platform
 import random
 import os
 import math
@@ -6,6 +8,7 @@ import io
 import json
 import ast
 import signal
+import struct
 import sys
 import time
 import queue
@@ -13,6 +16,7 @@ import traceback
 import threading
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from random import seed, randint, uniform, choice, choices
 from threading import Thread
 from typing import (
@@ -27,6 +31,7 @@ from typing import (
     Final,
     Dict,
     Any,
+    final,
 )
 
 
@@ -43,6 +48,273 @@ import backtrader as bt
 
 from chan import *
 from strategies import *
+
+
+def Nil(*args, **kwargs):
+    return None
+
+
+def 获取模块版本():
+    versions = {}
+
+    # 2.
+    try:
+        versions["fastapi"] = importlib.metadata.version("fastapi")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    try:
+        versions["requests"] = importlib.metadata.version("requests")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+
+    # 3. 回测框架（你在用 backtrader 或类似）
+    try:
+        versions["backtrader"] = importlib.metadata.version("backtrader")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+
+    # 4. 配置/模型（你这个缠论配置用了 pydantic）
+    try:
+        versions["pydantic"] = importlib.metadata.version("pydantic")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+
+    return versions
+
+
+def 收集异常信息(exception: Exception, 上下文: dict = None):
+    """
+    万能异常收集函数
+    :param exception: 捕获到的异常
+    :param 上下文: 自定义环境数据（当前K线、品种、配置等）
+    :return: 完整错误报告
+    """
+    # 1. 基础信息
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    文件名 = exc_tb.tb_frame.f_code.co_filename
+    行号 = exc_tb.tb_lineno
+    函数名 = exc_tb.tb_frame.f_code.co_name
+
+    # 2. 完整堆栈
+    堆栈 = "".join(traceback.format_exception(exc_type, exc_obj, exc_tb))
+
+    # 3. 代码片段
+    代码行 = open(文件名, "r", encoding="utf-8").readlines()[行号 - 1].strip()
+
+    # 4. 系统信息
+    系统信息 = {
+        "时间": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "Python版本": sys.version,
+        "系统": platform.platform(),
+    }
+
+    # 5. 组装最终报告
+    错误报告 = f"""
+==================== 程序异常 ====================
+异常类型: {exc_type.__name__}
+异常信息: {str(exception)}
+文件: {文件名}
+行号: {行号}
+函数: {函数名}
+代码行: {代码行}
+
+-------------------- 堆栈信息 --------------------
+{堆栈}
+
+-------------------- 系统信息 --------------------
+{系统信息}
+-------------------- 模块信息 --------------------
+{获取模块版本()}
+-------------------- 上下文信息 --------------------
+{上下文 or "无"}
+==================================================
+"""
+    return 错误报告
+
+
+class 时间周期:
+    def __init__(self, 秒: int, 是否单笔交易: bool = False):
+        self._秒 = 秒
+        self.是否单笔交易 = 是否单笔交易
+
+    def __repr__(self):
+        return f"时间周期<{self._秒}, {self.是否单笔交易}>"
+
+    def __str__(self):
+        return f"时间周期<{self._秒}, {self.是否单笔交易}>"
+
+    def __int__(self):
+        return int(self._秒)
+
+    @classmethod
+    def BitstampSupport(cls):
+        return {60, 180, 300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 259200}
+
+    @classmethod
+    def 秒(cls, value: int):
+        return cls(value)
+
+    @classmethod
+    def 分(cls, value: int):
+        return cls(60 * value)
+
+    @classmethod
+    def 时(cls, value: int):
+        return cls(60 * 60 * value)
+
+    @classmethod
+    def 天(cls, value: int):
+        return cls(60 * 60 * 24 * value)
+
+    @classmethod
+    def 周(cls, value: int):
+        return cls(60 * 60 * 24 * 7 * value)
+
+    @classmethod
+    def 找到最大可整除周期(cls, 输入秒数: int) -> str:
+        """
+        输入秒数 → 返回 最大可整除的周期秒数
+        周期范围：
+        1~59分钟、1~23小时、1~28天
+        """
+        周期列表 = []
+
+        # 1~59分钟
+        for m in range(1, 60):
+            周期列表.append(m * 60)
+
+        # 1~23小时
+        for h in range(1, 24):
+            周期列表.append(h * 3600)
+
+        # 1~28天
+        for d in range(1, 29):
+            周期列表.append(d * 86400)
+
+        # 从大到小排序
+        周期列表.sort(reverse=True)
+
+        # 找第一个能整除的
+        for 周期秒 in 周期列表:
+            if 输入秒数 % 周期秒 == 0:
+                return cls.秒数转周期(周期秒)
+
+        return "1"
+
+    @classmethod
+    def 秒数转周期(cls, 秒数: int) -> str:
+        """
+        智能选择最精确的周期单位
+
+        Args:
+            秒数: 输入的秒数值，必须是正整数
+
+        Returns:
+            周期字符串，格式为：数字 + 单位（H=小时，D=天，W=周，M=月）
+        """
+        if not isinstance(秒数, int) or 秒数 <= 0:
+            raise ValueError("秒数必须是正整数")
+
+        一分钟秒数 = 60
+        一小时秒数 = 一分钟秒数 * 60  # 3600
+        一天秒数 = 24 * 一小时秒数
+        一周秒数 = 7 * 一天秒数
+        一月秒数 = 30 * 一天秒数
+
+        # 计算各周期单位
+        月数 = 秒数 // 一月秒数
+        月余秒 = 秒数 % 一月秒数
+
+        周数 = 秒数 // 一周秒数
+        周余秒 = 秒数 % 一周秒数
+
+        天数 = 秒数 // 一天秒数
+        天余秒 = 秒数 % 一天秒数
+
+        小时数 = 秒数 // 一小时秒数
+        时余数 = 秒数 % 一小时秒数
+
+        分钟数 = 秒数 // 一分钟秒数
+        分钟余数 = 秒数 % 一分钟秒数
+
+        if 分钟余数:
+            return str(秒数)
+
+        # 选择最精确的单位
+        # 优先选择余数为0的单位，如果没有，选择余数最小的单位
+
+        # 找出所有可能的表示方式及其余数
+        选项 = [(月数, "M", 月余秒), (周数, "W", 周余秒), (天数, "D", 天余秒), (小时数, "H", 时余数), (分钟数, "", 分钟余数)]
+
+        # 过滤掉数值为0的选项（小时除外）
+        有效选项 = [(值, 单位, 余数) for 值, 单位, 余数 in 选项 if 值 > 0]
+
+        # 如果没有有效选项，使用小时
+        if not 有效选项:
+            return str(秒数)
+
+        # 优先选择余数为0的选项
+        无余数选项 = [(值, 单位, 余数) for 值, 单位, 余数 in 有效选项 if 余数 == 0]
+        if 无余数选项:
+            # 选择单位最大的无余数选项
+            值, 单位, _ = min(无余数选项, key=lambda x: (x[0], len(x[1])))
+            return f"{值}{单位}"
+
+        # 如果没有无余数选项，选择余数最小的选项
+        值, 单位, _ = min(有效选项, key=lambda x: x[2])
+        return f"{值}{单位}"
+
+    @classmethod
+    def 周期转秒数(cls, 周期字符串: str) -> int:
+        """
+        将带单位的周期字符串转换为秒数
+
+        Args:
+            周期字符串: 带单位的周期字符串，如 "15M", "60", "25H", "2D", "1W"
+
+        Returns:
+            对应的秒数值
+
+        Raises:
+            ValueError: 如果输入格式不正确或包含无效字符
+        """
+        # 去除字符串两端的空格
+        周期字符串 = 周期字符串.strip().upper()
+
+        # 如果字符串为空，抛出异常
+        if not 周期字符串:
+            raise ValueError("周期字符串不能为空")
+
+        # 检查字符串是否以单位结尾
+        if 周期字符串[-1].isalpha():
+            # 提取数值部分和单位部分
+            单位 = 周期字符串[-1]
+            数值部分 = 周期字符串[:-1]
+
+            # 验证数值部分是否为有效数字
+            if not 数值部分.isdigit():
+                raise ValueError(f"无效的数值部分: {数值部分}")
+
+            数值 = int(数值部分)
+
+            # 根据单位计算秒数
+            if 单位 == "M":  # 月
+                return 数值 * 2592000
+            elif 单位 == "H":  # 小时
+                return 数值 * 3600
+            elif 单位 == "D":  # 天
+                return 数值 * 86400
+            elif 单位 == "W":  # 周
+                return 数值 * 604800
+            else:
+                raise ValueError(f"不支持的单位: {单位}")
+        else:
+            # 没有单位，默认为分钟
+            if not 周期字符串.isdigit():
+                raise ValueError(f"无效的数值: {周期字符串}")
+
+            数值 = int(周期字符串)
+            return 数值 * 60
 
 
 class BSP点:
@@ -592,6 +864,35 @@ class 观察者(观察者):
     当前事件循环: Any = None  # if __name__ == "__main__" else asyncio.get_event_loop()
     延迟时间: float = 0.01
 
+    def __init__(self, 符号: str, 周期: int, 数据通道: Optional[WebSocket], 配置: 缠论配置, 数据队列: Optional[queue.Queue] = None):
+        self.数据通道: Optional[Any] = 数据通道  # WebSocket
+        self.数据队列: queue.Queue = 数据队列
+        super().__init__(符号, 周期, 配置)
+
+    @final
+    def 增加原始K线(self, 普K: K线):
+        if self.__终止时间戳 and 普K.时间戳 > self.__终止时间戳:
+            return
+
+        try:
+            self.__处理数据(普K)
+        except Exception as e:
+            路径 = f"./templates/{self.符号}_err-{self.周期}-{int(self.普通K线序列[0].时间戳.timestamp())}-{int(self.普通K线序列[-1].时间戳.timestamp())}"
+            K线.保存到DAT文件(
+                路径 + ".nb",
+                self.普通K线序列,
+            )
+            self.配置.保存配置(路径 + ".json")
+
+            with open(路径 + ".log", "w") as f:
+                f.write(收集异常信息(e))
+
+            traceback.print_exc()
+            print(f"K线数据已保存在: {路径}.nb")
+            print(f"当前配置已保存在: {路径}.json")
+            print(f"详细错误信息已保存在: {路径}.log")
+            raise e
+
     def __处理数据(self, 普K: K线):
         状态, 当前分型 = 缠论K线.分析(普K, self.缠论K线序列, self.普通K线序列, self.配置)
         self.数据队列 and self.数据队列.put((普K.时间戳, 普K.开盘价, 普K.高, 普K.低, 普K.收盘价, 普K.成交量, 0))
@@ -628,13 +929,13 @@ class 观察者(观察者):
         self.图表刷新()
         try:
             self.识别买卖点()
-            买卖点识别器.计算(self)
-            self.标注买卖点()
+            # 买卖点识别器.计算(self)
+            # self.标注买卖点()
         except:
             print("~~~~~~~~~~~~~~", self.当前K线)
             traceback.print_exc()
 
-    def _重置基础序列(self):
+    def 重置基础序列(self):
         self.买卖点字典 = dict()
         self.BSP字典: Dict[int, "BSP点"] = dict()
         self._买卖点最后确认线段索引: int = -1
@@ -642,7 +943,6 @@ class 观察者(观察者):
         买卖点识别器._BSP1字典.pop(self.标识, None)
         self._已标注BSP序号: set = set()
         self.基础缠K序列: List[缠论K线] = []
-        self.缓存: Dict[str, Any] = dict()
 
         self.普通K线序列: List[K线] = []
         self.缠论K线序列: List[缠论K线] = []
@@ -666,6 +966,102 @@ class 观察者(观察者):
 
         self.扩展线段序列_扩展线段: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
         self.扩展中枢序列_扩展线段: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
+
+    def 读取任意数据(self, 魔法, **魔法参数):
+        魔法(**魔法参数)
+        return self
+
+    def 加载本地数据(self, 文件路径: str):
+        self.重置基础序列()
+        with open(文件路径, "rb") as f:
+            buffer = f.read()
+            size = struct.calcsize(">6d")
+            for i in range(len(buffer) // size):
+                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], self.周期)
+                self.增加原始K线(k线)
+
+    def 静态重新分析(self):
+        self.买卖点字典 = dict()
+
+        self.分型序列: List[分型] = []
+
+        self.笔序列: List[虚线] = []
+        self.笔_中枢序列: List[中枢] = []
+
+        self.线段序列: List[虚线] = []
+        self.中枢序列: List[中枢] = []
+
+        self.扩展线段序列: List[虚线] = []
+        self.扩展中枢序列: List[中枢] = []
+
+        self.扩展线段序列_线段: List[虚线] = []
+        self.扩展中枢序列_线段: List[中枢] = []
+
+        self.线段_线段序列: List[虚线] = []
+        self.线段_中枢序列: List[中枢] = []
+
+        self.扩展线段序列_扩展线段: List[虚线] = []
+        self.扩展中枢序列_扩展线段: List[中枢] = []
+
+        for i in range(1, len(self.缠论K线序列) - 1):
+            当前分型 = 分型(self.缠论K线序列[i - 1], self.缠论K线序列[i], self.缠论K线序列[i + 1])
+            笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, self.普通K线序列, 0, self.配置)
+
+        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列)
+
+        self.配置.分析线段 and 线段.分析(self.笔序列, self.线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列)
+
+        self.配置.分析扩展线段 and 线段.扩展分析(self.笔序列, self.扩展线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列)
+
+        self.配置.分析扩展线段 and 线段.扩展分析(self.线段序列, self.扩展线段序列_线段, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段)
+
+        self.配置.分析线段 and 线段.分析(self.线段序列, self.线段_线段序列, self.配置)
+        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列)
+
+    def 添加买卖点(self, 特征: str, 买卖点分型: 分型, 序号: str, 级别: str):
+        当前买卖点: 买卖点 = 买卖点.生成买卖点(特征, 序号, 级别, 买卖点分型, self.当前缠K)
+        if "事后" in 特征:
+            当前买卖点.失效K线 = self.当前缠K
+        偏移 = self.配置.买卖点偏移
+        if 当前买卖点.偏移 > 偏移 and "事后" not in 特征:
+            return
+
+        买卖点序列 = self.买卖点字典.get(特征, set())
+        self.买卖点字典[特征] = 买卖点序列
+        活跃序列 = [点 for 点 in 买卖点序列 if 点.失效K线 is None]
+        活跃时间戳序列 = [点.买卖点K线.时间戳 for 点 in 活跃序列]
+
+        if self.配置.买卖点与MACD柱强相关 and not 买卖点分型.中.与MACD柱子匹配:
+            return
+        分型匹配 = 买卖点分型.与MACD柱子分型匹配
+        柱子匹配 = 买卖点分型.中.与MACD柱子匹配
+
+        rsi匹配 = 买卖点分型.中.与RSI匹配
+        kdj匹配 = 买卖点分型.中.与KDJ匹配
+
+        当前买卖点.备注 = f"{self.标识}" + 当前买卖点.备注
+        当前买卖点.备注 = 当前买卖点.备注 + f"_{买卖点分型.强度}"
+        if 分型匹配 is not None and not 分型匹配:
+            当前买卖点.备注 = 当前买卖点.备注 + "_非MACD分型"
+
+        if not 柱子匹配:
+            当前买卖点.备注 = 当前买卖点.备注 + "_非普K柱子匹配"
+
+        if rsi匹配 is not None and not rsi匹配:
+            当前买卖点.备注 = 当前买卖点.备注 + "_非RSI匹配"
+
+        if kdj匹配 is not None and not kdj匹配:
+            当前买卖点.备注 = 当前买卖点.备注 + "_非KDJ匹配"
+
+        if not self.配置.买卖点激进识别 and not 买卖点分型.右:
+            return
+
+        if 当前买卖点.买卖点K线.时间戳 not in 活跃时间戳序列:
+            买卖点序列.add(当前买卖点)
+            当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
 
     def 图表刷新(self):
         for key in dir(self):
@@ -788,10 +1184,10 @@ class 观察者(观察者):
                     "textcolor": "#000000",
                     "text": "",
                     "title": 图标,
-                    "linewidth": linewidths.get(对象.标识, 2) if type(对象) is not 中枢 else linewidths.get(对象[0].标识, 2),
+                    "linewidth": linewidths.get(对象.标识, 2) if type(对象) is not 中枢 else linewidths.get(对象.基础序列[0].标识, 2),
                     "backgroundColor": "rgba(242, 54, 69, 0.2)" if 对象.方向 is 相对方向.向下 else "rgba(76, 175, 80, 0.2)",  # 上下上 为 红色，反之为 绿色,
-                    "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
-                    "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象[0].标识, 配色表["笔"]),
+                    "color": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象.基础序列[0].标识, 配色表["笔"]),
+                    "textColor": 配色表.get(对象.标识, 配色表["笔"]) if type(对象) is not 中枢 else 配色表.get(对象.基础序列[0].标识, 配色表["笔"]),
                     "visible": False,
                 }
 
@@ -826,49 +1222,6 @@ class 观察者(观察者):
             asyncio.set_event_loop(观察者.当前事件循环)
             asyncio.ensure_future(self.数据通道.send_text(json.dumps(message)))
         return
-
-    def 添加买卖点(self, 特征: str, 买卖点分型: 分型, 序号: str, 级别: str):
-        当前买卖点: 买卖点 = 买卖点.生成买卖点(特征, 序号, 级别, 买卖点分型, self.当前缠K)
-        if "事后" in 特征:
-            当前买卖点.失效K线 = self.当前缠K
-        偏移 = self.配置.买卖点偏移
-        if 当前买卖点.偏移 > 偏移 and "事后" not in 特征:
-            return
-
-        买卖点序列 = self.买卖点字典.get(特征, set())
-        self.买卖点字典[特征] = 买卖点序列
-        活跃序列 = [点 for 点 in 买卖点序列 if 点.失效K线 is None]
-        活跃时间戳序列 = [点.买卖点K线.时间戳 for 点 in 活跃序列]
-
-        if self.配置.买卖点与MACD柱强相关 and not 买卖点分型.中.与MACD柱子匹配:
-            return
-        分型匹配 = 买卖点分型.与MACD柱子分型匹配
-        柱子匹配 = 买卖点分型.中.与MACD柱子匹配
-
-        rsi匹配 = 买卖点分型.中.与RSI匹配
-        kdj匹配 = 买卖点分型.中.与KDJ匹配
-
-        当前买卖点.备注 = f"{self.标识}" + 当前买卖点.备注
-        当前买卖点.备注 = 当前买卖点.备注 + f"_{买卖点分型.强度}"
-        if 分型匹配 is not None and not 分型匹配:
-            当前买卖点.备注 = 当前买卖点.备注 + "_非MACD分型"
-
-        if not 柱子匹配:
-            当前买卖点.备注 = 当前买卖点.备注 + "_非普K柱子匹配"
-
-        if rsi匹配 is not None and not rsi匹配:
-            当前买卖点.备注 = 当前买卖点.备注 + "_非RSI匹配"
-
-        if kdj匹配 is not None and not kdj匹配:
-            当前买卖点.备注 = 当前买卖点.备注 + "_非KDJ匹配"
-
-        if not self.配置.买卖点激进识别 and not 买卖点分型.右:
-            return
-
-        if 当前买卖点.买卖点K线.时间戳 not in 活跃时间戳序列:
-            买卖点序列.add(当前买卖点)
-            当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
-            self.报信(当前买卖点, 指令.添加(当前买卖点.备注), sys._getframe().f_lineno)
 
     def 标注买卖点(self):
         """将 BSP字典 中的买卖点推送到图表。与旧的 添加买卖点/报信 独立。"""
@@ -1007,6 +1360,29 @@ class 观察者(观察者):
             f.write(rendered_html)
 
         print(f"✅ 成功生成文件: {output_file}, 需要另行开启服务器 如 python -m http.server 8081")
+
+    @classmethod
+    def 读取数据文件(cls, 文件路径: str, ws=None, 配置=缠论配置()) -> Self:
+        # btcusd-300-1631772074-1632222374.nb
+        if "_err-" in str(文件路径):
+            try:
+                配置 = 缠论配置.加载配置(str(文件路径).replace(".nb", ".json"))
+                print("加载异常配置", 缠论配置().对比(配置))
+            except:
+                pass
+
+        name = Path(文件路径).name.split(".")[0]
+        符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
+        实例 = cls(符号=符号, 周期=int(周期), 数据通道=ws, 配置=配置)
+
+        with open(文件路径, "rb") as f:
+            buffer = f.read()
+            size = struct.calcsize(">6d")
+            for i in range(len(buffer) // size):
+                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], int(周期))
+                实例.增加原始K线(k线)
+
+        return 实例
 
 
 __代码执行器_全局声明__ = dir()
