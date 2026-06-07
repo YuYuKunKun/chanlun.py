@@ -848,6 +848,7 @@ print("=== 趋势分析 ===")
             this.websocketManager = websocketManager;
             this.widget = null;
             this.shapeIds = new Map();
+            this._pendingShapeCreate = new Map();  // id → Promise, 追踪正在创建的图形
             this.onRealtimeCallback = null;
             this.initDataFeed();
             this.websocketManager.on('chart', (message) => {
@@ -1052,7 +1053,7 @@ print("=== 趋势分析 ===")
             }
         }
 
-        handleChartMessage(message) {
+        async handleChartMessage(message) {
             Utils.log("处理图表消息:", message.type);
             switch (message.type) {
                 case 'realtime':
@@ -1070,11 +1071,11 @@ print("=== 趋势分析 ===")
                     break;
                 case 'shape':
                     if (message.cmd === "APPEND") {
-                        this.addShape(message.id, message.points, message.name, message.overrides);
+                        await this.addShape(message.id, message.points, message.name, message.overrides);
                     } else if (message.cmd === "REMOVE") {
-                        this.removeShape(message.id);
+                        await this.removeShape(message.id);
                     } else if (message.cmd === "MODIFY") {
-                        this.updateShape(message.id, message.points, message.overrides);
+                        await this.updateShape(message.id, message.points, message.overrides);
                     }
                     break;
                 case 'query_result':
@@ -1104,6 +1105,12 @@ print("=== 趋势分析 ===")
                     return;
                 }
 
+                // 等待之前相同 ID 的创建完成（避免竞态）
+                const prevPending = this._pendingShapeCreate.get(id);
+                if (prevPending) {
+                    await prevPending;
+                }
+
                 // 重复判断
                 const existShapeId = this.shapeIds.get(id);
                 if (existShapeId) {
@@ -1112,32 +1119,52 @@ print("=== 趋势分析 ===")
                     return;
                 }
 
-                // 创建图形
-                const shapeId = await this.widget.chart().createMultipointShape(points, options);
-                const shape = this.widget.chart().getShapeById(shapeId);
+                // 记录 pending 状态，供 removeShape/updateShape 等待
+                const createPromise = (async () => {
+                    // 创建图形
+                    const shapeId = await this.widget.chart().createMultipointShape(points, options);
+                    const shape = this.widget.chart().getShapeById(shapeId);
 
-                if (!shape) {
-                    Utils.error("添加形状失败：shape 为 null", {id, shapeId});
-                    return;
+                    if (!shape) {
+                        Utils.error("添加形状失败：shape 为 null", {id, shapeId});
+                        return null;
+                    }
+
+                    // 设置属性
+                    //Utils.log("shapeId:", shape.getProperties());
+                    //shape.setProperties(properties);
+                    shape.bringToFront();
+
+                    // 保存映射
+                    this.shapeIds.set(id, shapeId);
+                    Utils.log("添加形状", {id, shapeId});
+
+                    return shapeId;
+                })();
+
+                this._pendingShapeCreate.set(id, createPromise);
+
+                const shapeId = await createPromise;
+                if (shapeId === null) {
+                    // shape creation failed
                 }
-
-                // 设置属性
-                //Utils.log("shapeId:", shape.getProperties());
-                //shape.setProperties(properties);
-                shape.bringToFront();
-
-                // 保存映射
-                this.shapeIds.set(id, shapeId);
-                Utils.log("添加形状", {id, shapeId});
 
             } catch (error) {
                 Utils.error("添加形状失败", error);
+            } finally {
+                this._pendingShapeCreate.delete(id);
             }
         }
 
         async removeShape(id) {
             try {
                 if (!this.widget || !this.widget.chart) return;
+
+                // 等待该 ID 的 addShape 完成（避免竞态）
+                const pending = this._pendingShapeCreate.get(id);
+                if (pending) {
+                    await pending;
+                }
 
                 const shapeId = this.shapeIds.get(id);
                 if (!shapeId) {
@@ -1161,6 +1188,12 @@ print("=== 趋势分析 ===")
         async updateShape(id, points, properties) {
             try {
                 if (!this.widget || !this.widget.chart) return;
+
+                // 等待该 ID 的 addShape 完成（避免竞态）
+                const pending = this._pendingShapeCreate.get(id);
+                if (pending) {
+                    await pending;
+                }
 
                 const shapeId = this.shapeIds.get(id);
                 if (!shapeId) {
