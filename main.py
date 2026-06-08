@@ -894,37 +894,13 @@ class 观察者(观察者):
             raise e
 
     def __处理数据(self, 普K: K线):
-        状态, 当前分型 = 缠论K线.分析(普K, self.缠论K线序列, self.普通K线序列, self.配置)
-        self.数据队列 and self.数据队列.put((普K.时间戳, 普K.开盘价, 普K.高, 普K.低, 普K.收盘价, 普K.成交量, 0))
-        if 当前分型 is None:
-            return
-
         if self.配置.推送K线:
             self.报信(普K, 指令.添加("RawBar"), sys._getframe().f_lineno, 周期=普K.周期)
 
         if self.数据通道 is not None and self.配置.图表展示:
             time.sleep(self.延迟时间)
-
-        self.配置.分析笔 and 笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, self.普通K线序列, 0, self.配置)
-        if not self.分型序列:
-            return
-
-        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列)
-
-        self.配置.分析线段 and 线段.分析(self.笔序列, self.线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列)
-
-        self.配置.分析扩展线段 and 线段.扩展分析(self.笔序列, self.扩展线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列)
-
-        self.配置.分析扩展线段 and 线段.扩展分析(self.线段序列, self.扩展线段序列_线段, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段)
-
-        self.配置.分析线段 and 线段.分析(self.线段序列, self.线段_线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列)
-
-        self.配置.分析扩展线段 and 线段.扩展分析(self.扩展线段序列, self.扩展线段序列_扩展线段, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_扩展线段, self.扩展中枢序列_扩展线段)
+        super().__处理数据(普K)
+        self.数据队列 and self.数据队列.put((普K.时间戳, 普K.开盘价, 普K.高, 普K.低, 普K.收盘价, 普K.成交量, 0))
 
         self.图表刷新()
         try:
@@ -942,6 +918,7 @@ class 观察者(观察者):
         买卖点识别器._最后确认位置.pop(self.标识, None)
         买卖点识别器._BSP1字典.pop(self.标识, None)
         self._已标注BSP序号: set = set()
+
         self.基础缠K序列: List[缠论K线] = []
 
         self.普通K线序列: List[K线] = []
@@ -952,20 +929,23 @@ class 观察者(观察者):
         self.笔序列: List[虚线] = 图表展示序列(self) if self.配置.推送笔 else []
         self.笔_中枢序列: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
 
-        self.线段序列: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
-        self.中枢序列: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
+        self.线段序列组: List[List[虚线],] = []  # 线段, 线段<线段>，线段<线段<线段>>...
+        self.中枢序列组: List[List[中枢],] = []
+        for i in range(self.线段分析层次):
+            self.线段序列组.append(图表展示序列(self) if self.配置.推送线段 else [])
+            self.中枢序列组.append(图表展示序列(self) if self.配置.推送中枢 else [])
 
-        self.扩展线段序列: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
-        self.扩展中枢序列: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
+        self.扩展线段序列组: List[List[虚线],] = []  # 扩展线段, 扩展线段<扩展线段>, 扩展线段<扩展线段<扩展线段>>...
+        self.扩展中枢序列组: List[List[中枢],] = []
+        for i in range(self.扩展线段分析层次):
+            self.扩展线段序列组.append(图表展示序列(self) if self.配置.推送线段 else [])
+            self.扩展中枢序列组.append(图表展示序列(self) if self.配置.推送中枢 else [])
 
-        self.扩展线段序列_线段: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
-        self.扩展中枢序列_线段: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
-
-        self.线段_线段序列: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
-        self.线段_中枢序列: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
-
-        self.扩展线段序列_扩展线段: List[虚线] = 图表展示序列(self) if self.配置.推送线段 else []
-        self.扩展中枢序列_扩展线段: List[中枢] = 图表展示序列(self) if self.配置.推送中枢 else []
+        self.混合扩展线段序列组: List[List[虚线],] = []  # 扩展线段<线段>, 扩展线段<线段<线段>>, 扩展线段<线段<线段<线段>>>...
+        self.混合扩展中枢序列组: List[List[中枢],] = []
+        for i in range(self.混合扩展线段分析层次):
+            self.混合扩展线段序列组.append(图表展示序列(self) if self.配置.推送线段 else [])
+            self.混合扩展中枢序列组.append(图表展示序列(self) if self.配置.推送中枢 else [])
 
     def 读取任意数据(self, 魔法, **魔法参数):
         魔法(**魔法参数)
@@ -982,44 +962,7 @@ class 观察者(观察者):
 
     def 静态重新分析(self):
         self.买卖点字典 = dict()
-
-        self.分型序列: List[分型] = []
-
-        self.笔序列: List[虚线] = []
-        self.笔_中枢序列: List[中枢] = []
-
-        self.线段序列: List[虚线] = []
-        self.中枢序列: List[中枢] = []
-
-        self.扩展线段序列: List[虚线] = []
-        self.扩展中枢序列: List[中枢] = []
-
-        self.扩展线段序列_线段: List[虚线] = []
-        self.扩展中枢序列_线段: List[中枢] = []
-
-        self.线段_线段序列: List[虚线] = []
-        self.线段_中枢序列: List[中枢] = []
-
-        self.扩展线段序列_扩展线段: List[虚线] = []
-        self.扩展中枢序列_扩展线段: List[中枢] = []
-
-        for i in range(1, len(self.缠论K线序列) - 1):
-            当前分型 = 分型(self.缠论K线序列[i - 1], self.缠论K线序列[i], self.缠论K线序列[i + 1])
-            笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, self.普通K线序列, 0, self.配置)
-
-        self.配置.分析笔中枢 and 中枢.分析(self.笔序列, self.笔_中枢序列)
-
-        self.配置.分析线段 and 线段.分析(self.笔序列, self.线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段序列, self.中枢序列)
-
-        self.配置.分析扩展线段 and 线段.扩展分析(self.笔序列, self.扩展线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列, self.扩展中枢序列)
-
-        self.配置.分析扩展线段 and 线段.扩展分析(self.线段序列, self.扩展线段序列_线段, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.扩展线段序列_线段, self.扩展中枢序列_线段)
-
-        self.配置.分析线段 and 线段.分析(self.线段序列, self.线段_线段序列, self.配置)
-        self.配置.分析线段中枢 and 中枢.分析(self.线段_线段序列, self.线段_中枢序列)
+        super().静态重新分析()
 
     def 添加买卖点(self, 特征: str, 买卖点分型: 分型, 序号: str, 级别: str):
         当前买卖点: 买卖点 = 买卖点.生成买卖点(特征, 序号, 级别, 买卖点分型, self.当前缠K)
@@ -1194,14 +1137,17 @@ class 观察者(观察者):
                 if 对象.标识 in ("笔", "线段", "线段<线段>", "中枢<笔>", "中枢<线段>"):
                     message["overrides"]["visible"] = True
 
-                if type(对象) is not 线段特征:
-                    message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期} {getattr(对象, '四象', '')} {getattr(对象, '特征序列状态', '')} {getattr(对象, '级别', '')} {getattr(对象, '备注', '')}"
+                if type(对象) is 虚线:
+                    message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期}"
+                    if "扩展" not in 对象.标识:
+                        message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期} {线段.四象(对象)} 短路修正:{对象.短路修正} {线段.特征序列状态(对象)} {getattr(对象, '级别', '')}"
+                        message["overrides"]["text"] += f" 内部中枢数量:{len(对象.实_中枢序列)}"
 
-                if 对象.标识 in ("线段", "线段<线段>"):
-                    message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期} {线段.四象(对象)} {线段.特征序列状态(对象)} {getattr(对象, '级别', '')} {getattr(对象, '备注', '')}"
+                    if 对象.标识 == "笔":
+                        message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期}"
 
-                if 对象.标识 in ("线段", "线段<线段>", "线段<线段<线段>>"):
-                    message["overrides"]["text"] += f" 内部中枢数量:{len(对象.实_中枢序列)}"
+                if type(对象) is 中枢:
+                    message["overrides"]["text"] = f"{对象.标识} {对象.序号} 周期:{self.周期}"
 
                 if type(对象) is 线段特征:
                     message["overrides"].update({"linecolor": "#F1C40F" if 对象.方向 is 相对方向.向下 else "#fbc02d", "linewidth": 4, "linestyle": 1})
@@ -1366,10 +1312,15 @@ class 观察者(观察者):
         # btcusd-300-1631772074-1632222374.nb
         if "_err-" in str(文件路径):
             try:
-                配置 = 缠论配置.加载配置(str(文件路径).replace(".nb", ".json"))
-                print("加载异常配置", 缠论配置().对比(配置))
+                异常配置 = 缠论配置.加载配置(str(文件路径).replace(".nb", ".json"))
+                差异 = 缠论配置().对比(异常配置)
+                print("加载异常配置", 差异)
+                传入差异 = 缠论配置().对比(配置)
+                传入差异.update(差异)
+                配置 = 缠论配置(**传入差异)
+                print("加载异常配置+传入差异", 传入差异)
             except:
-                pass
+                traceback.print_exc()
 
         name = Path(文件路径).name.split(".")[0]
         符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
@@ -1379,7 +1330,7 @@ class 观察者(观察者):
             buffer = f.read()
             size = struct.calcsize(">6d")
             for i in range(len(buffer) // size):
-                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], int(周期))
+                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], int(周期), 符号)
                 实例.增加原始K线(k线)
 
         return 实例
@@ -2577,7 +2528,7 @@ async def 处理图表消息(用户标识: str, 消息字典: Dict, websocket: W
 
         config = 消息字典.get("config", dict())
         当前配置 = 缠论配置.from_dict(config)
-        print(当前配置)
+        print(当前配置.to_dict())
         配置组 = 缠论配置.按序号重组字典(当前配置, config)
         print(配置组)
 
