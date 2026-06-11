@@ -31,12 +31,14 @@ from __future__ import annotations
 import json
 import math
 import os
+from collections import deque
+import random
 import struct
 import sys
 import tempfile
 import datetime as datetime_module
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -52,6 +54,7 @@ from typing import (
     Sequence,
     Callable,
     Set,
+    Generator,
 )
 
 from loguru import logger
@@ -1067,6 +1070,23 @@ class 相对方向(Enum):
             return 相对方向.逆
         raise RuntimeError("无法识别的方向")
 
+    @classmethod
+    def 从序列中机选(
+        cls,
+        数量: int,
+        可选方向: List["相对方向"],
+        可重复: bool = True,  # 是否允许重复选择
+    ) -> Generator["相对方向", None, None]:
+        if not 可重复 and 数量 > len(可选方向):
+            raise ValueError("数量超过可选方向数")
+
+        if 可重复:
+            while 数量 > 0:
+                yield random.choice(可选方向)
+                数量 -= 1
+        else:
+            yield from random.sample(可选方向, 数量)
+
 
 class 分型结构(Enum):
     """描述三根K线构成的顶底分型形态。
@@ -1439,10 +1459,11 @@ class 相对强弱指数:
         下跌幅度: float = 0.0,
         平滑系数: float = 0.0,
         RSI_SMA: Optional[float] = None,
-        RSI历史队列: List[float] = None,
+        RSI历史队列: Optional[deque[float]] = None,
+        RSI和: float = 0.0,
     ):
         if RSI历史队列 is None:
-            RSI历史队列 = []
+            RSI历史队列 = deque()
 
         # 原始数据
         self.时间戳 = 时间戳
@@ -1471,6 +1492,7 @@ class 相对强弱指数:
         # RSI的SMA（信号线）相关字段
         self.RSI_SMA = RSI_SMA
         self.RSI历史队列 = RSI历史队列
+        self.RSI和 = RSI和
 
     @classmethod
     def 首次计算(cls, 初始收盘价: float, 初始时间: datetime, 周期: int = 14, 超买阈值: float = 70.0, 超卖阈值: float = 30.0, RSI_SMA周期: Optional[int] = None) -> 相对强弱指数:
@@ -1558,19 +1580,18 @@ class 相对强弱指数:
 
         # ----- 计算RSI的SMA（简单移动平均） -----
         RSI_SMA = None
-        历史队列 = 前一个RSI.RSI历史队列.copy() if 前一个RSI.RSI历史队列 else []
+        历史队列 = 前一个RSI.RSI历史队列.copy() if 前一个RSI.RSI历史队列 else deque()
+        RSI和 = 前一个RSI.RSI和
         if RSI_SMA周期 is not None and RSI_SMA周期 > 0 and RSI is not None:
-            # 将当前RSI加入队列
             历史队列.append(RSI)
-            # 保持队列长度不超过周期
+            RSI和 += RSI
             if len(历史队列) > RSI_SMA周期:
-                历史队列.pop(0)
-            # 计算SMA（即使队列未满也计算当前平均值）
+                RSI和 -= 历史队列.popleft()
             if 历史队列:
-                RSI_SMA = sum(历史队列) / len(历史队列)
+                RSI_SMA = RSI和 / len(历史队列)
         else:
-            # 未启用SMA，清空队列
-            历史队列 = []
+            历史队列 = deque()
+            RSI和 = 0.0
 
         return cls(
             时间戳=当前时间,
@@ -1587,6 +1608,7 @@ class 相对强弱指数:
             RSI_SMA周期=RSI_SMA周期,
             RSI_SMA=RSI_SMA,
             RSI历史队列=历史队列,
+            RSI和=RSI和,
         )
 
     @classmethod
@@ -1638,16 +1660,16 @@ class 随机指标:
         K: Optional[float] = None,
         D: Optional[float] = None,
         J: Optional[float] = None,
-        历史最高价队列: list[float] = None,
-        历史最低价队列: list[float] = None,
+        历史最高价队列: Optional[deque[float]] = None,
+        历史最低价队列: Optional[deque[float]] = None,
         前一个RSV: Optional[float] = None,
         前一个K: Optional[float] = None,
         前一个D: Optional[float] = None,
     ):
         if 历史最高价队列 is None:
-            历史最高价队列 = []
+            历史最高价队列 = deque()
         if 历史最低价队列 is None:
-            历史最低价队列 = []
+            历史最低价队列 = deque()
 
         # 原始数据
         self.时间戳 = 时间戳
@@ -1707,8 +1729,8 @@ class 随机指标:
             K=None,
             D=None,
             J=None,
-            历史最高价队列=[初始最高价],
-            历史最低价队列=[初始最低价],
+            历史最高价队列=deque([初始最高价]),
+            历史最低价队列=deque([初始最低价]),
             前一个RSV=None,
             前一个K=None,
             前一个D=None,
@@ -1755,13 +1777,13 @@ class 随机指标:
         历史最高价 = 前一个KDJ.历史最高价队列.copy()
         历史最高价.append(当前最高价)
         if len(历史最高价) > N:
-            历史最高价.pop(0)
+            历史最高价.popleft()
 
         # 更新历史最低价队列
         历史最低价 = 前一个KDJ.历史最低价队列.copy()
         历史最低价.append(当前最低价)
         if len(历史最低价) > N:
-            历史最低价.pop(0)
+            历史最低价.popleft()
 
         # 计算RSV（需要队列长度达到N才能计算）
         RSV = None
@@ -1860,7 +1882,7 @@ class 布林带:
         self.上轨 = 上轨
         self.中轨 = 中轨
         self.下轨 = 下轨
-        self._历史队列 = 历史队列 if 历史队列 is not None else []
+        self._历史队列 = 历史队列 if 历史队列 is not None else deque()
         self._均值 = _均值
         self._方差和 = _方差和
 
@@ -1875,7 +1897,7 @@ class 布林带:
         :return: 初始的布林带实例
         """
         价格 = 指标.K线取值(k线, 计算方式)
-        return cls(时间戳=k线.时间戳, 周期=周期, 标准差倍数=标准差倍数, 上轨=价格, 中轨=价格, 下轨=价格, 历史队列=[价格])
+        return cls(时间戳=k线.时间戳, 周期=周期, 标准差倍数=标准差倍数, 上轨=价格, 中轨=价格, 下轨=价格, 历史队列=deque([价格]))
 
     @classmethod
     def 增量计算(cls, prev: 布林带, 当前K线: K线, 计算方式: str) -> 布林带:
@@ -1893,7 +1915,7 @@ class 布林带:
         q = prev._历史队列.copy()
         q.append(当前价)
         if len(q) > 周期:
-            q.pop(0)
+            q.popleft()
 
         # 增量均值和方差
         if len(q) < 周期:
@@ -2610,6 +2632,58 @@ class K线:
         :return: K线子列表
         """
         return 序列[序列.index(始) : 序列.index(终) + 1]
+
+    def 根据当前K线生成新K线(self, 方向: 相对方向, 居中: bool = False) -> "K线":
+        时间偏移 = timedelta(seconds=self.周期)
+        时间戳: datetime = self.时间戳 + 时间偏移
+        成交量: float = 998
+        高: float = 0
+        低: float = 0
+        高低差 = self.高 - self.低
+        match 方向:
+            case 相对方向.向上:
+                偏移 = 高低差 * 0.5 if 居中 else random.randint(int(高低差 * 0.1279), int(高低差 * 0.883))
+                低 = self.低 + 偏移
+                高 = self.高 + 偏移
+            case 相对方向.向下:
+                偏移 = 高低差 * 0.5 if 居中 else random.randint(int(高低差 * 0.1279), int(高低差 * 0.883))
+                低 = self.低 - 偏移
+                高 = self.高 - 偏移
+            case 相对方向.向上缺口:
+                偏移 = 高低差 * 1.5 if 居中 else random.randint(int(高低差 * 1.1279), int(高低差 * 1.883))
+                低 = self.低 + 偏移
+                高 = self.高 + 偏移
+            case 相对方向.向下缺口:
+                偏移 = 高低差 * 1.5 if 居中 else random.randint(int(高低差 * 1.1279), int(高低差 * 1.883))
+                低 = self.低 - 偏移
+                高 = self.高 - 偏移
+            case 相对方向.衔接向上:
+                偏移 = self.高 - self.低
+                高 = self.高 + 偏移
+                低 = self.高
+            case 相对方向.衔接向下:
+                偏移 = self.高 - self.低
+                高 = self.低
+                低 = self.低 - 偏移
+
+        try:
+            小数点 = [len(str(n).split(".")[-1]) for n in (self.开盘价, self.高, self.低, self.收盘价)]
+        except:
+            小数点 = [2, 1]
+        新K线 = K线.创建普K(
+            标识=self.标识,
+            时间戳=时间戳,
+            开盘价=round(random.uniform(高, 低), max(小数点)),
+            最高价=round(高, max(小数点)),
+            最低价=round(低, max(小数点)),
+            收盘价=round(random.uniform(高, 低), max(小数点)),
+            成交量=成交量 * random.random(),
+            序号=self.序号 + 1,
+            周期=self.周期,
+        )
+
+        # assert 相对方向.分析(self, 新K线) is 方向, (方向, 相对方向.分析(self, 新K线))
+        return 新K线
 
 
 class 缠论K线:
@@ -3365,7 +3439,7 @@ class 虚线:
         段.实_中枢序列 = []
         段.虚_中枢序列 = []
         段.合_中枢序列 = []
-        段.基础序列 = 虚线序列
+        段.基础序列 = 虚线序列[:]
         return 段
 
     @classmethod
@@ -3533,6 +3607,111 @@ class 虚线:
         if 取值函数(所有柱子) == 实线.武.中.标的K线.macd.MACD柱:
             return True
         return False
+
+    @classmethod
+    def _计算K线序列MACD趋向背驰(cls, 普K序列: Sequence[K线], 方向: 相对方向):
+        """计算K线序列的MACD柱/DIF/DEA趋向背驰（三元素判断）
+
+        :param 普K序列: K线序列
+        :param 方向: 运行方向
+        :return: [柱子背驰, DIF背驰, DEA背驰]
+        """
+        if 方向 is 相对方向.向上:
+            柱子序列 = []
+            离差值序列 = []
+            信号线序列 = []
+            for k线 in 普K序列:
+                m = k线.macd
+                if m.MACD柱 > 0:
+                    柱子序列.append(k线)
+                if m.DIF > 0:
+                    离差值序列.append(k线)
+                if m.DEA > 0:
+                    信号线序列.append(k线)
+
+            if not 柱子序列:
+                return [False, False, False]
+            最高柱子 = max(柱子序列, key=lambda k线: k线.macd.MACD柱)
+            最高离差值 = max(离差值序列, key=lambda k线: k线.macd.DIF) if 离差值序列 else None
+            最高信号线 = max(信号线序列, key=lambda k线: k线.macd.DEA) if 信号线序列 else None
+
+            结果 = []
+            柱子 = [最高柱子, 普K序列[-1]]
+            柱子.sort(key=lambda k线: k线.时间戳)
+            if 柱子[0].macd.MACD柱 > 柱子[1].macd.MACD柱 and 柱子[0].高 < 柱子[1].高:
+                结果.append(True)
+            else:
+                结果.append(False)
+
+            if 最高离差值 is not None:
+                柱子 = [最高离差值, 普K序列[-1]]
+                柱子.sort(key=lambda k线: k线.时间戳)
+                if 柱子[0].macd.DIF > 柱子[1].macd.DIF and 柱子[0].高 < 柱子[1].高:
+                    结果.append(True)
+                else:
+                    结果.append(False)
+            else:
+                结果.append(False)
+
+            if 最高信号线 is not None:
+                柱子 = [最高信号线, 普K序列[-1]]
+                柱子.sort(key=lambda k线: k线.时间戳)
+                if 柱子[0].macd.DEA > 柱子[1].macd.DEA and 柱子[0].高 < 柱子[1].高:
+                    结果.append(True)
+                else:
+                    结果.append(False)
+            else:
+                结果.append(False)
+
+            return 结果
+        else:
+            柱子序列 = []
+            离差值序列 = []
+            信号线序列 = []
+            for k线 in 普K序列:
+                m = k线.macd
+                if m.MACD柱 < 0:
+                    柱子序列.append(k线)
+                if m.DIF < 0:
+                    离差值序列.append(k线)
+                if m.DEA < 0:
+                    信号线序列.append(k线)
+
+            if not 柱子序列:
+                return [False, False, False]
+            最高柱子 = max(柱子序列, key=lambda k线: abs(k线.macd.MACD柱))
+            最高离差值 = max(离差值序列, key=lambda k线: abs(k线.macd.DIF)) if 离差值序列 else None
+            最高信号线 = max(信号线序列, key=lambda k线: abs(k线.macd.DEA)) if 信号线序列 else None
+
+            结果 = []
+            柱子 = [最高柱子, 普K序列[-1]]
+            柱子.sort(key=lambda k线: k线.时间戳)
+            if 柱子[0].macd.MACD柱 < 柱子[1].macd.MACD柱 and 柱子[0].低 > 柱子[1].低:
+                结果.append(True)
+            else:
+                结果.append(False)
+
+            if 最高离差值 is not None:
+                柱子 = [最高离差值, 普K序列[-1]]
+                柱子.sort(key=lambda k线: k线.时间戳)
+                if 柱子[0].macd.DIF < 柱子[1].macd.DIF and 柱子[0].低 > 柱子[1].低:
+                    结果.append(True)
+                else:
+                    结果.append(False)
+            else:
+                结果.append(False)
+
+            if 最高信号线 is not None:
+                柱子 = [最高信号线, 普K序列[-1]]
+                柱子.sort(key=lambda k线: k线.时间戳)
+                if 柱子[0].macd.DEA < 柱子[1].macd.DEA and 柱子[0].低 > 柱子[1].低:
+                    结果.append(True)
+                else:
+                    结果.append(False)
+            else:
+                结果.append(False)
+
+            return 结果
 
     @classmethod
     def 计算K线序列MACD趋向背驰(cls, 普K序列: Sequence[K线], 方向: 相对方向):
@@ -4072,8 +4251,7 @@ class 笔:
                                 临时分型 = 分型.从缠K序列中获取分型(缠K序列, ck)
                                 递归层次 = 笔递归分析(临时分型, 分型序列, 笔序列, 缠K序列, 普K序列, 递归层次 + 1, 配置)
                                 if 分型序列 and 分型序列[-1] is 临时分型:
-                                    """"""
-                                    # logger.warning("笔.分析 事后修复错过的笔", 临时分型, "当前分型", 当前分型)
+                                    logger.warning(f"笔.分析 事后修复错过的笔:{临时分型}, 当前分型: {当前分型}")
 
                     递归层次 = 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 普K序列, 递归层次 + 1, 配置)
                     return 递归层次
@@ -4231,14 +4409,14 @@ class 线段特征:
         return self.标识  # f"{self.标识}:{self.序号}"
 
     def __str__(self):
-        if not len(self):
+        if not len(self.基础序列):
             return f"{self.标识}<{self.线段方向}, 空>"
-        return f"{self.标识}<{self.线段方向}, {self.文}, {self.武}, {len(self)}>"
+        return f"{self.标识}<{self.线段方向}, {self.文}, {self.武}, {len(self.基础序列)}>"
 
     def __repr__(self):
-        if not len(self):
+        if not len(self.基础序列):
             return f"{self.标识}<{self.线段方向}, 空>"
-        return f"{self.标识}<{self.线段方向}, {self.文}, {self.武}, {len(self)}>"
+        return f"{self.标识}<{self.线段方向}, {self.文}, {self.武}, {len(self.基础序列)}>"
 
     @property
     def 文(self) -> 分型:
@@ -4449,6 +4627,11 @@ class 线段:
 
     __slots__ = []
 
+    @staticmethod
+    def _索引(序列: list, 项) -> int:
+        """O(1) index lookup — 序列元素序号连续递增。"""
+        return 项.序号 - 序列[0].序号
+
     @classmethod
     def _添加虚线(cls, 段: 虚线, 筆: 虚线):
         """向线段中添加一笔
@@ -4579,7 +4762,7 @@ class 线段:
                     break
 
             if (len(基础序列) >= 6) and (len(基础序列) % 2 == 0):
-                段.基础序列[:] = 基础序列[:]
+                段.基础序列[:] = 基础序列
             else:
                 raise RuntimeError()
         else:
@@ -4596,7 +4779,7 @@ class 线段:
             return
         基础序列 = 段.基础序列
         if 段.前一结束位置 and 段.前一结束位置 in 基础序列:
-            基础序列 = 段.基础序列[段.基础序列.index(段.前一结束位置) - 1 :]
+            基础序列 = 段.基础序列[cls._索引(段.基础序列, 段.前一结束位置) - 1 :]
 
         特征序列 = 线段特征.静态分析(基础序列, 段.方向, 线段.四象(段), 配置.线段_特征序列忽视老阴老阳)
         if len(特征序列) >= 3:
@@ -4714,7 +4897,7 @@ class 线段:
                 特征后一笔 = 最近特征.基础序列[-1]
 
             if 特征后一笔 is not None:
-                序号 = 段.基础序列.index(特征后一笔)
+                序号 = cls._索引(段.基础序列, 特征后一笔)
                 if 序号 < len(段.基础序列) - 1:
                     下一笔 = 段.基础序列[序号 + 1]
                     if (段.方向 is 相对方向.向上 and 段.高 <= 下一笔.高) or (段.方向 is 相对方向.向下 and 段.低 >= 下一笔.低):
@@ -4733,15 +4916,16 @@ class 线段:
         :param 序列: 参考序列
         """
         基础序列 = []
+        序列集 = set(序列) if not isinstance(序列, set) else 序列
         for 元素 in 段.基础序列:
-            if 元素 not in 序列:
+            if 元素 not in 序列集:
                 break
             if 基础序列:
                 if not 基础序列[-1].之后是(元素):
                     break
             基础序列.append(元素)
 
-        段.基础序列[:] = 基础序列[:]
+        段.基础序列[:] = 基础序列
         段.特征序列[2] = None
 
     @classmethod
@@ -4810,16 +4994,17 @@ class 线段:
         return True
 
     @classmethod
-    def _添加线段(cls, 线段序列: List[虚线], 待添加线段: 虚线, 配置: 缠论配置, 行号: str):
+    def _添加线段(cls, 线段序列: List[虚线], 待添加线段: 虚线, 配置: 缠论配置, 行号: int, 层级: int):
         """内部方法：向线段序列添加新线段
 
         :param 线段序列: 线段列表
         :param 待添加线段: 新线段
         :param 配置: 缠论配置
         :param 行号: 调用行号
+        :param 层级: 递归层级
         """
         if 线段序列 and not 线段序列[-1].之后是(待添加线段):
-            raise ValueError(f"线段.向序列中添加 不连续[{行号}]", 线段序列[-1].武, 待添加线段.文)
+            raise ValueError(f"线段.向序列中添加 不连续[{行号}, {层级}]", 线段序列[-1].武, 待添加线段.文)
         待添加线段.模式 = "文武"
 
         if not 线段序列:
@@ -4830,10 +5015,10 @@ class 线段:
 
         if not 之前线段.特征序列[2] and not 之前线段.短路修正:
             assert not 待添加线段.短路修正 and 之前线段.特征序列[2][-1] in 待添加线段.基础序列
-            raise RuntimeError(f"线段._向序列中添加[{行号}], 之前线段.右 = None", 之前线段)
+            raise RuntimeError(f"线段._向序列中添加[{行号}, {层级}], 之前线段.右 = None", 之前线段)
 
         if 之前线段.基础序列[-1] not in 待添加线段.基础序列 and not 之前线段.短路修正:
-            raise RuntimeError(f"线段._向序列中添加[{行号}], 之前线段[-1] not in 待添加虚线!", 之前线段)
+            raise RuntimeError(f"线段._向序列中添加[{行号}, {层级}], 之前线段[-1] not in 待添加虚线!", 之前线段)
 
         待添加线段.序号 = 之前线段.序号 + 1
         待添加线段.前一缺口 = 线段.获取缺口(之前线段) if not 之前线段.短路修正 else None
@@ -4846,13 +5031,14 @@ class 线段:
         # logger.warning(f"线段._向序列中添加[{行号}]", 待添加虚线)
 
     @classmethod
-    def _弹出线段(cls, 线段序列: List[虚线], 待弹出线段: 虚线, 配置: 缠论配置, 行号: str):
+    def _弹出线段(cls, 线段序列: List[虚线], 待弹出线段: 虚线, 配置: 缠论配置, 行号: int, 层级: int):
         """内部方法：从线段序列弹出最后一个线段
 
         :param 线段序列: 线段列表
         :param 待弹出线段: 待弹出的线段
         :param 配置: 缠论配置
         :param 行号: 调用行号
+        :param 层级: 递归层级
         :return: 弹出的线段或None
         """
         if not 线段序列:
@@ -4865,7 +5051,7 @@ class 线段:
         if 右 is not None:
             结构 = 分型结构.分析(左, 中, 右, True, True)
             if 结构 in (分型结构.顶, 分型结构.底) and not 相对方向.分析(左.高, 左.低, 中.高, 中.低).是否缺口():
-                logger.warning(f"警告<{行号}>] 线段._从序列中删除 发现分型完毕, 且特征序列无缺口 {待弹出线段}")
+                logger.warning(f"警告<{行号}, {层级}>] 线段._从序列中删除 发现分型完毕, 且特征序列无缺口 {待弹出线段}")
 
         线段序列.pop()
         待弹出线段.前一结束位置 = None
@@ -4910,7 +5096,7 @@ class 线段:
 
         # 执行修正
         序列 = 当前线段.基础序列[:]
-        线段._弹出线段(线段序列, 当前线段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+        线段._弹出线段(线段序列, 当前线段, 配置, sys._getframe().f_lineno, 层级)
         assert 线段序列, "缺口突破: 线段序列为第二次空！"
         当前线段 = 线段序列[-1]
 
@@ -4919,7 +5105,7 @@ class 线段:
         assert 当前线段基础序列[-1].之后是(序列[0]), "缺口突破: 子序列不连续!"
         当前线段基础序列.extend(序列)
 
-        当前线段.基础序列[:] = 当前线段基础序列[:]
+        当前线段.基础序列[:] = 当前线段基础序列
         线段._刷新(当前线段, 配置)
         return True
 
@@ -4947,7 +5133,7 @@ class 线段:
 
         assert 贯穿伤 in 当前线段.基础序列, "非缺口下穿刺: 贯穿伤不在基础序列中！"
         # 切割基础序列
-        基础序列 = 当前线段.基础序列[当前线段.基础序列.index(贯穿伤) :]
+        基础序列 = 当前线段.基础序列[cls._索引(当前线段.基础序列, 贯穿伤) :]
 
         # 长度条件
         if not (len(基础序列) == 4 and len(线段序列) >= 2):
@@ -4963,19 +5149,25 @@ class 线段:
         logger.warning(f"[警告<{sys._getframe().f_lineno}, {层级}>]: {当前线段.标识}.修复贯穿伤, 序号:{当前线段.序号} {贯穿伤} {基础序列}")  # 异常弹出
 
         基础序列 = 当前线段.基础序列[:]
-        线段._弹出线段(线段序列, 当前线段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+        线段._弹出线段(线段序列, 当前线段, 配置, sys._getframe().f_lineno, 层级)
         assert 线段序列, "非缺口下穿刺: 第二次线段序列为空！"
         当前线段 = 线段序列[-1]
         当前线段.特征序列[2] = None
-        assert 当前线段.基础序列[-1] in 基础序列, "非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！"
-        for 临时虚线 in 基础序列[基础序列.index(当前线段.基础序列[-1]) + 1 :]:
+        # assert 当前线段.基础序列[-1] in 基础序列, "非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！"
+        if 当前线段.基础序列[-1] not in 基础序列:
+            logger.error(f"非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！")
+            序号 = 0
+        else:
+            序号 = cls._索引(基础序列, 当前线段.基础序列[-1]) + 1
+
+        for 临时虚线 in 基础序列[序号:]:
             线段._添加虚线(当前线段, 临时虚线)
         线段._刷新(当前线段, 配置)
         当前线段.短路修正 = True
 
         if 当前线段.特征序列[2] is not None:
             段 = 虚线.创建线段([左, 中, 右])
-            线段._添加线段(线段序列, 段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+            线段._添加线段(线段序列, 段, 配置, sys._getframe().f_lineno, 层级)
             段.特征序列[0] = 线段特征.新建([中], 段.方向)
 
         return True
@@ -5021,7 +5213,7 @@ class 线段:
         # 执行修正
         当前线段.短路修正 = True
         新段 = 虚线.创建线段(基础序列)
-        线段._添加线段(线段序列, 新段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+        线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
         return True
 
     @classmethod
@@ -5064,7 +5256,7 @@ class 线段:
         # 创建第一个新段（之后基础序列去掉最后3个）
         新段 = 虚线.创建线段(之后基础序列[:-3])
         新段.短路修正 = True
-        线段._添加线段(线段序列, 新段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+        线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
 
         # 根据当前线段的四象决定是否清空前一个缺口
         if 线段.四象(当前线段) in ("老阴", "老阳"):
@@ -5072,7 +5264,7 @@ class 线段:
 
         # 创建第二个新段（最后3个元素）
         新段 = 虚线.创建线段(之后基础序列[-3:])
-        线段._添加线段(线段序列, 新段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+        线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
 
         return True
 
@@ -5108,7 +5300,7 @@ class 线段:
                 if not 线段._基础判断(左, 中, 右, 关系序列):  # FIXME 首个线段必须有明确方向
                     continue
                 段 = 虚线.创建线段([左, 中, 右])
-                线段._添加线段(线段序列, 段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+                线段._添加线段(线段序列, 段, 配置, sys._getframe().f_lineno, 层级)
                 段.特征序列[0] = 线段特征.新建([中], 段.方向)
                 break
             if not 线段序列:
@@ -5117,7 +5309,7 @@ class 线段:
         # -------------------- 2. 清理无效的尾部引用 --------------------
         while 线段序列 and 线段序列[-1].前一结束位置:
             if 线段序列[-1].前一结束位置 not in 笔序列:
-                线段._弹出线段(线段序列, 线段序列[-1], 配置, f"{sys._getframe().f_lineno}, {层级}")
+                线段._弹出线段(线段序列, 线段序列[-1], 配置, sys._getframe().f_lineno, 层级)
             else:
                 break
 
@@ -5129,7 +5321,7 @@ class 线段:
         线段._序列重置(当前线段, 笔序列)
 
         if len(当前线段.基础序列) < 3:
-            线段._弹出线段(线段序列, 当前线段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+            线段._弹出线段(线段序列, 当前线段, 配置, sys._getframe().f_lineno, 层级)
             if not 线段序列:
                 return 线段递归分析(笔序列, 线段序列, 配置, 层级 + 1, 关系序列)
 
@@ -5139,7 +5331,7 @@ class 线段:
         if 当前线段.特征序列[2] is not None:
             基础序列 = 线段.分割序列(当前线段)[1]
             新段 = 虚线.创建线段(基础序列)
-            线段._添加线段(线段序列, 新段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+            线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
             if 线段.四象(当前线段) in ("老阴", "老阳"):
                 新段.前一缺口 = None
 
@@ -5156,9 +5348,10 @@ class 线段:
         当前线段 = 线段序列[-1]
         if not 当前线段.基础序列:
             raise RuntimeError
-        起始索引 = 笔序列.index(当前线段.基础序列[-1]) + 1
+        起始索引 = cls._索引(笔序列, 当前线段.基础序列[-1]) + 1
 
-        for 当前虚线 in 笔序列[起始索引:]:
+        for idx in range(起始索引, len(笔序列)):
+            当前虚线 = 笔序列[idx]
             当前线段 = 线段序列[-1]
             四象 = 线段.四象(当前线段)
 
@@ -5185,7 +5378,7 @@ class 线段:
 
             基础序列 = 线段.分割序列(当前线段)[1]
             新段 = 虚线.创建线段(基础序列)
-            线段._添加线段(线段序列, 新段, 配置, f"{sys._getframe().f_lineno}, {层级}")
+            线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
             if 四象 in ("老阴", "老阳"):
                 新段.前一缺口 = None
 
@@ -5217,15 +5410,16 @@ class 线段:
         :param 序列: 参考序列
         """
         基础序列 = []
+        序列集 = set(序列) if not isinstance(序列, set) else 序列
         for 元素 in 段.基础序列:
-            if 元素 not in 序列:
+            if 元素 not in 序列集:
                 break
             if 基础序列:
                 if not 基础序列[-1].之后是(元素):
                     logger.warning("    线段._验证序列 数据不连续")
                     break
             基础序列.append(元素)
-        段.基础序列[:] = 基础序列[:]
+        段.基础序列[:] = 基础序列
         if len(段.基础序列) % 2 == 0:
             段.基础序列 and 段.基础序列.pop()
 
@@ -5318,7 +5512,7 @@ class 线段:
         if 当前线段.基础序列[-1].序号 + 3 > 虚线序列[-1].序号:
             return None
 
-        序号 = 虚线序列.index(当前线段.基础序列[-1]) + 1
+        序号 = cls._索引(虚线序列, 当前线段.基础序列[-1]) + 1
         if 序号 >= len(虚线序列):
             return None
 
@@ -5381,7 +5575,7 @@ class 线段:
         if 当前段.实_中枢序列:
             if 阳[-1] in 当前段.实_中枢序列[-1].基础序列:
                 # 当前最后一笔在最后一中枢里
-                序号 = 当前段.基础序列.index(当前段.实_中枢序列[-1].基础序列[0])
+                序号 = cls._索引(当前段.基础序列, 当前段.实_中枢序列[-1].基础序列[0])
                 进入段 = 当前段.基础序列[序号 - 1]
                 离开段 = 阳[-1]
                 assert 进入段.序号 < 离开段.序号, (进入段.序号, 离开段.序号)
@@ -5435,7 +5629,7 @@ class 线段:
                     笔序列.append(停顿)
                     线段.分析(笔序列, 线段序列, 观察员.配置, 关系序列=[相对方向.向下, 相对方向.向上, 相对方向.顺, 相对方向.逆, 相对方向.同])
                     if 线段序列 and 线段序列[-1].武 is not 当前停顿 and len(线段序列[-1].基础序列) % 2 == 1:
-                        新段 = 虚线.创建线段(线段序列[-1].基础序列[:])
+                        新段 = 虚线.创建线段(线段序列[-1].基础序列)
                         新段.序号 = self.序号
                         线段._刷新(新段, 观察员.配置)
                         if 新段.方向 is self.方向:
@@ -5650,13 +5844,14 @@ class 中枢:
         """
         有效序列 = self.基础序列[:]
         无效序列 = []
+        序列集 = set(序列)
         for 元素 in self.基础序列:
-            if 元素 not in 序列:
+            if 元素 not in 序列集:
                 无效序列.append(元素)
 
         if 无效序列:
             无效 = 无效序列[0]
-            序号 = self.基础序列.index(无效)
+            序号 = 线段._索引(self.基础序列, 无效)
             有效序列 = self.基础序列[:序号]
 
         if len(有效序列) < 3:
@@ -5843,7 +6038,7 @@ class 中枢:
                 左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
                 if 中枢.基础检查(左, 中, 右):
                     新中枢 = 中枢.创建(左, 中, 右, 中.级别, 标识)
-                    序号 = 虚线序列.index(左)
+                    序号 = 线段._索引(虚线序列, 左)
                     if 跳过首部 and (左.序号 == 0 or 序号 == 0):
                         continue  # 方便计算走势
                     if 序号 >= 2:
@@ -5864,7 +6059,7 @@ class 中枢:
             中枢._从中枢序列尾部弹出(中枢序列, 当前中枢)
             return 中枢递归分析(虚线序列, 中枢序列, 跳过首部, 标识, 层级 + 1)
 
-        序号 = 虚线序列.index(当前中枢.基础序列[-1]) + 1
+        序号 = 线段._索引(虚线序列, 当前中枢.基础序列[-1]) + 1
 
         基础序列 = []
         for 当前虚线 in 虚线序列[序号:]:
