@@ -20,6 +20,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+-----------------------------------------------------------------------------
+第三方代码声明 / Third-Party Code Notice
+-----------------------------------------------------------------------------
+
+本文件末尾 信号匹配框架（Signal / Factor / Event / Position / SignalsParser
+等类）摘录自 czsc 项目（https://github.com/zengbin93/czsc），
+根据 Apache License 2.0 授权使用。
+
+原始许可协议全文见 https://www.apache.org/licenses/LICENSE-2.0
+
+已做修改：中文命名适配、类型标注增强、与 chan 分析器集成的扩展。
+
+
+Copyright [2025] [zengbin93]
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-----------------------------------------------------------------------------
 """
 
 # -*- coding: utf-8 -*-
@@ -31,11 +59,14 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections import deque
+import re
+from collections import deque, OrderedDict, defaultdict
 import random
 import struct
 import sys
 import tempfile
+import hashlib
+import traceback
 import datetime as datetime_module
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -58,6 +89,7 @@ from typing import (
 )
 
 from loguru import logger
+from parse import parse
 
 __all__ = [
     "K线",
@@ -91,6 +123,15 @@ __all__ = [
     "布林带",
     "set_log_level",
     "get_log_level",
+    "import_by_name",
+    "Signal",
+    "Factor",
+    "Event",
+    "SignalsParser",
+    "get_signals_config",
+    "create_single_signal",
+    "Position",
+    "信号计算器",
 ]
 
 # 日志级别映射: 名称 → loguru 级别名
@@ -135,6 +176,28 @@ def get_log_level() -> str:
     return _当前日志级别
 
 
+set_log_level("error")
+
+REGISTRY = {}
+
+
+def 注册(obj):
+    """
+    通用装饰器：支持函数和类。
+    obj 可以是 function，也可以是 class。
+    """
+    REGISTRY[obj.__name__] = obj
+    return obj
+
+
+def 注入依赖(目标模块):
+    """批量注入到目标模块"""
+    for name, obj in REGISTRY.items():
+        setattr(目标模块, name, obj)
+    logger.warning(f"成功自动注入: {list(REGISTRY.keys())}")
+
+
+@注册
 class 买卖点类型(str, Enum):
     """买卖点类型 — 缠论的三类买卖点及扩展类型。
 
@@ -188,6 +251,7 @@ class 买卖点类型(str, Enum):
         return "卖" in self.value
 
 
+@注册
 class 基础买卖点:
     """基础买卖点 — 描述偏离买入/卖出位置的程度。
 
@@ -280,6 +344,7 @@ class 基础买卖点:
         return self.买卖点分型.与MACD柱子分型匹配
 
 
+@注册
 @final
 class 买卖点(基础买卖点):
     """一二三类买卖点及扩展类型（T1/T1P/T2/T2S/T3A/T3B）的构造器。
@@ -383,17 +448,19 @@ class 买卖点(基础买卖点):
         return 买卖点函数(买卖点分型, 当前缠K, 特征, 备注, 破位值)
 
 
-class _datetime(datetime):  # 用于对齐C输出
-    def __str__(self):
+@注册
+class datetime(datetime):  # 用于对齐C输出
+    def __s2tr__(self):
         return f"{int(self.timestamp())}"
 
-    def __repr__(self):
+    def __re2pr__(self):
         return f"{int(self.timestamp())}"
 
     def __int__(self) -> int:
         return int(self.timestamp())
 
 
+@注册
 def 转化为时间戳(ts: Union[str, datetime, int, float]) -> datetime:
     """
     将不同类型的时间戳转换为datetime对象（统一比较标准）
@@ -416,6 +483,7 @@ def 转化为时间戳(ts: Union[str, datetime, int, float]) -> datetime:
         raise TypeError(f"不支持的时间戳类型: {type(ts)}")
 
 
+@注册
 def 转化为时间戳_数字(ts: Union[str, datetime, int, float]) -> int:
     """
     将不同类型的时间戳转换为整数秒级时间戳
@@ -441,6 +509,7 @@ class ValidationError(Exception):
     pass
 
 
+@注册
 @final
 class 缠论配置:
     """控制缠论分析各阶段行为的全局参数集。
@@ -453,7 +522,7 @@ class 缠论配置:
     **[线段]** 线段_特征序列忽视老阴老阳, 线段_缺口后紧急修正, 线段内部中枢图显 等 \\
     **[分析开关]** 分析笔, 分析线段, 分析扩展线段, 分析笔中枢, 分析线段中枢 \\
     **[指标]** 计算指标, 指标计算方式, MACD/RSI/KDJ 参数 \\
-    **[推送/显示]** 图表展示, 推送K线/笔/线段/中枢 等 \\
+    **[推送/显示]** 图表展示 (主开关), 图表展示标签 (标签列表) 等 \\
     **[买卖点]** 买卖点偏移, 买卖点激进识别, 买卖点_背离率, 买卖点_计算方式 等 \\
     **[背驰]** 线段内部背驰_MACD, 线段内部背驰_斜率 等 \\
     **[其他]** 手动终止, 加载文件路径
@@ -492,45 +561,15 @@ class 缠论配置:
         分析线段中枢: bool = True,
         手动终止: str = "",  # 2099-12-31 00:00:00
         计算指标: bool = True,
-        指标计算方式: str = "收",  # (开, 高, 低, 收, 高低均值, 高低收均值, 开高低收均值), 默认 收盘价
-        平滑异同移动平均线_快线周期: int = 13,
-        平滑异同移动平均线_慢线周期: int = 31,
-        平滑异同移动平均线_信号周期: int = 11,
-        相对强弱指数_周期: int = 13,
-        相对强弱指数_移动平均线周期: int = 13,
-        相对强弱指数_超买阈值: float = 75.0,
-        相对强弱指数_超卖阈值: float = 25.0,
-        随机指标_RSV周期: int = 13,
-        随机指标_K值平滑周期: int = 5,
-        随机指标_D值平滑周期: int = 5,
-        随机指标_超买阈值: float = 80.0,
-        随机指标_超卖阈值: float = 20.0,
-        计算BOLL: bool = False,
-        布林带_周期: int = 20,
-        布林带_标准差倍数: float = 2.0,
-        均线_类型列表: List[str] = None,
-        均线_周期列表: List[int] = None,
+        指标计算方式: str = "收",  # 均线计算方式
+        均线参数列表: List[tuple] = None,  # [(key, 计算方式, 类型, 周期), ...]
         # 多参数指标列表（None/空列表 = 使用默认单参数）
-        MACD_参数列表: List[tuple] = None,  # [(key, 快线, 慢线, 信号), ...]
-        RSI_周期列表: List[tuple] = None,  # [(key, 周期), ...]
-        KDJ_参数列表: List[tuple] = None,  # [(key, RSV周期, K平滑, D平滑), ...]
-        BOLL_参数列表: List[tuple] = None,  # [(key, 周期, 标准差倍数), ...]
-        图表展示: bool = True,
-        推送K线: bool = True,
-        推送笔: bool = True,
-        推送线段: bool = True,
-        推送中枢: bool = True,
-        图表展示_笔: bool = True,
-        图表展示_线段: bool = True,
-        图表展示_扩展线段: bool = True,
-        图表展示_扩展线段_线段: bool = True,
-        图表展示_线段_线段: bool = True,
-        图表展示_中枢_笔: bool = True,
-        图表展示_中枢_线段: bool = True,
-        图表展示_中枢_扩展线段: bool = True,
-        图表展示_中枢_扩展线段_线段: bool = True,
-        图表展示_中枢_线段_线段: bool = True,
-        图表展示_中枢_线段内部: bool = True,
+        MACD_参数列表: List[tuple] = None,  # [(key, 计算方式, 快线, 慢线, 信号), ...]
+        RSI_周期列表: List[tuple] = None,  # [(key, 计算方式, 周期), ...]
+        KDJ_参数列表: List[tuple] = None,  # [(key, 计算方式, RSV周期, K平滑, D平滑), ...]
+        BOLL_参数列表: List[tuple] = None,  # [(key, 计算方式, 周期, 标准差倍数), ...]
+        图表展示: bool = True,  # 图表系统主开关
+        图表展示标签: Optional[List[str]] = None,  # None=全部展示, []=不展示, [\"笔\",\"线段\"]=指定
         买卖点偏移: int = 1,  # 最大偏移
         买卖点激进识别: bool = False,  # 激进模式下将不考虑分型的完整性
         买卖点与MACD柱强相关: bool = False,  # True: 卖点需正值 买点需负值
@@ -539,19 +578,6 @@ class 缠论配置:
         买卖点_指标匹配_MACD: bool = True,  # 买在负，卖在正！
         买卖点_指标匹配_KDJ: bool = True,  # 买在死叉之后，卖在金叉之后
         买卖点_指标匹配_RSI: bool = True,  # 买在均线之下，卖在均线之上
-        # 以下字段酌情废弃
-        买卖点_背离率: float = float("inf"),
-        买卖点_T2_回调阈值: float = 1.0,
-        买卖点_T2S_最大层级: int = 3,
-        买卖点_峰值条件: bool = False,
-        买卖点_计算方式: str = "峰",
-        买卖点_计算线段BSP1: bool = True,
-        买卖点_处理BSP2: bool = True,
-        买卖点_计算线段BSP3: bool = True,
-        买卖点_依赖T1: bool = True,
-        买卖点_中枢来源: str = "合",
-        买卖点_调试输出: bool = False,
-        # 以上字段酌情废弃
         线段内部背驰_MACD: bool = True,
         线段内部背驰_斜率: bool = True,
         线段内部背驰_测度: bool = True,
@@ -583,43 +609,13 @@ class 缠论配置:
         self.手动终止 = 手动终止
         self.计算指标 = 计算指标
         self.指标计算方式 = 指标计算方式
-        self.平滑异同移动平均线_快线周期 = 平滑异同移动平均线_快线周期
-        self.平滑异同移动平均线_慢线周期 = 平滑异同移动平均线_慢线周期
-        self.平滑异同移动平均线_信号周期 = 平滑异同移动平均线_信号周期
-        self.相对强弱指数_周期 = 相对强弱指数_周期
-        self.相对强弱指数_移动平均线周期 = 相对强弱指数_移动平均线周期
-        self.相对强弱指数_超买阈值 = 相对强弱指数_超买阈值
-        self.相对强弱指数_超卖阈值 = 相对强弱指数_超卖阈值
-        self.随机指标_RSV周期 = 随机指标_RSV周期
-        self.随机指标_K值平滑周期 = 随机指标_K值平滑周期
-        self.随机指标_D值平滑周期 = 随机指标_D值平滑周期
-        self.随机指标_超买阈值 = 随机指标_超买阈值
-        self.随机指标_超卖阈值 = 随机指标_超卖阈值
-        self.计算BOLL = 计算BOLL
-        self.布林带_周期 = 布林带_周期
-        self.布林带_标准差倍数 = 布林带_标准差倍数
-        self.均线_类型列表 = 均线_类型列表 if 均线_类型列表 is not None else []
-        self.均线_周期列表 = 均线_周期列表 if 均线_周期列表 is not None else []
-        self.MACD_参数列表 = MACD_参数列表 if MACD_参数列表 is not None else []
-        self.RSI_周期列表 = RSI_周期列表 if RSI_周期列表 is not None else []
-        self.KDJ_参数列表 = KDJ_参数列表 if KDJ_参数列表 is not None else []
-        self.BOLL_参数列表 = BOLL_参数列表 if BOLL_参数列表 is not None else []
+        self.均线参数列表 = 均线参数列表 if 均线参数列表 is not None else []
+        self.MACD_参数列表 = MACD_参数列表 if MACD_参数列表 is not None else [("macd", "收", 13, 31, 11)]
+        self.RSI_周期列表 = RSI_周期列表 if RSI_周期列表 is not None else [("rsi", "收", 14, 13, 75.0, 25.0)]
+        self.KDJ_参数列表 = KDJ_参数列表 if KDJ_参数列表 is not None else [("kdj", "收", 13, 5, 5, 80.0, 20.0)]
+        self.BOLL_参数列表 = BOLL_参数列表 if BOLL_参数列表 is not None else [("boll", "收", 20, 2.0)]
         self.图表展示 = 图表展示
-        self.推送K线 = 推送K线
-        self.推送笔 = 推送笔
-        self.推送线段 = 推送线段
-        self.推送中枢 = 推送中枢
-        self.图表展示_笔 = 图表展示_笔
-        self.图表展示_线段 = 图表展示_线段
-        self.图表展示_扩展线段 = 图表展示_扩展线段
-        self.图表展示_扩展线段_线段 = 图表展示_扩展线段_线段
-        self.图表展示_线段_线段 = 图表展示_线段_线段
-        self.图表展示_中枢_笔 = 图表展示_中枢_笔
-        self.图表展示_中枢_线段 = 图表展示_中枢_线段
-        self.图表展示_中枢_扩展线段 = 图表展示_中枢_扩展线段
-        self.图表展示_中枢_扩展线段_线段 = 图表展示_中枢_扩展线段_线段
-        self.图表展示_中枢_线段_线段 = 图表展示_中枢_线段_线段
-        self.图表展示_中枢_线段内部 = 图表展示_中枢_线段内部
+        self.图表展示标签 = set(图表展示标签) if 图表展示标签 is not None else None
         self.买卖点偏移 = 买卖点偏移
         self.买卖点激进识别 = 买卖点激进识别
         self.买卖点与MACD柱强相关 = 买卖点与MACD柱强相关
@@ -628,17 +624,6 @@ class 缠论配置:
         self.买卖点_指标匹配_MACD = 买卖点_指标匹配_MACD
         self.买卖点_指标匹配_KDJ = 买卖点_指标匹配_KDJ
         self.买卖点_指标匹配_RSI = 买卖点_指标匹配_RSI
-        self.买卖点_背离率 = 买卖点_背离率
-        self.买卖点_T2_回调阈值 = 买卖点_T2_回调阈值
-        self.买卖点_T2S_最大层级 = 买卖点_T2S_最大层级
-        self.买卖点_峰值条件 = 买卖点_峰值条件
-        self.买卖点_计算方式 = 买卖点_计算方式
-        self.买卖点_计算线段BSP1 = 买卖点_计算线段BSP1
-        self.买卖点_处理BSP2 = 买卖点_处理BSP2
-        self.买卖点_计算线段BSP3 = 买卖点_计算线段BSP3
-        self.买卖点_依赖T1 = 买卖点_依赖T1
-        self.买卖点_中枢来源 = 买卖点_中枢来源
-        self.买卖点_调试输出 = 买卖点_调试输出
         self.线段内部背驰_MACD = 线段内部背驰_MACD
         self.线段内部背驰_斜率 = 线段内部背驰_斜率
         self.线段内部背驰_测度 = 线段内部背驰_测度
@@ -680,43 +665,13 @@ class 缠论配置:
             "手动终止": {"annotation": str, "default": ""},
             "计算指标": {"annotation": bool, "default": True},
             "指标计算方式": {"annotation": str, "default": "收"},
-            "平滑异同移动平均线_快线周期": {"annotation": int, "default": 13},
-            "平滑异同移动平均线_慢线周期": {"annotation": int, "default": 31},
-            "平滑异同移动平均线_信号周期": {"annotation": int, "default": 11},
-            "相对强弱指数_周期": {"annotation": int, "default": 13},
-            "相对强弱指数_移动平均线周期": {"annotation": int, "default": 13},
-            "相对强弱指数_超买阈值": {"annotation": float, "default": 75.0},
-            "相对强弱指数_超卖阈值": {"annotation": float, "default": 25.0},
-            "随机指标_RSV周期": {"annotation": int, "default": 13},
-            "随机指标_K值平滑周期": {"annotation": int, "default": 5},
-            "随机指标_D值平滑周期": {"annotation": int, "default": 5},
-            "随机指标_超买阈值": {"annotation": float, "default": 80.0},
-            "随机指标_超卖阈值": {"annotation": float, "default": 20.0},
-            "计算BOLL": {"annotation": bool, "default": False},
-            "布林带_周期": {"annotation": int, "default": 20},
-            "布林带_标准差倍数": {"annotation": float, "default": 2.0},
-            "均线_类型列表": {"annotation": List[str], "default": []},
-            "均线_周期列表": {"annotation": List[int], "default": []},
-            "MACD_参数列表": {"annotation": List[tuple], "default": []},
-            "RSI_周期列表": {"annotation": List[tuple], "default": []},
-            "KDJ_参数列表": {"annotation": List[tuple], "default": []},
-            "BOLL_参数列表": {"annotation": List[tuple], "default": []},
+            "均线参数列表": {"annotation": List[tuple], "default": []},
+            "MACD_参数列表": {"annotation": List[tuple], "default": [("macd", "收", 13, 31, 11)]},
+            "RSI_周期列表": {"annotation": List[tuple], "default": [("rsi", "收", 14, 13, 75.0, 25.0)]},
+            "KDJ_参数列表": {"annotation": List[tuple], "default": [("kdj", "收", 13, 5, 5, 80.0, 20.0)]},
+            "BOLL_参数列表": {"annotation": List[tuple], "default": [("boll", "收", 20, 2.0)]},
             "图表展示": {"annotation": bool, "default": True},
-            "推送K线": {"annotation": bool, "default": True},
-            "推送笔": {"annotation": bool, "default": True},
-            "推送线段": {"annotation": bool, "default": True},
-            "推送中枢": {"annotation": bool, "default": True},
-            "图表展示_笔": {"annotation": bool, "default": True},
-            "图表展示_线段": {"annotation": bool, "default": True},
-            "图表展示_扩展线段": {"annotation": bool, "default": True},
-            "图表展示_扩展线段_线段": {"annotation": bool, "default": True},
-            "图表展示_线段_线段": {"annotation": bool, "default": True},
-            "图表展示_中枢_笔": {"annotation": bool, "default": True},
-            "图表展示_中枢_线段": {"annotation": bool, "default": True},
-            "图表展示_中枢_扩展线段": {"annotation": bool, "default": True},
-            "图表展示_中枢_扩展线段_线段": {"annotation": bool, "default": True},
-            "图表展示_中枢_线段_线段": {"annotation": bool, "default": True},
-            "图表展示_中枢_线段内部": {"annotation": bool, "default": True},
+            "图表展示标签": {"annotation": Optional[List[str]], "default": None},
             "买卖点偏移": {"annotation": int, "default": 1},
             "买卖点激进识别": {"annotation": bool, "default": False},
             "买卖点与MACD柱强相关": {"annotation": bool, "default": False},
@@ -725,17 +680,6 @@ class 缠论配置:
             "买卖点_指标匹配_MACD": {"annotation": bool, "default": True},
             "买卖点_指标匹配_KDJ": {"annotation": bool, "default": True},
             "买卖点_指标匹配_RSI": {"annotation": bool, "default": True},
-            "买卖点_背离率": {"annotation": float, "default": float("inf")},
-            "买卖点_T2_回调阈值": {"annotation": float, "default": 1.0},
-            "买卖点_T2S_最大层级": {"annotation": int, "default": 3},
-            "买卖点_峰值条件": {"annotation": bool, "default": False},
-            "买卖点_计算方式": {"annotation": str, "default": "峰"},
-            "买卖点_计算线段BSP1": {"annotation": bool, "default": True},
-            "买卖点_处理BSP2": {"annotation": bool, "default": True},
-            "买卖点_计算线段BSP3": {"annotation": bool, "default": True},
-            "买卖点_依赖T1": {"annotation": bool, "default": True},
-            "买卖点_中枢来源": {"annotation": str, "default": "合"},
-            "买卖点_调试输出": {"annotation": bool, "default": False},
             "线段内部背驰_MACD": {"annotation": bool, "default": True},
             "线段内部背驰_斜率": {"annotation": bool, "default": True},
             "线段内部背驰_测度": {"annotation": bool, "default": True},
@@ -756,10 +700,13 @@ class 缠论配置:
             default = field_info["default"]
 
             try:
-                # 布尔类型验证
+                # 布尔类型验证（与 Rust 绑定层 coerce_strings_to_numbers 对齐）
                 if type_ is bool:
                     if not isinstance(value, bool):
-                        setattr(self, fname, bool(value))
+                        if isinstance(value, str) and value.lower() in ("true", "false"):
+                            setattr(self, fname, value.lower() == "true")
+                        else:
+                            setattr(self, fname, default)
 
                 # 整数类型验证
                 elif type_ is int:
@@ -776,27 +723,45 @@ class 缠论配置:
                 logger.warning(f"[{fname}] = {value} 解析失败，使用默认值：{default}")
                 setattr(self, fname, default)
 
-    # ---- 参数列表解析：多参数列表为空时回退到默认单参数 ----
+    def 设置指标(
+        self,
+        *,
+        均线: List[tuple] = None,
+        MACD: List[tuple] = None,
+        RSI: List[tuple] = None,
+        KDJ: List[tuple] = None,
+        BOLL: List[tuple] = None,
+    ):
+        """统一设置所有指标参数。
 
-    def _解析MACD参数列表(self) -> List[tuple]:
-        if self.MACD_参数列表:
-            return self.MACD_参数列表
-        return [("macd", self.平滑异同移动平均线_快线周期, self.平滑异同移动平均线_慢线周期, self.平滑异同移动平均线_信号周期)]
+        元组格式 ``(key, 计算方式, *params)``：
+        - 均线: ``("SMA_5", "收", "SMA", 5)`` — key/计算方式/类型/周期
+        - MACD: ``("默认", "收", 13, 31, 11)`` — 快线/慢线/信号
+        - RSI:  ``("默认", "收", 14, 13, 75, 25)`` — 周期/MA周期/超买/超卖
+        - KDJ:  ``("默认", "收", 13, 5, 5, 80, 20)`` — RSV/K平滑/D平滑/超买/超卖
+        - BOLL: ``("默认", "收", 20, 2.0)`` — 周期/标准差倍数
 
-    def _解析RSI周期列表(self) -> List[tuple]:
-        if self.RSI_周期列表:
-            return self.RSI_周期列表
-        return [("rsi", self.相对强弱指数_周期)]
+        :param 均线: key 即均线名（如 ``"SMA_5"``），同时编码类型和周期
+        :param MACD: 首个 key 同时写入 ``"macd"`` 兼容槽位
+        :param BOLL: BOLL 参数元组列表，为空则不计算
+        """
+        self.计算指标 = True
+        if 均线 is not None:
+            self.均线参数列表 = 均线
+        if MACD is not None:
+            self.MACD_参数列表 = MACD
+        if RSI is not None:
+            self.RSI_周期列表 = RSI
+        if KDJ is not None:
+            self.KDJ_参数列表 = KDJ
+        if BOLL is not None:
+            self.BOLL_参数列表 = BOLL
 
-    def _解析KDJ参数列表(self) -> List[tuple]:
-        if self.KDJ_参数列表:
-            return self.KDJ_参数列表
-        return [("kdj", self.随机指标_RSV周期, self.随机指标_K值平滑周期, self.随机指标_D值平滑周期)]
-
-    def _解析BOLL参数列表(self) -> List[tuple]:
-        if self.BOLL_参数列表:
-            return self.BOLL_参数列表
-        return [("boll", self.布林带_周期, self.布林带_标准差倍数)]
+    def 展示标签(self, 标签: str) -> bool:
+        """判断指定标签是否应展示。None = 全部展示，空列表 = 全部隐藏。"""
+        if self.图表展示标签 is None:
+            return True
+        return 标签 in self.图表展示标签
 
     @classmethod
     def 兼容旧版本配置(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -806,7 +771,22 @@ class 缠论配置:
         :return: 仅保留当前类已知字段的字典
         """
         valid_fields = cls.model_fields().keys()
-        cleaned = {k: v for k, v in values.items() if k in valid_fields}
+        cleaned = {}
+        for k, v in values.items():
+            if k not in valid_fields:
+                continue
+            # 字符串值类型强制转换（与 Rust 绑定层 coerce_strings_to_numbers 对齐）
+            if isinstance(v, str):
+                if v.lower() in ("true", "false"):
+                    v = v.lower() == "true"
+                elif v.lstrip("-").isdigit():
+                    v = int(v)
+                else:
+                    try:
+                        v = float(v)
+                    except ValueError:
+                        pass
+            cleaned[k] = v
         return cleaned
 
     def to_dict(self) -> dict:
@@ -814,7 +794,13 @@ class 缠论配置:
 
         :return: 包含所有配置字段的字典
         """
-        return {k: getattr(self, k) for k in self.model_fields().keys()}
+        result = {}
+        for k in self.model_fields().keys():
+            v = getattr(self, k)
+            if isinstance(v, set):
+                v = list(v)
+            result[k] = v
+        return result
 
     def to_json(self) -> str:
         """将配置序列化为 JSON 字符串。
@@ -870,21 +856,7 @@ class 缠论配置:
         return cls(
             线段内部中枢图显=False,
             图表展示=False,
-            推送K线=False,
-            推送笔=False,
-            推送线段=False,
-            推送中枢=False,
-            图表展示_笔=False,
-            图表展示_线段=False,
-            图表展示_扩展线段=False,
-            图表展示_扩展线段_线段=False,
-            图表展示_线段_线段=False,
-            图表展示_中枢_笔=False,
-            图表展示_中枢_线段=False,
-            图表展示_中枢_扩展线段=False,
-            图表展示_中枢_扩展线段_线段=False,
-            图表展示_中枢_线段_线段=False,
-            图表展示_中枢_线段内部=False,
+            图表展示标签=[],
         )
 
     def model_copy(self, update: dict = None, deep: bool = True):
@@ -947,6 +919,7 @@ class 缠论配置:
         return diff_dict
 
 
+@注册
 class 相对方向(Enum):
     """相对方向 — 描述两个K线/分型之间相对位置关系的枚举。
 
@@ -1088,6 +1061,7 @@ class 相对方向(Enum):
             yield from random.sample(可选方向, 数量)
 
 
+@注册
 class 分型结构(Enum):
     """描述三根K线构成的顶底分型形态。
 
@@ -1161,6 +1135,7 @@ class 分型结构(Enum):
         return None
 
 
+@注册
 @final
 class 缺口:
     """缺口 — 描述价格区间之间的缺口（未重叠部分）。
@@ -1303,6 +1278,9 @@ class 平滑异同移动平均线:
         self.慢线EMA = 慢线EMA
         self.DEA_EMA = DEA_EMA
 
+    def __repr__(self):
+        return f"平滑异同移动平均线(时间戳={self.时间戳}, 收盘价={self.收盘价}, 快线周期={self.快线周期}, 慢线周期={self.慢线周期}, 信号周期={self.信号周期}, DIF={self.DIF}, DEA={self.DEA}, MACD柱={self.MACD柱}, 快线EMA={self.快线EMA}, 慢线EMA={self.慢线EMA}, DEA_EMA={self.DEA_EMA})"
+
     @classmethod
     def 首次计算(cls, 初始收盘价: float, 初始时间: datetime, 快线周期: int = 12, 慢线周期: int = 26, 信号周期: int = 9) -> 平滑异同移动平均线:
         """
@@ -1334,12 +1312,12 @@ class 平滑异同移动平均线:
             快线周期=快线周期,
             慢线周期=慢线周期,
             信号周期=信号周期,
-            DIF=DIF,
-            DEA=DEA_EMA,
-            MACD柱=MACD柱,
-            快线EMA=快线EMA,
-            慢线EMA=慢线EMA,
-            DEA_EMA=DEA_EMA,
+            DIF=round(DIF, 2),
+            DEA=round(DEA_EMA, 2),
+            MACD柱=round(MACD柱, 2),
+            快线EMA=round(快线EMA, 2),
+            慢线EMA=round(慢线EMA, 2),
+            DEA_EMA=round(DEA_EMA, 2),
         )
 
     @classmethod
@@ -1405,12 +1383,12 @@ class 平滑异同移动平均线:
             快线周期=前一个MACD.快线周期,
             慢线周期=前一个MACD.慢线周期,
             信号周期=前一个MACD.信号周期,
-            DIF=DIF,
-            DEA=DEA_EMA,
-            MACD柱=MACD柱,
-            快线EMA=快线EMA,
-            慢线EMA=慢线EMA,
-            DEA_EMA=DEA_EMA,
+            DIF=round(DIF, 2),
+            DEA=round(DEA_EMA, 2),
+            MACD柱=round(MACD柱, 2),
+            快线EMA=round(快线EMA, 2),
+            慢线EMA=round(慢线EMA, 2),
+            DEA_EMA=round(DEA_EMA, 2),
         )
 
     @classmethod
@@ -2100,19 +2078,21 @@ class 指标计算器:
     @staticmethod
     def _计算MACD组(当前K线: K线, prev: Optional[指标容器], 配置: 缠论配置):
         idx = 当前K线.指标
-        计算方式 = 配置.指标计算方式
-        for key, 快, 慢, 信号 in 配置._解析MACD参数列表():
+        for i, (key, 计算方式, *params) in enumerate(配置.MACD_参数列表):
+            快, 慢, 信号 = params[0], params[1], params[2]
             prev_val = prev[key] if prev is not None and key in prev else None
             if prev_val is not None:
                 idx[key] = 平滑异同移动平均线.增量计算_K线(prev_val, 当前K线, 计算方式)
             else:
                 idx[key] = 平滑异同移动平均线.首次计算_K线(当前K线, 计算方式, 快, 慢, 信号)
+            if i == 0:
+                idx["macd"] = idx[key]
 
     @staticmethod
     def _计算RSI组(当前K线: K线, prev: Optional[指标容器], 配置: 缠论配置):
         idx = 当前K线.指标
-        计算方式 = 配置.指标计算方式
-        for key, 周期 in 配置._解析RSI周期列表():
+        for key, 计算方式, *params in 配置.RSI_周期列表:
+            周期, MA周期, 超买, 超卖 = params[0], params[1], params[2], params[3]
             prev_val = prev[key] if prev is not None and key in prev else None
             if prev_val is not None:
                 idx[key] = 相对强弱指数.增量计算_K线(prev_val, 当前K线, 计算方式)
@@ -2121,16 +2101,16 @@ class 指标计算器:
                     当前K线,
                     计算方式,
                     周期,
-                    配置.相对强弱指数_超买阈值,
-                    配置.相对强弱指数_超卖阈值,
-                    配置.相对强弱指数_移动平均线周期,
+                    超买,
+                    超卖,
+                    MA周期,
                 )
 
     @staticmethod
     def _计算KDJ组(当前K线: K线, prev: Optional[指标容器], 配置: 缠论配置):
         idx = 当前K线.指标
-        计算方式 = 配置.指标计算方式
-        for key, rsv, k平滑, d平滑 in 配置._解析KDJ参数列表():
+        for key, 计算方式, *params in 配置.KDJ_参数列表:
+            rsv, k平滑, d平滑, 超买, 超卖 = params[0], params[1], params[2], params[3], params[4]
             prev_val = prev[key] if prev is not None and key in prev else None
             if prev_val is not None:
                 idx[key] = 随机指标.增量计算_K线(prev_val, 当前K线, 计算方式)
@@ -2141,15 +2121,15 @@ class 指标计算器:
                     rsv,
                     k平滑,
                     d平滑,
-                    配置.随机指标_超买阈值,
-                    配置.随机指标_超卖阈值,
+                    超买,
+                    超卖,
                 )
 
     @staticmethod
     def _计算BOLL组(当前K线: K线, prev: Optional[指标容器], 配置: 缠论配置):
         idx = 当前K线.指标
-        计算方式 = 配置.指标计算方式
-        for key, 周期, 标准差倍数 in 配置._解析BOLL参数列表():
+        for key, 计算方式, *params in 配置.BOLL_参数列表:
+            周期, 标准差倍数 = params[0], params[1]
             prev_val = prev[key] if prev is not None and key in prev else None
             if prev_val is not None:
                 idx[key] = 布林带.增量计算(prev_val, 当前K线, 计算方式)
@@ -2158,18 +2138,16 @@ class 指标计算器:
 
     @staticmethod
     def _更新均线(当前K线: K线, 普K序列: List[K线], 配置: 缠论配置):
-        if not 配置.均线_类型列表 or not 配置.均线_周期列表:
+        if not 配置.均线参数列表:
             return
-        for ma_type in 配置.均线_类型列表:
-            for period in 配置.均线_周期列表:
-                key = f"{ma_type}_{period}"
-                if ma_type == "SMA":
-                    当前K线.指标.均线[key] = 均线工具.增量SMA(普K序列, period, 配置.指标计算方式)
-                elif ma_type == "EMA":
-                    前值 = None
-                    if len(普K序列) >= 2:
-                        前值 = 普K序列[-2].指标.均线.get(key)
-                    当前K线.指标.均线[key] = 均线工具.增量EMA(普K序列, period, 配置.指标计算方式, 前值)
+        for key, 计算方式, ma_type, period in 配置.均线参数列表:
+            if ma_type == "SMA":
+                当前K线.指标.均线[key] = 均线工具.增量SMA(普K序列, period, 计算方式)
+            elif ma_type == "EMA":
+                前值 = None
+                if len(普K序列) >= 2:
+                    前值 = 普K序列[-2].指标.均线.get(key)
+                当前K线.指标.均线[key] = 均线工具.增量EMA(普K序列, period, 计算方式, 前值)
 
     @staticmethod
     def _回填新指标(全序列: List[K线], 配置: 缠论配置):
@@ -2191,15 +2169,13 @@ class 指标计算器:
                     新参数.append(params)
             return 新参数
 
-        新MACD = _新键(尾K指标, 首K指标, 配置._解析MACD参数列表())
-        新RSI = _新键(尾K指标, 首K指标, 配置._解析RSI周期列表())
-        新KDJ = _新键(尾K指标, 首K指标, 配置._解析KDJ参数列表())
-        新BOLL = _新键(尾K指标, 首K指标, 配置._解析BOLL参数列表())
+        新MACD = _新键(尾K指标, 首K指标, 配置.MACD_参数列表)
+        新RSI = _新键(尾K指标, 首K指标, 配置.RSI_周期列表)
+        新KDJ = _新键(尾K指标, 首K指标, 配置.KDJ_参数列表)
+        新BOLL = _新键(尾K指标, 首K指标, 配置.BOLL_参数列表)
 
         if not (新MACD or 新RSI or 新KDJ or 新BOLL):
             return
-
-        计算方式 = 配置.指标计算方式
 
         for i, k线 in enumerate(全序列):
             if k线.指标 is None:
@@ -2208,43 +2184,32 @@ class 指标计算器:
             idx = k线.指标
             prev = 全序列[i - 1].指标 if i > 0 else None
 
-            for key, 快, 慢, 信号 in 新MACD:
+            for key, 计算方式, *params in 新MACD:
+                快, 慢, 信号 = params[0], params[1], params[2]
                 prev_val = prev[key] if prev is not None and key in prev else None
                 if prev_val is not None:
                     idx[key] = 平滑异同移动平均线.增量计算_K线(prev_val, k线, 计算方式)
                 else:
                     idx[key] = 平滑异同移动平均线.首次计算_K线(k线, 计算方式, 快, 慢, 信号)
 
-            for key, 周期 in 新RSI:
+            for key, 计算方式, *params in 新RSI:
+                周期, MA周期, 超买, 超卖 = params[0], params[1], params[2], params[3]
                 prev_val = prev[key] if prev is not None and key in prev else None
                 if prev_val is not None:
                     idx[key] = 相对强弱指数.增量计算_K线(prev_val, k线, 计算方式)
                 else:
-                    idx[key] = 相对强弱指数.首次计算_K线(
-                        k线,
-                        计算方式,
-                        周期,
-                        配置.相对强弱指数_超买阈值,
-                        配置.相对强弱指数_超卖阈值,
-                        配置.相对强弱指数_移动平均线周期,
-                    )
+                    idx[key] = 相对强弱指数.首次计算_K线(k线, 计算方式, 周期, 超买, 超卖, MA周期)
 
-            for key, rsv, k平滑, d平滑 in 新KDJ:
+            for key, 计算方式, *params in 新KDJ:
+                rsv, k平滑, d平滑, 超买, 超卖 = params[0], params[1], params[2], params[3], params[4]
                 prev_val = prev[key] if prev is not None and key in prev else None
                 if prev_val is not None:
                     idx[key] = 随机指标.增量计算_K线(prev_val, k线, 计算方式)
                 else:
-                    idx[key] = 随机指标.首次计算_K线(
-                        k线,
-                        计算方式,
-                        rsv,
-                        k平滑,
-                        d平滑,
-                        配置.随机指标_超买阈值,
-                        配置.随机指标_超卖阈值,
-                    )
+                    idx[key] = 随机指标.首次计算_K线(k线, 计算方式, rsv, k平滑, d平滑, 超买, 超卖)
 
-            for key, 周期, 标准差倍数 in 新BOLL:
+            for key, 计算方式, *params in 新BOLL:
+                周期, 标准差倍数 = params[0], params[1]
                 prev_val = prev[key] if prev is not None and key in prev else None
                 if prev_val is not None:
                     idx[key] = 布林带.增量计算(prev_val, k线, 计算方式)
@@ -2252,6 +2217,7 @@ class 指标计算器:
                     idx[key] = 布林带.首次计算(k线, 计算方式, 周期, 标准差倍数)
 
 
+@注册
 class 背驰分析:
     """静态方法容器，提供背驰/背离检测算法。
 
@@ -2486,6 +2452,14 @@ class K线:
         self.成交量: float = 成交量
         self.周期: int = 周期
         self.指标: 指标容器 = 指标容器()
+
+    @property
+    def 最高价(self):
+        return self.高
+
+    @property
+    def 最低价(self):
+        return self.低
 
     # ---- property 兼容层：k线.macd → k线.指标.macd ----
     @property
@@ -3019,6 +2993,7 @@ class 缠论K线:
 分型模式 = True
 
 
+@注册
 class 分型:
     """由左中右三根缠论K线构成的顶/底分型结构。
 
@@ -3204,9 +3179,10 @@ class 分型:
         分型序列.append(当前分型)
 
 
-扩展线段模式 = False  # TODO 虚线高低取值 暂定，此举将符合同级别分解时正确的高低取值涉及中枢等问题
+扩展线段模式 = True  # TODO 虚线高低取值 暂定，此举将符合同级别分解时正确的高低取值涉及中枢等问题
 
 
+@注册
 class 虚线:
     """笔/线段的通用数据结构，持有一组分型端点（文=起点分型, 武=终点分型）。
 
@@ -3913,23 +3889,24 @@ class 虚线:
         dif_up = dif_down = dea_up = dea_down = 0
         for i in range(1, len(普K序列)):
             pre, cur = 普K序列[i - 1].macd, 普K序列[i].macd
-            if pre.DIF is None or cur.DIF is None:
+            if pre is None or cur is None or pre.DIF is None or cur.DIF is None:
                 continue
             if pre.DIF < 0 <= cur.DIF:
                 dif_up += 1
             elif pre.DIF > 0 >= cur.DIF:
                 dif_down += 1
-            if pre.DEA < 0 <= cur.DEA:
-                dea_up += 1
-            elif pre.DEA > 0 >= cur.DEA:
-                dea_down += 1
+            if pre.DEA is not None and cur.DEA is not None:
+                if pre.DEA < 0 <= cur.DEA:
+                    dea_up += 1
+                elif pre.DEA > 0 >= cur.DEA:
+                    dea_down += 1
 
         # 2. DIF与DEA交叉（带标记）
         golden = death = 0
         交叉标记 = [0]  # 第0个位置无前值，先填0
         for i in range(1, len(普K序列)):
             pre, cur = 普K序列[i - 1].macd, 普K序列[i].macd
-            if pre.DIF is None or cur.DIF is None or pre.DEA is None or cur.DEA is None:
+            if pre is None or cur is None or pre.DIF is None or cur.DIF is None or pre.DEA is None or cur.DEA is None:
                 交叉标记.append(0)
                 continue
             if pre.DIF <= pre.DEA and cur.DIF > cur.DEA:
@@ -3968,6 +3945,7 @@ class 虚线:
         return tmp.武
 
 
+@注册
 class 笔:
     """纯静态方法容器，提供笔划分算法的所有函数。
 
@@ -4247,7 +4225,7 @@ class 笔:
                     if 分型序列 and 分型序列[-1] is 临时分型:
                         # 进行修复错过的笔
                         for ck in 缠K序列[缠K序列.index(武将) :]:
-                            if ck.分型 in (分型结构.底, 分型结构.顶):
+                            if ck.分型 in (分型结构.底, 分型结构.顶) and 分型序列[-1].时间戳 < ck.时间戳:
                                 临时分型 = 分型.从缠K序列中获取分型(缠K序列, ck)
                                 递归层次 = 笔递归分析(临时分型, 分型序列, 笔序列, 缠K序列, 普K序列, 递归层次 + 1, 配置)
                                 if 分型序列 and 分型序列[-1] is 临时分型:
@@ -4601,6 +4579,7 @@ class 特征分型:
         return f"特征分型<{self.结构}, {self.中}>"
 
 
+@注册
 class 线段:
     """纯静态方法容器，提供线段划分算法的所有函数。
 
@@ -4630,7 +4609,8 @@ class 线段:
     @staticmethod
     def _索引(序列: list, 项) -> int:
         """O(1) index lookup — 序列元素序号连续递增。"""
-        return 项.序号 - 序列[0].序号
+        # return 项.序号 - 序列[0].序号
+        return 序列.index(项)
 
     @classmethod
     def _添加虚线(cls, 段: 虚线, 筆: 虚线):
@@ -5660,6 +5640,7 @@ class 线段:
         return 结果
 
 
+@注册
 class 中枢:
     """三段虚线重叠区间构成的价格中枢，支持延伸和扩展。
 
@@ -5809,9 +5790,23 @@ class 中枢:
         else:
             # if self.本级_第三买卖线:
             #     return True
+            中枢状态 = self.当前状态()
+            if 中枢状态 == "中枢之中":
+                return False
             线段内部中枢 = self.基础序列[-1].合_中枢序列 if 虚实 == "合" else self.基础序列[-1].实_中枢序列
+            if not 线段内部中枢:
+                return False
+            高, 低 = self.高, self.低
             for 内部中枢 in 线段内部中枢:
-                if 相对方向.分析(self.高, self.低, 内部中枢.高, 内部中枢.低).是否缺口():
+                内部中枢高, 内部中枢低 = 内部中枢.高, 内部中枢.低
+                if 中枢状态 == "中枢之下":
+                    if 低 <= 内部中枢高:
+                        continue
+                else:
+                    # 中枢之上
+                    if 高 >= 内部中枢低:
+                        continue
+                if 相对方向.分析(self.高, self.低, 内部中枢高, 内部中枢低).是否缺口():
                     return True
         return False
 
@@ -6087,6 +6082,7 @@ class 中枢:
         return None
 
 
+@注册
 class 观察者:
     """单周期缠论分析器，接收K线流式输入并逐层计算所有层级序列。
 
@@ -6605,6 +6601,7 @@ class K线合成器:
         return self.当前K线[周期]
 
 
+@注册
 class 立体分析器:
     """多周期缠论分析器，内部包含 :class:`K线合成器` + 每周期一个 :class:`观察者`。
 
@@ -6636,20 +6633,13 @@ class 立体分析器:
         for 周期 in self.周期组:
             临时配置 = 配置组.get(周期, 配置)
             当前配置 = 临时配置.model_copy(
-                update={
-                    "推送K线": False,
-                    # "推送笔": False,
-                    "推送线段": False,
-                    # "图表展示": False,
-                },
+                update={"图表展示标签": []},
                 deep=True,
             )
             self._单体分析器[周期] = 观察者(符号=符号, 周期=周期, 配置=当前配置)
 
-        self._单体分析器[self.__显示周期].配置.推送K线 = True
-        self._单体分析器[self.__显示周期].配置.推送笔 = True
-        self._单体分析器[self.__显示周期].配置.推送线段 = True
         self._单体分析器[self.__显示周期].配置.图表展示 = True
+        self._单体分析器[self.__显示周期].配置.图表展示标签 = None  # None = 全部展示
         self._单体分析器[self.__显示周期].重置基础序列()
 
         for 周期 in self.周期组:  # 将不同周期对其至显示周期
@@ -6698,6 +6688,1085 @@ class 立体分析器:
             self._单体分析器[周期].测试_保存数据(保存路径)
 
         logger.warning(f"多级别数据拆分保存完成，目录：{保存路径.resolve()}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 以下信号匹配框架（import_by_name, Signal, Factor, Event, SignalsParser,
+# Position 等类）摘录自 czsc 项目（https://github.com/zengbin93/czsc），
+# Apache License 2.0 授权。 详见本文件头部 第三方代码声明。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def import_by_name(name: str):
+    """通过字符串导入模块、类、函数
+
+    函数执行逻辑：
+
+    1. 检查 name 中是否包含点号（'.'）。如果没有，则直接使用内置的 import 函数来导入整个模块，并返回该模块对象。
+    2. 如果 name 包含点号，先处理一个相对路径。将 name 拆分为两部分：module_name 和 function_name。
+        使用 Python 内置的 rsplit 方法从右边开始分割，只取一次，这样可以确保我们将最后的一个点号前的部分作为 module_name，点号后面的部分作为 function_name。
+    3. 使用import函数导入指定的 module_name。
+        这里传入三个参数：globals() 和 locals() 分别代表当前全局和局部命名空间；
+        [function_name] 是一个列表，用于指定要导入的子模块或属性名。
+        这样做是为了避免一次性导入整个模块的所有内容，提高效率。
+    4.  使用 vars 函数获取模块的字典表示形式（即模块内所有的变量和函数），取出 function_name 对应的值，然后返回这个值。
+
+    :param name: 模块名，如：'czsc.objects.Factor'
+    :return: 模块对象
+    """
+    if "." not in name:
+        return __import__(name)
+
+    # 从右边开始分割，分割成模块名和函数名
+    module_name, function_name = name.rsplit(".", 1)
+    module = __import__(module_name, globals(), locals(), [function_name])
+    注入依赖(module)
+
+    return vars(module)[function_name]
+
+
+class Operate(Enum):
+    # 持有状态
+    HL = "持多"  # Hold Long
+    HS = "持空"  # Hold Short
+    HO = "持币"  # Hold Other
+
+    # 多头操作
+    LO = "开多"  # Long Open
+    LE = "平多"  # Long Exit
+
+    # 空头操作
+    SO = "开空"  # Short Open
+    SE = "平空"  # Short Exit
+
+    def __str__(self):
+        return self.value
+
+
+@dataclass
+class Signal:
+    signal: str = ""
+
+    # score 取值在 0~100 之间，得分越高，信号越强
+    score: int = 0
+
+    # k1, k2, k3 是信号名称
+    k1: str = "任意"  # k1 一般是指明信号计算的K线周期，如 60分钟，日线，周线等
+    k2: str = "任意"  # k2 一般是记录信号计算的参数
+    k3: str = "任意"  # k3 用于区分信号，必须具有唯一性，推荐使用信号分类和开发日期进行标记
+
+    # v1, v2, v3 是信号取值
+    v1: str = "任意"
+    v2: str = "任意"
+    v3: str = "任意"
+
+    # 任意 出现在模板信号中可以指代任何值
+
+    def __post_init__(self):
+        if not self.signal:
+            self.signal = f"{self.k1}_{self.k2}_{self.k3}_{self.v1}_{self.v2}_{self.v3}_{self.score}"
+        else:
+            if not isinstance(self.signal, str):
+                raise TypeError(f"Signal 初始化需要字符串，收到了 {type(self.signal).__name__}: {self.signal!r}")
+            (
+                self.k1,
+                self.k2,
+                self.k3,
+                self.v1,
+                self.v2,
+                self.v3,
+                score,
+            ) = self.signal.split("_")
+            self.score = int(score)
+
+        if self.score > 100 or self.score < 0:
+            raise ValueError("score 必须在0~100之间")
+
+    def __repr__(self):
+        return f"Signal('{self.signal}')"
+
+    @property
+    def key(self) -> str:
+        """获取信号名称"""
+        key = ""
+        for k in [self.k1, self.k2, self.k3]:
+            if k != "任意":
+                key += k + "_"
+        return key.strip("_")
+
+    @property
+    def value(self) -> str:
+        """获取信号值"""
+        return f"{self.v1}_{self.v2}_{self.v3}_{self.score}"
+
+    def is_match(self, s: dict) -> bool:
+        """判断信号是否与信号列表中的值匹配
+
+        代码的执行逻辑如下：
+
+        接收一个字典 s 作为参数，该字典包含了所有信号的信息。从字典 s 中获取名称为 key 的信号的值 v。
+        如果 v 不存在，则抛出异常。从信号的值 v 中解析出 v1、v2、v3 和 score 四个变量。
+
+        如果当前信号的得分 score 大于等于目标信号的得分 self.score，则继续执行，否则返回 False。
+        如果当前信号的第一个值 v1 等于目标信号的第一个值 self.v1 或者目标信号的第一个值为 "任意"，则继续执行，否则返回 False。
+        如果当前信号的第二个值 v2 等于目标信号的第二个值 self.v2 或者目标信号的第二个值为 "任意"，则继续执行，否则返回 False。
+        如果当前信号的第三个值 v3 等于目标信号的第三个值 self.v3 或者目标信号的第三个值为 "任意"，则返回 True，否则返回 False。
+
+        :param s: 所有信号字典
+        :return: bool
+        """
+        key = self.key
+        v = s.get(key, None)
+        if not v:
+            raise ValueError(f"{key} 不在信号列表中")
+
+        if not isinstance(v, str):
+            logger.warning(f"信号 {key} 的值类型异常: {type(v).__name__} = {v!r}，跳过匹配")
+            return False
+
+        v1, v2, v3, score = v.split("_")
+        if int(score) >= self.score:
+            if v1 == self.v1 or self.v1 == "任意":
+                if v2 == self.v2 or self.v2 == "任意":
+                    if v3 == self.v3 or self.v3 == "任意":
+                        return True
+        return False
+
+
+@dataclass
+class Factor:
+    # signals_all 必须全部满足的信号，至少需要设定一个信号
+    signals_all: List[Signal]
+
+    # signals_any 满足其中任一信号，允许为空
+    signals_any: List[Signal] = field(default_factory=list)
+
+    # signals_not 不能满足其中任一信号，允许为空
+    signals_not: List[Signal] = field(default_factory=list)
+
+    name: str = ""
+
+    def __post_init__(self):
+        if not self.signals_all:
+            raise ValueError("signals_all 不能为空")
+        _fatcor = self.dump()
+        _fatcor.pop("name")
+        sha256 = hashlib.sha256(str(_fatcor).encode("utf-8")).hexdigest().upper()[:4]
+
+        if self.name:
+            self.name = self.name.split("#")[0] + f"#{sha256}"
+        else:
+            self.name = f"#{sha256}"
+        # self.name = f"{self.name}#{sha256}" if self.name else sha256
+
+    @property
+    def unique_signals(self) -> List[str]:
+        """获取 Factor 的唯一信号列表"""
+        signals = []
+        signals.extend(self.signals_all)
+        if self.signals_any:
+            signals.extend(self.signals_any)
+        if self.signals_not:
+            signals.extend(self.signals_not)
+        signals = {x.signal if isinstance(x, Signal) else x for x in signals}
+        return list(signals)
+
+    def is_match(self, s: dict) -> bool:
+        """判断 factor 是否满足"""
+        if self.signals_not:
+            for signal in self.signals_not:
+                if signal.is_match(s):
+                    return False
+
+        for signal in self.signals_all:
+            if not signal.is_match(s):
+                return False
+
+        if not self.signals_any:
+            return True
+
+        for signal in self.signals_any:
+            if signal.is_match(s):
+                return True
+        return False
+
+    def dump(self) -> dict:
+        """将 Factor 对象转存为 dict"""
+        signals_all = [x.signal for x in self.signals_all]
+        signals_any = [x.signal for x in self.signals_any] if self.signals_any else []
+        signals_not = [x.signal for x in self.signals_not] if self.signals_not else []
+
+        raw = {
+            "name": self.name,
+            "signals_all": signals_all,
+            "signals_any": signals_any,
+            "signals_not": signals_not,
+        }
+        return raw
+
+    @classmethod
+    def load(cls, raw: dict):
+        """从 dict 中创建 Factor
+
+        :param raw: 样例如下
+            {'name': '单测',
+            'signals_all': ['15分钟_倒0笔_方向_向上_其他_其他_0', '15分钟_倒0笔_长度_大于5_其他_其他_0'],
+            'signals_any': [],
+            'signals_not': []}
+
+        :return:
+        """
+        signals_any = [Signal(x) for x in raw.get("signals_any", [])]
+        signals_not = [Signal(x) for x in raw.get("signals_not", [])]
+
+        fa = Factor(
+            name=raw.get("name", ""),
+            signals_all=[Signal(x) for x in raw["signals_all"]],
+            signals_any=signals_any,
+            signals_not=signals_not,
+        )
+        return fa
+
+
+@dataclass
+class Event:
+    operate: Operate
+
+    # 多个信号组成一个因子，多个因子组成一个事件。
+    # 单个事件是一系列同类型因子的集合，事件中的任一因子满足，则事件为真。
+    factors: List[Factor]
+
+    # signals_all 必须全部满足的信号，允许为空
+    signals_all: List[Signal] = field(default_factory=list)
+
+    # signals_any 满足其中任一信号，允许为空
+    signals_any: List[Signal] = field(default_factory=list)
+
+    # signals_not 不能满足其中任一信号，允许为空
+    signals_not: List[Signal] = field(default_factory=list)
+
+    name: str = ""
+
+    def __post_init__(self):
+        if not self.factors:
+            raise ValueError("factors 不能为空")
+        _event = self.dump()
+        _event.pop("name")
+
+        sha256 = hashlib.sha256(str(_event).encode("utf-8")).hexdigest().upper()[:4]
+        if self.name:
+            self.name = self.name.split("#")[0] + f"#{sha256}"
+            # self.name = f"{self.name}#{sha256}"
+        else:
+            self.name = f"{self.operate.value}#{sha256}"
+        self.sha256 = sha256
+
+    @property
+    def unique_signals(self) -> List[str]:
+        """获取 Event 的唯一信号列表"""
+        signals = []
+        if self.signals_all:
+            signals.extend(self.signals_all)
+        if self.signals_any:
+            signals.extend(self.signals_any)
+        if self.signals_not:
+            signals.extend(self.signals_not)
+
+        for factor in self.factors:
+            signals.extend(factor.unique_signals)
+
+        signals = {x.signal if isinstance(x, Signal) else x for x in signals}
+        return list(signals)
+
+    def get_signals_config(self, signals_module: str = "chanlun.signals") -> List[Dict]:
+        """获取事件的信号配置"""
+
+        return get_signals_config(self.unique_signals, signals_module)
+
+    def is_match(self, s: dict):
+        """判断 event 是否满足
+
+        代码的执行逻辑如下：
+
+        1. 首先判断 signals_not 中的信号是否得到满足，如果满足任意一个信号，则直接返回 False，表示事件不满足。
+        2. 接着判断 signals_all 中的信号是否全部得到满足，如果有任意一个信号不满足，则直接返回 False，表示事件不满足。
+        3. 然后判断 signals_any 中的信号是否有一个得到满足，如果一个都不满足，则直接返回 False，表示事件不满足。
+        4. 最后判断因子是否满足，顺序遍历因子列表，找到第一个满足的因子就退出，并返回 True 和该因子的名称，表示事件满足。
+        5. 如果遍历完所有因子都没有找到满足的因子，则返回 False，表示事件不满足。
+        """
+        if self.signals_not and any(signal.is_match(s) for signal in self.signals_not):
+            return False, None
+
+        if self.signals_all and not all(signal.is_match(s) for signal in self.signals_all):
+            return False, None
+
+        if self.signals_any and not any(signal.is_match(s) for signal in self.signals_any):
+            return False, None
+
+        for factor in self.factors:
+            if factor.is_match(s):
+                return True, factor.name
+
+        return False, None
+
+    def dump(self) -> dict:
+        """将 Event 对象转存为 dict"""
+        signals_all = [x.signal for x in self.signals_all] if self.signals_all else []
+        signals_any = [x.signal for x in self.signals_any] if self.signals_any else []
+        signals_not = [x.signal for x in self.signals_not] if self.signals_not else []
+        factors = [x.dump() for x in self.factors]
+
+        raw = {
+            "name": self.name,
+            "operate": self.operate.value,
+            "signals_all": signals_all,
+            "signals_any": signals_any,
+            "signals_not": signals_not,
+            "factors": factors,
+        }
+        return raw
+
+    @classmethod
+    def load(cls, raw: dict):
+        """从 dict 中创建 Event
+
+        :param raw: 样例如下
+                        {'name': '单测',
+                         'operate': '开多',
+                         'factors': [{'name': '测试',
+                             'signals_all': ['15分钟_倒0笔_长度_大于5_其他_其他_0'],
+                             'signals_any': [],
+                             'signals_not': []}],
+                         'signals_all': ['15分钟_倒0笔_方向_向上_其他_其他_0'],
+                         'signals_any': [],
+                         'signals_not': []}
+        :return:
+        """
+        # 检查输入参数是否合法
+        assert raw["operate"] in Operate.__dict__["_value2member_map_"], f"operate {raw['operate']} not in Operate"
+        assert raw["factors"], "factors can not be empty"
+
+        e = Event(
+            name=raw.get("name", ""),
+            operate=Operate.__dict__["_value2member_map_"][raw["operate"]],
+            factors=[Factor.load(x) for x in raw["factors"]],
+            signals_all=[Signal(x) for x in raw.get("signals_all", [])],
+            signals_any=[Signal(x) for x in raw.get("signals_any", [])],
+            signals_not=[Signal(x) for x in raw.get("signals_not", [])],
+        )
+        return e
+
+
+class SignalsParser:
+    """解析一串信号，生成信号函数配置"""
+
+    def __init__(self, signals_module: str = "chanlun.signals"):
+        """
+
+        函数执行逻辑：
+
+        1. 将传入的 signals_module 参数赋给实例变量 self.signals_module，代表信号函数所在的模块，默认模块是czsc库的signals模块。
+        2. 使用 import_by_name 函数导入了指定名称的模块 signals_module。
+        3. 对于导入的模块中的每个属性名进行遍历：
+            - 魔法函数和私有函数不进行处理。
+            - 获取函数的注解信息，并通过正则表达式获取注解中的参数模板和信号列表。
+            - 如果解析到了参数模板，则将其存储在 sig_pats_map 中，key是函数名称。
+            - 如果解析到了信号列表，则将其存储在 sig_name_map 中，并且为每个信号创建了 Signal 对象并存储在列表中，key是函数名称。
+        4. 最后将得到的 sig_name_map 和 sig_pats_map 存储在实例变量中，以便其他方法使用。
+
+        :param signals_module: 指定信号函数所在模块
+        """
+        self.signals_module = signals_module
+        sig_name_map = {}
+        sig_pats_map = {}
+        sig_trigger_map = {}
+
+        signals_module = import_by_name(signals_module)
+        for name in dir(signals_module):
+            if "_" not in name or name.startswith("__"):
+                continue
+
+            try:
+                doc = getattr(signals_module, name).__doc__
+                # 解析信号函数参数
+                pats = re.findall(r"参数模板：\"(.*)\"", doc)
+                if pats:
+                    sig_pats_map[name] = pats[0]
+
+                # 解析信号列表
+                sigs = re.findall(r"Signal\('(.*)'\)", doc)
+                if sigs:
+                    sig_name_map[name] = [Signal(x) for x in sigs]
+
+                # 解析触发条件
+                触发匹配 = re.findall(r"触发条件：(.*)", doc)
+                if 触发匹配:
+                    sig_trigger_map[name] = [x.strip() for x in 触发匹配[0].split(",")]
+
+            except (OSError, ImportError, TypeError, ValueError, AttributeError) as e:
+                logger.error(f"解析信号函数 {name} 出错：{e}")
+
+        self.sig_name_map = sig_name_map
+        self.sig_pats_map = sig_pats_map
+        self.sig_trigger_map = sig_trigger_map
+
+    def parse_params(self, name, signal):
+        """获取信号函数参数
+
+        函数执行逻辑：
+
+        1. 首先根据传入的 name 和 signal 参数，通过 Signal(signal).key 获取一个键值。
+        2. 然后从实例变量 sig_pats_map 中获取与指定名称对应的参数模板，并将其存储在 pats 中。
+        3. 如果没有找到参数模板，则返回 None。
+        4. 最后将信号函数的完整名称存储在参数字典中，并返回参数字典。
+
+        :param name: 信号函数名称, 如：cxt_bi_end_V230222
+        :param signal: 需要解析的信号, 如：15分钟_D1K_量柱V221218_低量柱_6K_任意_0
+        :return:
+        """
+        key = Signal(signal).key
+        pats = self.sig_pats_map.get(name, None)
+        if not pats:
+            return None
+
+        try:
+            params = parse(pats, key).named  # type: ignore
+            if "di" in params:
+                params["di"] = int(params["di"])
+
+            params["name"] = f"{self.signals_module}.{name}"
+
+            # 附加上下文：触发条件与函数短名（供 信号计算器 优化用）
+            触发条件 = self.sig_trigger_map.get(name)
+            if 触发条件:
+                params["触发条件"] = 触发条件
+            params["_func_short_name"] = name
+
+            return params
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            logger.error(f"解析信号 {signal} - {name} - {pats} 出错：{e}")
+            return None
+
+    def get_function_name(self, signal: str):
+        """获取信号对应的信号函数名称
+
+        函数执行逻辑：
+
+        1. 创建一个 _signal 对象，通过传入的信号字符串进行初始化。
+        2. 通过遍历 sig_name_map 中的项目，找出那些与 _signal.k3 相匹配的键，并将它们存储在 _k3_match 列表中。
+        3. 如果只有一个匹配项，则返回该项；否则记录错误日志并返回 None。
+
+        :param signal: 信号，数据样例：15分钟_D1K_量柱V221218_低量柱_6K_任意_0
+        :return: 信号函数名称
+        """
+        sig_name_map = self.sig_name_map
+        _signal = Signal(signal)
+        _k3_match = list({k for k, v in sig_name_map.items() if v[0].k3 == _signal.k3})
+
+        # 多匹配时排除模板函数（以 "模板_" 开头）
+        if len(_k3_match) > 1:
+            non_template = [k for k in _k3_match if not k.startswith("模板_")]
+            if len(non_template) == 1:
+                return non_template[0]
+
+        if len(_k3_match) == 1:
+            return _k3_match[0]
+        else:
+            logger.error(f"信号 {signal} 有多个匹配函数：{_k3_match}，请手动解析信号")
+            return None
+
+    def config_to_keys(self, config: List[Dict]):
+        """将信号函数配置转换为信号key列表
+
+        函数执行逻辑：
+
+        1. 首先创建了一个空列表 keys 用于存储信号key。
+        2. 对于传入的 config 列表中的每个配置字典 conf 进行以下操作：
+            - 获取信号函数的名称。
+            - 如果该信号函数的名称在 self.sig_pats_map 中存在对应的模板，使用参数填充模板，并将结果添加到 keys 列表中。
+
+        :param config: 信号函数配置
+
+            config = [{'freq': '日线', 'max_overlap': '3', 'name': 'czsc.signals.cxt_bi_end_V230222'},
+                     {'freq1': '日线', 'freq2': '60分钟', 'name': 'czsc.signals.cxt_zhong_shu_gong_zhen_V221221'}]
+
+        :return: 信号key列表
+        """
+        keys = []
+        for conf in config:
+            name = conf["name"].split(".")[-1]
+            if name in self.sig_pats_map:
+                keys.append(self.sig_pats_map[name].format(**conf))
+        return keys
+
+    def parse(self, signal_seq: List[str]):
+        """解析信号序列
+
+        函数执行逻辑：
+
+        1. 接受一个signal_seq 参数。
+        2. 定义一个空列表res ，用于存储解析结果。
+        3. 遍历信号序列signal_seq 中的每一个信号：
+
+            - 调用get_function_name 方法，以信号为参数，获取该信号对应的函数名。
+            - 进行函数名存在性判断，name 在sig_pats_map 中存在，
+              调用parse_params 方法，以函数名和信号为参数，解析参数并返回结果。
+
+        :param signal_seq: 信号序列, 样例：
+            ['15分钟_D1K_量柱V221218_低量柱_6K_任意_0', '日线_D1K_量柱V221218_低量柱_6K_任意_0']
+        :return: 信号函数配置
+        """
+        res = []
+        for signal in signal_seq:
+            name = self.get_function_name(signal)
+            if name in self.sig_pats_map:
+                row = self.parse_params(name, signal)
+                if row and row not in res:
+                    res.append(row)
+            else:
+                logger.warning(f"未找到解析函数：{name}，请手动解析信号：{signal}")
+        return res
+
+
+def get_signals_config(signals_seq: List[str], signals_module: str = "") -> List[Dict]:
+    """获取信号列表对应的信号函数配置
+
+    函数执行逻辑：
+
+    1. 首先创建了一个 SignalsParser 类的实例对象 sp，传入了参数 signals_module进行初始化，
+        初始化工作主要是解析signals_module下的信号函数，生成了sig_pats_map信号参数模板字典和sig_name_map信号列表字典。
+    2. 然后使用 sp 实例调用 parse 方法，该方法解析 signals_seq 中的信号，并返回信号函数的配置信息。
+
+    :param signals_seq: 信号列表
+    :param signals_module: 信号函数所在模块
+    :return: 信号函数配置
+    """
+    sp = SignalsParser(signals_module=signals_module)
+    conf = sp.parse(signals_seq)
+    return conf
+
+
+@注册
+def create_single_signal(**kwargs) -> OrderedDict:
+    """创建单个信号"""
+    s = OrderedDict()
+    k1, k2, k3 = kwargs.get("k1", "任意"), kwargs.get("k2", "任意"), kwargs.get("k3", "任意")
+    v1, v2, v3 = kwargs.get("v1", "任意"), kwargs.get("v2", "任意"), kwargs.get("v3", "任意")
+    v = Signal(k1=k1, k2=k2, k3=k3, v1=v1, v2=v2, v3=v3, score=kwargs.get("score", 0))
+    s[v.key] = v.value
+    return s
+
+
+# ==============================================================================
+# Position — 持仓管理
+# ==============================================================================
+
+
+class Position:
+    def __init__(
+        self,
+        symbol: str,
+        opens: List[Event],
+        exits: List[Event] = [],
+        interval: int = 0,
+        timeout: int = 1000,
+        stop_loss=1000,
+        T0: bool = False,
+        name=None,
+    ):
+        """简单持仓对象，仓位表达：1 持有多头，-1 持有空头，0 空仓
+
+        :param symbol: 标的代码
+        :param opens: 开仓交易事件列表
+        :param exits: 平仓交易事件列表，允许为空
+        :param interval: 同类型开仓间隔时间，单位：秒；默认值为 0，表示同类型开仓间隔没有约束
+                假设上次开仓为多头，那么下一次多头开仓时间必须大于 上次开仓时间 + interval；空头也是如此。
+        :param timeout: 最大允许持仓K线数量限制为最近一个开仓事件触发后的 timeout 根基础周期K线
+        :param stop_loss: 最大允许亏损比例，单位：BP， 1BP = 0.01%；成本的计算以最近一个开仓事件触发价格为准
+        :param T0: 是否允许T0交易，默认为 False 表示不允许T0交易
+        :param name: 仓位名称，默认值为第一个开仓事件的名称
+        """
+        assert name, "name 是必须的参数"
+        self.symbol = symbol
+        self.opens = opens
+        self.name = name
+        self.exits = exits if exits else []
+        self.events = self.opens + self.exits
+        for event in self.events:
+            assert event.operate in [Operate.LO, Operate.LE, Operate.SO, Operate.SE]
+
+        self.interval = interval
+        self.timeout = timeout
+        self.stop_loss = stop_loss
+        self.T0 = T0
+
+        self.pos_changed = False  # 仓位是否发生变化
+        self.operates = []  # 事件触发的操作列表
+        self.holds = []  # 持仓状态列表
+        self.pos = 0
+
+        # 辅助判断的缓存数据
+        self.last_event = {
+            "dt": None,
+            "bid": None,
+            "price": None,
+            "op": None,
+            "op_desc": None,
+        }
+        self.last_lo_dt = None  # 最近一次开多交易的时间
+        self.last_so_dt = None  # 最近一次开空交易的时间
+        self.end_dt = None  # 最近一次信号传入的时间
+
+    def __repr__(self):
+        return f"Position(name={self.name}, symbol={self.symbol}, opens={[x.name for x in self.opens]}, timeout={self.timeout}, stop_loss={self.stop_loss}BP, T0={self.T0}, interval={self.interval}s)"
+
+    @property
+    def unique_signals(self) -> List[str]:
+        """获取所有事件的唯一信号列表"""
+        signals = []
+        for e in self.events:
+            signals.extend(e.unique_signals)
+        return list(set(signals))
+
+    def get_signals_config(self, signals_module: str = "") -> List[Dict]:
+        """获取事件的信号配置"""
+        return get_signals_config(self.unique_signals, signals_module)
+
+    def dump(self, with_data: bool = False) -> dict:
+        """将对象转换为 dict"""
+        raw = {
+            "symbol": self.symbol,
+            "name": self.name,
+            "opens": [x.dump() for x in self.opens],
+            "exits": [x.dump() for x in self.exits],
+            "interval": self.interval,
+            "timeout": self.timeout,
+            "stop_loss": self.stop_loss,
+            "T0": self.T0,
+        }
+        if with_data:
+            raw.update({"pairs": self.pairs, "holds": self.holds})
+        return raw
+
+    @classmethod
+    def load(cls, raw: dict) -> "Position":
+        """从 dict 中创建 Position
+        :param raw: 样例如下
+        :return:
+        """
+        pos = Position(
+            name=raw["name"],
+            symbol=raw["symbol"],
+            opens=[Event.load(x) for x in raw["opens"] if raw.get("opens")],
+            exits=[Event.load(x) for x in raw["exits"] if raw.get("exits")],
+            interval=raw["interval"],
+            timeout=raw["timeout"],
+            stop_loss=raw["stop_loss"],
+            T0=raw["T0"],
+        )
+        return pos
+
+    @property
+    def pairs(self) -> List[Dict]:
+        """开平交易列表
+
+        返回样例：
+
+        [{'标的代码': '000001.SH',
+          '交易方向': '多头',
+          '开仓时间': Timestamp('2020-04-17 00:00:00'),
+          '平仓时间': Timestamp('2020-04-20 00:00:00'),
+          '开仓价格': 2838.49,
+          '平仓价格': 2852.55,
+          '持仓K线数': 1,
+          '事件序列': '开多@站上SMA5 -> 开多@站上SMA5',
+          '持仓天数': 3.0,
+          '盈亏比例': 49.53},
+         {'标的代码': '000001.SH',
+          '交易方向': '多头',
+          '开仓时间': Timestamp('2020-04-20 00:00:00'),
+          '平仓时间': Timestamp('2020-04-24 00:00:00'),
+          '开仓价格': 2852.55,
+          '平仓价格': 2808.53,
+          '持仓K线数': 4,
+          '事件序列': '开多@站上SMA5 -> 平多@100BP止损',
+          '持仓天数': 4.0,
+          '盈亏比例': -154.32}]
+
+        数据说明：
+
+        1. 盈亏比例，单位是 BP
+        2. 持仓天数，单位是 自然日
+        3. 持仓K线数，指基础周期K线数量
+        """
+        pairs = []
+
+        for op1, op2 in zip(self.operates, self.operates[1:]):
+            if op1["op"] not in [Operate.LO, Operate.SO]:
+                continue
+
+            ykr = op2["price"] / op1["price"] - 1 if op1["op"] == Operate.LO else 1 - op2["price"] / op1["price"]
+            pair = {
+                "标的代码": self.symbol,
+                "策略标记": self.name,
+                "交易方向": "多头" if op1["op"] == Operate.LO else "空头",
+                "开仓时间": op1["dt"],
+                "平仓时间": op2["dt"],
+                "开仓价格": op1["price"],
+                "平仓价格": op2["price"],
+                "持仓K线数": op2["bid"] - op1["bid"],
+                "事件序列": f"{op1['op_desc']} -> {op2['op_desc']}",
+                "持仓天数": (op2["dt"] - op1["dt"]).total_seconds() / (24 * 3600),
+                "盈亏比例": round(ykr * 10000, 2),  # 盈亏比例 转换成以 BP 为单位的收益，1BP = 0.0001
+            }
+            pairs.append(pair)
+
+        return pairs
+
+    def update(self, s: dict):
+        """更新持仓状态
+
+        函数执行逻辑：
+
+        - 首先，检查最新信号的时间是否在上次信号之前，如果是则打印警告信息并返回。
+        - 初始化一些变量，包括操作类型（op）和操作描述（op_desc）。
+        - 遍历所有的事件，检查是否与最新信号匹配。如果匹配，则记录操作类型和操作描述，并跳出循环。
+        - 提取最新信号的相关信息，包括交易对符号、时间、价格和成交量。
+        - 更新持仓状态的结束时间为最新信号的时间。
+        - 如果操作类型是开仓（LO或SO），更新最后一个事件的信息。
+        - 定义一个内部函数__create_operate，用于创建操作记录。
+        - 根据操作类型更新仓位和操作记录。
+
+            - 如果操作类型是LO（开多），检查是否满足开仓条件，如果满足则开多仓，否则只平空仓。
+            - 如果操作类型是SO（开空），检查是否满足开仓条件，如果满足则开空仓，否则只平多仓。
+            - 如果当前持仓为多仓，进行多头出场的判断：
+                - 如果操作类型是LE（平多），平多仓。
+                - 如果当前价格相对于最后一个事件的价格的收益率小于止损阈值，平多仓。
+                - 如果当前成交量相对于最后一个事件的成交量的增加量大于超时阈值，平多仓。
+
+            - 如果当前持仓为空仓，进行空头出场的判断：
+                - 如果操作类型是SE（平空），平空仓。
+                - 如果当前价格相对于最后一个事件的价格的收益率小于止损阈值，平空仓。
+                - 如果当前成交量相对于最后一个事件的成交量的增加量大于超时阈值，平空仓。
+
+        - 将当前持仓状态和价格记录到持仓列表中。
+
+        :param s: 最新信号字典
+        :return:
+        """
+        if self.end_dt and s["dt"] <= self.end_dt:
+            logger.warning(f"请检查信号传入：最新信号时间{s['dt']}在上次信号时间{self.end_dt}之前")
+            return
+
+        self.pos_changed = False
+        op = Operate.HO
+        op_desc = ""
+        for event in self.events:
+            m, f = event.is_match(s)
+            if m:
+                op = event.operate
+                op_desc = f"{event.name}@{f}"
+                break
+
+        symbol = s["symbol"]
+        dt = s["dt"]
+        price = s["close"]
+        bid = s.get("id", s.get("bid", 0))
+        self.end_dt = dt
+
+        # 当有新的开仓 event 发生，更新 last_event
+        if op in [Operate.LO, Operate.SO]:
+            self.last_event = {
+                "dt": dt,
+                "bid": bid,
+                "price": price,
+                "op": op,
+                "op_desc": op_desc,
+            }
+
+        def __create_operate(_op, _op_desc):
+            self.pos_changed = True
+            return {
+                "symbol": symbol,
+                "dt": dt,
+                "bid": bid,
+                "price": price,
+                "op": _op,
+                "op_desc": _op_desc,
+                "pos": self.pos,
+            }
+
+        # 更新仓位
+        if op == Operate.LO:
+            if self.pos != 1 and (not self.last_lo_dt or (dt - self.last_lo_dt).total_seconds() > self.interval):
+                # 与前一次开多间隔时间大于 interval，直接开多
+                self.pos = 1
+                self.operates.append(__create_operate(Operate.LO, op_desc))
+                self.last_lo_dt = dt
+            else:
+                # 与前一次开多间隔时间小于 interval，仅对空头平仓
+                if self.pos == -1 and (self.T0 or dt.date() != self.last_so_dt.date()):
+                    self.pos = 0
+                    self.operates.append(__create_operate(Operate.SE, op_desc))
+
+        if op == Operate.SO:
+            if self.pos != -1 and (not self.last_so_dt or (dt - self.last_so_dt).total_seconds() > self.interval):
+                # 与前一次开空间隔时间大于 interval，直接开空
+                self.pos = -1
+                self.operates.append(__create_operate(Operate.SO, op_desc))
+                self.last_so_dt = dt
+            else:
+                # 与前一次开空间隔时间小于 interval，仅对多头平仓
+                if self.pos == 1 and (self.T0 or dt.date() != self.last_lo_dt.date()):
+                    self.pos = 0
+                    self.operates.append(__create_operate(Operate.LE, op_desc))
+
+        # 多头出场
+        if self.pos == 1 and (self.T0 or dt.date() != self.last_lo_dt.date()):
+            assert self.last_event["dt"] >= self.last_lo_dt
+
+            # 多头平仓
+            if op == Operate.LE:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.LE, op_desc))
+
+            # 多头止损
+            if price / self.last_event["price"] - 1 < -self.stop_loss / 10000:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.LE, f"平多@{self.stop_loss}BP止损"))
+
+            # 多头超时
+            if bid - self.last_event["bid"] > self.timeout:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.LE, f"平多@{self.timeout}K超时"))
+
+        # 空头出场
+        if self.pos == -1 and (self.T0 or dt.date() != self.last_so_dt.date()):
+            assert self.last_event["dt"] >= self.last_so_dt
+
+            # 空头平仓
+            if op == Operate.SE:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.SE, op_desc))
+
+            # 空头止损
+            if 1 - price / self.last_event["price"] < -self.stop_loss / 10000:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.SE, f"平空@{self.stop_loss}BP止损"))
+
+            # 空头超时
+            if bid - self.last_event["bid"] > self.timeout:
+                self.pos = 0
+                self.operates.append(__create_operate(Operate.SE, f"平空@{self.timeout}K超时"))
+
+        self.holds.append({"dt": self.end_dt, "pos": self.pos, "price": price})
+
+
+class 信号计算器:
+    """多周期信号计算引擎 — 基于观察者字典。
+
+    不再依赖 立体分析器，直接接收 ``{周期秒: 观察者}`` 字典。
+
+    使用方式::
+
+        分析器 = 立体分析器("btcusd", [300, 900, 3600], 配置)
+        观察者字典 = {p: 分析器._单体分析器[p] for p in 分析器.周期组}
+        计算器 = 信号计算器(观察者字典, 基础周期=300, 信号配置=[...])
+
+        for k in k线列表:
+            分析器.投喂K线(k)
+            计算器.更新()
+            print(计算器.信号字典)
+    """
+
+    def __init__(
+        self,
+        分析器: 立体分析器,
+        信号配置: Optional[List[Dict]] = None,
+        信号模块: str = "",
+    ):
+        self._分析器 = 分析器
+        self._观察者字典 = {p: 分析器._单体分析器[p] for p in 分析器.周期组}
+        self._基础周期 = 分析器.周期组[0]
+        self._信号模块 = 信号模块
+        self._信号函数缓存: Dict[str, Callable] = {}
+        self.信号: dict = {}
+        self.行情: dict = {}
+        self.信号配置 = 信号配置 or []
+        self._自动挂载指标()
+
+    @property
+    def 信号字典(self) -> dict:  # 向后兼容：合并返回
+        return {**self.信号, **self.行情}
+
+    @property
+    def 信号配置(self) -> List[Dict]:
+        return self._信号配置
+
+    @信号配置.setter
+    def 信号配置(self, value: List[Dict]):
+        可用周期 = set(self._分析器.周期组)
+        for c in value:
+            freq = c.get("freq")
+            if freq is not None:
+                周期秒 = int(freq)
+                if 周期秒 not in 可用周期:
+                    raise ValueError(f"信号配置 freq={freq}({周期秒}s) 不在分析器周期组 {sorted(可用周期)} 中\n  信号: {c.get('name', '?')}")
+        self._信号配置 = self._去重配置(value)
+        self._预加载信号函数()
+
+    def _去重配置(self, configs: List[Dict]) -> List[Dict]:
+        seen = set()
+        unique = []
+        for c in configs:
+            key = (c.get("name"), frozenset((k, str(v)) for k, v in c.items() if k != "name"))
+            if key not in seen:
+                seen.add(key)
+                unique.append(c)
+            else:
+                logger.warning(f"信号计算器: 重复信号配置已跳过 — {c.get('name', '?')} { {k: v for k, v in c.items() if k != 'name'} }")
+        return unique
+
+    def _预加载信号函数(self):
+        for config in self._信号配置:
+            name = config.get("name")
+            if name and name not in self._信号函数缓存:
+                try:
+                    self._信号函数缓存[name] = self._解析信号函数(name)
+                except (ImportError, ModuleNotFoundError, AttributeError, KeyError) as e:
+                    logger.warning(f"信号计算器: 无法导入 {name} ({e})，跳过")
+
+    @staticmethod
+    def _解析信号函数(name: str):
+        """解析信号函数名，返回可调用对象。
+
+        当运行在 __main__ 上下文中且目标模块为 chan 时，优先使用 __main__
+        命名空间中的函数，避免 import_by_name 触发 chan 模块的重复导入。
+        """
+        if "." in name:
+            module_name, func_name = name.rsplit(".", 1)
+            main_mod = sys.modules.get("__main__")
+            if main_mod is not None and hasattr(main_mod, func_name):
+                # 验证 __main__ 确实是目标模块（通过文件名判断）
+                main_file = getattr(main_mod, "__file__", "")
+                expected_path = module_name.replace(".", os.sep) + ".py"
+                if main_file.endswith(expected_path):
+                    return getattr(main_mod, func_name)
+
+        return import_by_name(name)
+
+    def _自动挂载指标(self):
+        """根据信号配置参数，在对应周期的观察者上自动补全缺失的指标。"""
+
+        待补MACD: Dict[int, List[tuple]] = defaultdict(list)
+        待补均线: Dict[int, List[tuple]] = defaultdict(list)
+
+        for config in self._信号配置:
+            name = config.get("name", "")
+            freq = config.get("freq")
+            if not freq:
+                continue
+            周期秒 = int(freq)
+            if 周期秒 not in self._观察者字典:
+                continue
+
+            # MACD 类信号：从 config 解析 fast/slow/signal 参数
+            if "macd" in name.lower() or "中枢" in name or "背驰" in name or "金叉" in name:
+                fast = int(config.get("fast", config.get("快线周期", 13)))
+                slow = int(config.get("slow", config.get("慢线周期", 31)))
+                sig = int(config.get("signal", config.get("信号周期", 11)))
+                key = f"macd_{fast}_{slow}_{sig}"
+                if not any(t[0] == key for t in 待补MACD[周期秒]):
+                    待补MACD[周期秒].append((key, "收", fast, slow, sig))
+
+            # MA 类信号：从 config 解析 ma_type/timeperiod
+            if "ma_" in name or "tas_ma" in name or "均线" in name:
+                ma_type = config.get("ma_type", "SMA").upper()
+                period = int(config.get("timeperiod", config.get("周期", 5)))
+                key = f"{ma_type}_{period}"
+                if not any(t[0] == key for t in 待补均线[周期秒]):
+                    待补均线[周期秒].append((key, "收", ma_type, period))
+
+        for 周期秒, macd_list in 待补MACD.items():
+            cfg = self._观察者字典[周期秒].配置
+            if not cfg.计算指标:
+                cfg.计算指标 = True
+            已有键 = {t[0] for t in cfg.MACD_参数列表}
+            # 同时检查 (快线, 慢线, 信号) 参数避免只键名不同但参数相同的重复
+            已有参数 = {(t[2], t[3], t[4]) for t in cfg.MACD_参数列表 if len(t) >= 5}
+            新增 = [t for t in macd_list if t[0] not in 已有键 and (t[2], t[3], t[4]) not in 已有参数]
+            if 新增:
+                cfg.MACD_参数列表.extend(新增)
+                if "macd" not in 已有键:
+                    cfg.MACD_参数列表.insert(0, ("macd", "收", 新增[0][2], 新增[0][3], 新增[0][4]))
+                logger.warning(f"信号计算器: 周期{周期秒}s 自动补全 MACD — {[t[0] for t in 新增]}")
+
+        for 周期秒, ma_list in 待补均线.items():
+            cfg = self._观察者字典[周期秒].配置
+            if not cfg.计算指标:
+                cfg.计算指标 = True
+            已有 = {t[0] for t in cfg.均线参数列表}
+            新增 = [t for t in ma_list if t[0] not in 已有]
+            if 新增:
+                cfg.均线参数列表.extend(新增)
+                logger.warning(f"信号计算器: 周期{周期秒}s 自动补全 均线 — {[t[0] for t in 新增]}")
+
+    def 从信号列表提取配置(self, 信号序列: List[str]):
+        """从信号序列自动生成信号配置"""
+        self.信号配置 = get_signals_config(list(set(信号序列)), self._信号模块)
+
+    def 更新(self):
+        """遍历信号配置，调用信号函数。结果写入 self.信号 和 self.行情。"""
+        self.信号.clear()
+        self.行情.clear()
+
+        for config in self._信号配置:
+            try:
+                result = self._执行信号函数(config)
+                if result:
+                    for k, v in result.items():
+                        if v != "任意_任意_任意_0":
+                            self.信号[k] = v
+            except (TypeError, ValueError, KeyError, AttributeError, IndexError) as e:
+                logger.error(f"信号计算器: {config.get('name', '?')} 出错 — {e}")
+                traceback.print_exc()
+
+        # OHLCV 行情
+        基础观察者 = self._观察者字典.get(self._基础周期)
+        if 基础观察者 and 基础观察者.普通K线序列:
+            最后K线 = 基础观察者.普通K线序列[-1]
+            时间戳 = 最后K线.时间戳
+            if isinstance(时间戳, (int, float)):
+                时间戳 = datetime.fromtimestamp(int(时间戳))
+            self.行情.update(
+                symbol=基础观察者.符号,
+                dt=时间戳,
+                id=最后K线.序号,
+                open=最后K线.开盘价,
+                close=最后K线.收盘价,
+                high=最后K线.高,
+                low=最后K线.低,
+                vol=最后K线.成交量,
+            )
+
+    def _执行信号函数(self, config: Dict) -> Optional[OrderedDict]:
+        param = dict(config)
+        sig_name = param.pop("name")
+        sig_func = self._信号函数缓存.get(sig_name) or self._解析信号函数(sig_name)
+
+        freq = param.get("freq")
+        if freq is not None:
+            周期秒 = int(freq)
+            obs = self._观察者字典.get(周期秒)
+            if obs is not None:
+                return sig_func(obs, **param)
+            else:
+                raise KeyError(f"信号计算器: 未找到周期 {周期秒}s 的观察者，可用周期: {sorted(self._观察者字典.keys())}")
+        else:
+            return sig_func(self, **param)
+
+    def 获取周期观察者(self, freq: str) -> Optional[观察者]:
+        return self._观察者字典.get(int(freq))
 
 
 def 测试_读取数据(观察员: 观察者, 配置: 缠论配置) -> Callable[[], 观察者]:
@@ -6762,13 +7831,15 @@ def 测试_指标挂载(配置: 缠论配置):
             size = struct.calcsize(">6d")
             for i in range(len(buffer) // size):
                 if i == 500:
-                    配置.MACD_参数列表 = [("macd", 配置.平滑异同移动平均线_快线周期, 配置.平滑异同移动平均线_慢线周期, 配置.平滑异同移动平均线_信号周期)]
+                    配置.MACD_参数列表 = [("macd", "收", 13, 31, 11)]
                     配置.MACD_参数列表.append(("macd_12_26_9", 12, 26, 9))
                 k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], 周期, 符号)
                 观察员.增加原始K线(k线)
                 if i == 500:
                     assert 观察员.普通K线序列[0].指标.macd_12_26_9 is not None, "指标挂载失败"
-                    print(观察员.普通K线序列[0].指标["macd_12_26_9"])
+                    print(观察员.普通K线序列[-1].指标["macd_12_26_9"])
+                    print(观察员.普通K线序列[-1].macd)
+
                     break
 
         消耗用时 = datetime.now() - 启动时间
@@ -6778,10 +7849,58 @@ def 测试_指标挂载(配置: 缠论配置):
     return 魔法
 
 
+def 测试_信号识别(配置: 缠论配置):
+    文件路径 = 配置.加载文件路径
+    name = Path(文件路径).name.split(".")[0]
+    符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
+    周期 = int(周期)
+    分析器 = 立体分析器(符号, [周期, 周期 * 5, 周期 * 5 * 6], 配置)
+    信号配置 = []
+    for p in [周期, 周期 * 5, 周期 * 5 * 6]:
+        信号配置.extend(
+            get_signals_config(
+                [
+                    f"{str(p)}_D1#MACD#13#33#11_MACD交叉V260601_金叉_任意_任意_0",
+                ],
+                "signals",
+            )
+        )
+    计算器 = 信号计算器(分析器, 信号配置, "signals")
+
+    def 魔法():
+        启动时间 = datetime.now()
+        with open(文件路径, "rb") as f:
+            buffer = f.read()
+            size = struct.calcsize(">6d")
+            for i in range(len(buffer) // size):
+                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], 周期, 符号)
+                分析器.投喂K线(k线)
+
+                计算器.更新()
+
+                # 输出信号内容
+                if 计算器.信号:
+                    dt = k线.时间戳
+                    if isinstance(dt, (int, float)):
+                        dt = datetime.fromtimestamp(dt)
+                    信号摘要 = "  ".join(f"{k}→{v}" for k, v in 计算器.信号.items())
+                    信号类型 = ",".join(sorted(set(v.split("_")[0] for v in 计算器.信号.values())))
+                    logger.info(f"[{dt}] [{信号类型}] 📡 {信号摘要}")
+                    print(f"[{dt}] [{信号类型}] 📡 {信号摘要}, {计算器.信号}")
+                    print()
+
+        消耗用时 = datetime.now() - 启动时间
+        logger.info(f"测试_信号识别 {消耗用时} 普K数量 {len(分析器._单体分析器[周期].普通K线序列)}")
+        return 分析器
+
+    return 魔法
+
+
 if __name__ == "__main__":
     当前配置 = 缠论配置.不推送()
-    当前配置.加载文件路径 = str(Path(__file__).parent / "btcusd-300-1761327300-1776327900.nb")
+    当前配置.加载文件路径 = str(Path(__file__).parent / "templates/btcusd-300-1761327300-1776327900.nb")
     with tempfile.TemporaryDirectory() as tmpdir:
         # 测试_读取数据(观察者("", 0, 当前配置), 当前配置)().测试_保存数据(tmpdir)
         # 测试_周期合成(当前配置)().测试_保存数据(tmpdir)
-        测试_指标挂载(当前配置)().测试_保存数据(tmpdir)
+        # 测试_指标挂载(当前配置)().测试_保存数据(tmpdir)
+        测试_信号识别(当前配置)()

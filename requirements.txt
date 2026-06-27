@@ -8,3 +8,5 @@ websockets
 backtrader==1.9.78.123
 #pandas~=2.2.2
 #matplotlib~=3.9.3
+loguru>=0.7.0,<1.0.0
+parse>=1.20.0,<2.0.0

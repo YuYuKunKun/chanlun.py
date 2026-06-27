@@ -1059,6 +1059,7 @@ print("=== 趋势分析 ===")
                 case 'realtime':
                     if (this.widget && this.onRealtimeCallback) {
                         const bar = {
+                            // time: message.timestamp*1000,
                             time: new Date(message.timestamp).getTime(),
                             close: message.close,
                             open: message.open,
