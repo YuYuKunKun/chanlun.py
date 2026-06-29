@@ -56,6 +56,7 @@ limitations under the License.
 # @File    : chan.py
 from __future__ import annotations
 
+import time
 import json
 import math
 import os
@@ -90,6 +91,8 @@ from typing import (
 
 from loguru import logger
 from parse import parse
+import backtrader as bt
+import requests
 
 __all__ = [
     "K线",
@@ -124,6 +127,7 @@ __all__ = [
     "set_log_level",
     "get_log_level",
     "import_by_name",
+    "Operate",
     "Signal",
     "Factor",
     "Event",
@@ -132,6 +136,9 @@ __all__ = [
     "create_single_signal",
     "Position",
     "信号计算器",
+    "Nb数据源",
+    "Bitstamp数据源",
+    "信号驱动策略",
 ]
 
 # 日志级别映射: 名称 → loguru 级别名
@@ -177,6 +184,7 @@ def get_log_level() -> str:
 
 
 set_log_level("error")
+
 
 REGISTRY = {}
 
@@ -5692,15 +5700,6 @@ class 中枢:
         self.第三买卖线: Optional[虚线] = None
         self.本级_第三买卖线: Optional[虚线] = None
 
-    def _添加虚线(self, 实线: 虚线):
-        """向中枢添加新虚线（延伸），重置第三买卖线
-
-        :param 实线: 新虚线
-        """
-        self.基础序列.append(实线)
-        self.本级_第三买卖线: Optional[虚线] = None
-        self.第三买卖线: Optional[虚线] = None
-
     def __str__(self):
         return f"{self.标识}({self.高:g}, {self.低:g}, 元素数量: {len(self.基础序列)}, {str(self.基础序列)}, {self.基础序列[0].文} ===>>> {self.基础序列[-1].武})"
 
@@ -5830,6 +5829,15 @@ class 中枢:
             扩展线段 = []
             线段.扩展分析(self.基础序列, 扩展线段, 配置)
             中枢.分析(扩展线段, 扩展中枢, False, f"{self.标识}_扩展中枢_")
+
+    def _添加虚线(self, 实线: 虚线):
+        """向中枢添加新虚线（延伸），重置第三买卖线
+
+        :param 实线: 新虚线
+        """
+        self.基础序列.append(实线)
+        self.本级_第三买卖线: Optional[虚线] = None
+        self.第三买卖线: Optional[虚线] = None
 
     def _校验合法性(self, 序列: Sequence[虚线]) -> bool:
         """校验当前中枢在给定序列中是否仍然合法
@@ -6080,6 +6088,26 @@ class 中枢:
                     当前中枢 = 新中枢
                     基础序列 = []
         return None
+
+
+class 走势类型(Enum):
+    上涨 = "上涨"
+    下跌 = "下跌"
+    盘整 = "盘整"
+
+
+class 走势:
+    @classmethod
+    def 分析(cls):
+        pass
+
+    @classmethod
+    def _同级分解(cls):
+        pass
+
+    @classmethod
+    def _非同分解(cls):
+        pass
 
 
 @注册
@@ -6818,7 +6846,7 @@ class Signal:
         key = self.key
         v = s.get(key, None)
         if not v:
-            raise ValueError(f"{key} 不在信号列表中")
+            raise ValueError(f"{key} 不在信号列表中: {s}")
 
         if not isinstance(v, str):
             logger.warning(f"信号 {key} 的值类型异常: {type(v).__name__} = {v!r}，跳过匹配")
@@ -7145,6 +7173,7 @@ class SignalsParser:
             return params
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             logger.error(f"解析信号 {signal} - {name} - {pats} 出错：{e}")
+            traceback.print_exc()
             return None
 
     def get_function_name(self, signal: str):
@@ -7725,8 +7754,7 @@ class 信号计算器:
                 result = self._执行信号函数(config)
                 if result:
                     for k, v in result.items():
-                        if v != "任意_任意_任意_0":
-                            self.信号[k] = v
+                        self.信号[k] = v
             except (TypeError, ValueError, KeyError, AttributeError, IndexError) as e:
                 logger.error(f"信号计算器: {config.get('name', '?')} 出错 — {e}")
                 traceback.print_exc()
@@ -7767,6 +7795,480 @@ class 信号计算器:
 
     def 获取周期观察者(self, freq: str) -> Optional[观察者]:
         return self._观察者字典.get(int(freq))
+
+
+class Bitstamp数据源(bt.feeds.DataBase):
+    """Bitstamp 交易所 OHLC 数据源，包装为 Backtrader DataFeed。
+
+    在 ``start()`` 中通过 Bitstamp REST API 分页预加载全部历史数据到内存，
+    在 ``_load()`` 中逐条吐出 OHLC 柱。
+
+    用法::
+
+        data = Bitstamp数据源(符号="btcusd", 周期=300, 数量=500)
+        cerebro.adddata(data)
+    """
+
+    params = (
+        ("符号", "btcusd"),
+        ("周期", 300),  # 秒
+        ("数量", 500),  # 请求的 K 线条数
+        ("重试次数", 3),
+    )
+
+    @staticmethod
+    def ohlc(pair: str, step: int, start: int, end: int, length: int = 1000, retries: int = 3) -> Dict:
+        """执行HTTP请求，带重试机制"""
+        url = f"https://www.bitstamp.net/api/v2/ohlc/{pair}/"
+        session = requests.Session()
+        session.headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
+        }
+
+        params = {"step": step, "limit": length, "start": start, "end": end}
+
+        for attempt in range(retries):
+            try:
+                resp = session.get(url, params=params, timeout=10)
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                print(f"请求失败 (尝试 {attempt + 1}/{retries}): {e}")
+                if attempt == retries - 1:
+                    raise
+                time.sleep(2**attempt)
+
+    def start(self):
+        """分页拉取全部 OHLC 数据到内存。"""
+        self._数据: List[dict] = []
+        end_ts = int(datetime.now().timestamp())
+        left = end_ts - self.p.周期 * self.p.数量
+        if left < 0:
+            raise RuntimeError(f"起始时间戳 {left} < 0")
+        _next = left
+        while True:
+            page = self.ohlc(self.p.符号, self.p.周期, _next, _next := _next + self.p.周期 * 1000, retries=self.p.重试次数)
+            if not page.get("data"):
+                break
+            self._数据.extend(page["data"]["ohlc"])
+            _next = int(page["data"]["ohlc"][-1]["timestamp"])
+            if len(page["data"]["ohlc"]) < 100:
+                break
+        self._索引 = 0
+
+    def _load(self):
+        """逐条吐出 OHLC 柱到 Backtrader 数据线。"""
+        if self._索引 >= len(self._数据):
+            return False
+        bar = self._数据[self._索引]
+        self._索引 += 1
+        ts = int(bar["timestamp"])
+        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts))
+        self.lines.open[0] = float(bar["open"])
+        self.lines.high[0] = float(bar["high"])
+        self.lines.low[0] = float(bar["low"])
+        self.lines.close[0] = float(bar["close"])
+        self.lines.volume[0] = float(bar["volume"])
+        return True
+
+
+class Nb数据源(bt.feeds.DataBase):
+    """将 .nb 二进制 K 线文件包装为 Backtrader DataFeed。"""
+
+    params = (("文件路径", ""),)
+
+    def start(self):
+        self._f = open(self.p.文件路径, "rb")
+        self._size = struct.calcsize(">6d")
+
+    def stop(self):
+        if self._f:
+            self._f.close()
+
+    def _load(self):
+        buffer = self._f.read(self._size)
+        if not buffer or len(buffer) < self._size:
+            return False
+        ts, o, h, l, c, v = struct.unpack(">6d", buffer)
+        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts))
+        self.lines.open[0] = o
+        self.lines.high[0] = h
+        self.lines.low[0] = l
+        self.lines.close[0] = c
+        self.lines.volume[0] = v
+        return True
+
+
+class 信号驱动策略(bt.Strategy):
+    """基于缠论信号框架的 Backtrader 策略基类。
+
+    将 Signal → Factor → Event → Position 事件驱动框架桥接到 Backtrader，
+    自动管理 立体分析器 + 信号计算器 + Position 状态机 的完整生命周期。
+
+    **两种使用方式：**
+
+    1. **参数模式**（无需子类化）::
+
+            pos = Position(name="策略", symbol="btcusd", opens=[...], exits=[...])
+            cerebro.addstrategy(信号驱动策略, 符号="btcusd", 基础周期=300, 仓位=pos)
+
+    2. **子类模式**（多仓位或自定义逻辑）::
+
+            class 我的策略(信号驱动策略):
+                周期组 = [300, 900, 3600]
+
+                @property
+                def positions(self):
+                    return [pos1, pos2]
+
+    **每根 K 线的执行流程（next）**::
+
+        Backtrader数据 → K线.创建普K → 立体分析器.投喂K线
+            → 信号计算器.更新() → Position.update(信号字典) → _同步仓位()
+
+    **仓位（Position）—— 开平仓机制的核心：**
+
+    ``仓位`` 参数接收一个 ``Position`` 对象（或列表），它是策略的开平仓决策核心。
+    每根 K 线，引擎将最新 ``信号字典`` 传入 ``Position.update()``，
+    Position 内部的状态机根据信号匹配结果自动决定开仓、平仓、止损或超时。
+
+    Position 的结构::
+
+        Position(
+            name="策略名",          # 必填，仓位标识
+            symbol="btcusd",        # 交易品种
+            opens=[...],            # 开仓事件列表（触发开多/开空）
+            exits=[...],            # 平仓事件列表（触发平多/平空）
+            timeout=100,            # 最大持仓 K 线数，超时自动平仓
+            stop_loss=500,          # 最大亏损 BP（1BP=0.01%），触发自动止损
+            interval=0,             # 同向开仓最小间隔（秒），0=无限制
+            T0=True,                # 是否允许当日开平（T+0）
+        )
+
+    **开平仓事件链**（从信号到订单的映射）::
+
+        信号字典 ──匹配──> Signal ──组成──> Factor ──组成──> Event
+                                                               │
+                                          ┌────────────────────┤
+                                          ▼                    ▼
+                                    opens (开仓)          exits (平仓)
+                                     ├ LO: 开多             ├ LE: 平多
+                                     └ SO: 开空             └ SE: 平空
+                                          │                    │
+                                          └────────┬───────────┘
+                                                   ▼
+                                          Position.pos 变化
+                                                   │
+                                                   ▼
+                                          _同步仓位() → Backtrader 订单
+
+    每个 Event 包含一个 ``operate`` 操作类型（LO/SO/LE/SE）和一组 ``Factor``，
+    每个 Factor 包含一组 ``Signal`` 条件。当信号字典中的值匹配某个 Event 的所有
+    Signal 条件时，该 Event 触发，Position 执行对应的仓位变化。
+
+    **Position 的仓位状态机**::
+
+        pos = 1  持多（long）
+        pos = -1 持空（short）
+        pos = 0  空仓（flat）
+
+    每次 ``update(信号字典)`` 时：
+    - 遍历 opens 事件 → 匹配则开仓（pos=1 或 pos=-1）
+    - 遍历 exits 事件 → 匹配则平仓（pos=0）
+    - 检查止损线 → 触发则强制平仓
+    - 检查超时 → 触发则强制平仓
+    - ``pos_changed`` 标记仓位是否变化，供 ``_同步仓位()`` 读取
+
+    **参数说明：**
+
+    :param 符号: 交易品种代码，默认 ``"btcusd"``
+    :param 基础周期: 基础 K 线周期（秒），默认 300
+    :param 配置: ``缠论配置`` 实例，控制分析各阶段行为
+    :param 信号模块: 信号函数所在模块名，默认 ``"signals"``
+    :param 仓位比例: 每次开仓使用资金比例（0~1），默认 0.95
+    :param 最小交易单位: 最小下单数量，默认 0.001
+    :param 仓位: ``Position`` 或 ``[Position]``。
+        这是策略的核心——定义开平仓条件、止损线、超时限制。
+        传入后无需实现 ``positions`` 属性。
+        Position 内部通过 Signal → Factor → Event 三层条件匹配，
+        在每根 K 线上自动判断是否开仓/平仓/止损/超时。
+    :param 信号配置: 直接传入信号函数配置列表 ``[{name, freq, ...}]``，
+        跳过从 Position.unique_signals 的自动解析。
+        仅当信号 key 无法自动匹配到信号函数时才需要手动传入。
+    """
+
+    params = (
+        ("分析器", None),  # 立体分析器（必须由外部创建后传入）
+        ("仓位", None),  # Position 或 [Position]
+        ("信号模块", "signals"),
+        ("信号配置", []),  # 直接传信号函数配置，跳过自动解析
+        ("仓位比例", 0.95),
+        ("最小交易单位", 0.001),
+        ("推送回调", None),  # Callable[[str, dict], None] — WebSocket / UI 推送回调
+    )
+
+    def __init__(self):
+        self.分析器 = None  # 立体分析器（从 param 赋值）
+        self.计算器 = None  # 信号计算器
+        self._positions = []  # Position 列表副本
+        self._符号 = ""  # 从分析器派生
+        self._基础周期 = 0  # 从分析器派生
+        self._已初始化 = False
+        self._初始化失败 = False
+        self._等待行情已记录 = False
+
+    def _初始化分析管道(self):
+        """延迟初始化：绑定外部分析器 + 创建信号计算器（首次 ``next()`` 时调用）。
+
+        初始化顺序：
+        1. 绑定外部 ``分析器``，从中派生 ``符号``、``基础周期``、``周期组``
+        2. 从 ``positions`` 获取仓位列表，收集所有 unique_signals
+        3. 解析信号配置：优先 ``信号配置`` param，否则通过 ``get_signals_config``
+           从 Position.unique_signals 自动匹配 ``信号模块`` 中的信号函数
+        4. 创建 ``信号计算器``，自动挂载所需指标（MACD/均线等）
+
+        失败时设置 ``self._初始化失败 = True``，后续 ``next()`` 静默跳过。
+        """
+        try:
+            self.分析器 = self.p.分析器
+            self._基础周期 = self.分析器.周期组[0]
+            self._符号 = self.分析器._单体分析器[self._基础周期].符号
+
+            周期列表 = self.分析器.周期组
+
+            _positions = [pos for pos in self.positions]
+
+            _unique_signals = set()
+            for pos in _positions:
+                _unique_signals.update(pos.unique_signals)
+            _unique_signals = list(_unique_signals)
+
+            if self.p.信号配置:
+                信号配置 = self.p.信号配置
+            else:
+                信号配置 = get_signals_config(
+                    _unique_signals,
+                    signals_module=self.p.信号模块,
+                )
+
+            self.计算器 = 信号计算器(
+                分析器=self.分析器,
+                信号配置=信号配置,
+                信号模块=self.p.信号模块,
+            )
+
+            self._positions = _positions
+            self._已初始化 = True
+            self.log(f"分析管道已初始化: 周期={周期列表}, 信号函数={len(信号配置)}个")
+            self._推送("初始化", status="ok", 周期=周期列表, 信号函数数量=len(信号配置))
+        except Exception as e:
+            self._初始化失败 = True
+            self.log(f"分析管道初始化失败: {e}")
+            self._推送("初始化", status="failed", error=str(e))
+
+    # ── 子类必须实现 ──
+    @property
+    def positions(self) -> list:
+        """返回 List[Position]。子类可覆盖，否则取 仓位 param。"""
+        if self.p.仓位 is not None:
+            仓位 = self.p.仓位
+            return 仓位 if isinstance(仓位, list) else [仓位]
+        raise NotImplementedError("实现 positions 属性或传入 仓位 参数")
+
+    @property
+    def 周期组(self) -> list:
+        """周期列表，从外部分析器派生。"""
+        return self.p.分析器.周期组
+
+    @property
+    def unique_signals(self) -> list:
+        """从所有 Position 收集唯一信号列表."""
+        sigs = []
+        src = self._positions if self._已初始化 else self.positions
+        for pos in src:
+            sigs.extend(pos.unique_signals)
+        return list(set(sigs))
+
+    def log(self, msg):
+        dt = self.data.datetime.datetime(0)
+        print(f"[{dt}] {msg}")
+
+    def _推送(self, 事件: str, **数据):
+        """调用 ``推送回调``，将结构化事件推送到外部（WebSocket / UI 等）。"""
+        if self.p.推送回调:
+            try:
+                dt = self.data.datetime.datetime(0)
+                数据["time"] = dt.isoformat()
+                self.p.推送回调(事件, 数据)
+            except Exception:
+                pass
+
+    def _计算数量(self, 价格: float) -> int:
+        """基于仓位比例计算下单数量。
+
+        :param 价格: 当前价格
+        :return: 下单数量 = max(总资产 × 仓位比例 / 价格, 最小交易单位)
+        """
+        可用资金 = self.broker.getvalue() * self.p.仓位比例
+        数量 = int(可用资金 / 价格)
+        return max(数量, self.p.最小交易单位)
+
+    def _同步仓位(self):
+        """将第一个 Position 的虚拟仓位映射为 Backtrader 实际订单。
+
+        映射规则（单 Position 场景）::
+
+            Position.pos:  1  持多 → Backtrader buy   （空仓→开多；持空→先平再开）
+            Position.pos: -1  持空 → Backtrader sell  （空仓→开空；持多→先平再开）
+            Position.pos:  0  空仓 → Backtrader close （平掉当前持仓）
+
+        订单数量由 ``_计算数量()`` 根据 ``仓位比例`` 和当前价格决定。
+        """
+        pos = self._positions[0]
+        if not pos.pos_changed:
+            return
+
+        目标 = pos.pos  # 1, -1, 0
+        当前仓位 = self.position.size  # >0 多头, <0 空头, 0 空仓
+        当前价 = self.data.close[0]
+
+        if 目标 == 1 and 当前仓位 <= 0:
+            # 需要持多：空仓则开多，持有空仓则先平再开
+            if 当前仓位 < 0:
+                self.close(data=self.data)
+                self.log(f"[{pos.name}] 平空仓（反手）")
+                self._推送("订单", name=pos.name, action="平空", price=当前价, reason="反手")
+            数量 = self._计算数量(当前价)
+            if 数量 > 0:
+                self.buy(data=self.data, size=数量)
+                self.log(f"[{pos.name}] 开多仓 数量={数量}")
+                self._推送("订单", name=pos.name, action="开多", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+
+        elif 目标 == -1 and 当前仓位 >= 0:
+            # 需要持空
+            if 当前仓位 > 0:
+                self.close(data=self.data)
+                self.log(f"[{pos.name}] 平多仓（反手）")
+                self._推送("订单", name=pos.name, action="平多", price=当前价, reason="反手")
+            数量 = self._计算数量(当前价)
+            if 数量 > 0:
+                self.sell(data=self.data, size=数量)
+                self.log(f"[{pos.name}] 开空仓 数量={数量}")
+                self._推送("订单", name=pos.name, action="开空", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+
+        elif 目标 == 0 and 当前仓位 != 0:
+            # 平仓
+            self.close(data=self.data)
+            self.log(f"[{pos.name}] 平仓")
+            self._推送("订单", name=pos.name, action="平仓", price=当前价, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+        if order.status == order.Completed:
+            self.log(f"成交: {'买' if order.isbuy() else '卖'} 价格={order.executed.price:.2f} 数量={order.executed.size}")
+            self._推送("成交", action="买" if order.isbuy() else "卖", price=order.executed.price, size=order.executed.size, position=self.position.size)
+            if self.position.size == 0:
+                self.log("仓位已平")
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log(f"订单失败: {order.getstatusname()}")
+            self._推送("订单失败", status=order.getstatusname())
+
+    def notify_trade(self, trade):
+        if trade.isclosed:
+            self.log(f"交易结束 净利={trade.pnlcomm:.2f}")
+            self._推送("交易结束", pnl=trade.pnlcomm, pnl_pct=trade.pnlcomm / trade.price * 100 if trade.price else 0)
+
+    def stop(self):
+        """回测结束时输出每个 Position 的绩效报告。
+
+        报告内容：总笔数、盈利笔数、胜率、总盈亏 (BP)、平均盈亏 (BP)、
+        止损次数、超时次数。
+        """
+        for pos in self._positions:
+            pairs = pos.pairs
+            if not pairs:
+                self.log(f"[{pos.name}] 无交易记录")
+                return
+
+            总笔数 = len(pairs)
+            盈利笔 = sum(1 for p in pairs if p["盈亏比例"] > 0)
+            胜率 = 盈利笔 / 总笔数 if 总笔数 else 0
+            总盈亏 = sum(p["盈亏比例"] for p in pairs)
+            平均盈亏 = 总盈亏 / 总笔数 if 总笔数 else 0
+            止损次数 = sum(1 for p in pairs if "止损" in (p.get("事件序列", "")))
+            超时次数 = sum(1 for p in pairs if "超时" in (p.get("事件序列", "")))
+
+            print(f"\n{'=' * 60}")
+            print(f"Position[{pos.name}] 绩效:")
+            print(f"  总笔数: {总笔数}")
+            print(f"  盈利笔: {盈利笔}  胜率: {胜率:.2%}")
+            print(f"  总盈亏: {总盈亏:.2f} BP")
+            print(f"  平均盈亏: {平均盈亏:.2f} BP")
+            print(f"  止损次数: {止损次数}")
+            print(f"  超时次数: {超时次数}")
+            print(f"{'=' * 60}\n")
+
+            self._推送("绩效", name=pos.name, 总笔数=总笔数, 盈利笔=盈利笔, 胜率=round(胜率, 4), 总盈亏=round(总盈亏, 2), 平均盈亏=round(平均盈亏, 2), 止损次数=止损次数, 超时次数=超时次数)
+
+    def next(self):
+        """每根 K 线的驱动入口（Backtrader 自动调用）。
+
+        执行流程：
+        1. 延迟初始化：首次调用时执行 ``_初始化分析管道()``
+        2. 投喂 K 线：从 Backtrader 数据线构建 ``K线``，送入 ``立体分析器``
+        3. 计算信号：调用 ``信号计算器.更新()``，产出 ``信号字典``
+        4. 驱动仓位：遍历 ``_positions``，调用 ``pos.update(信号字典)``
+        5. 同步订单：``_同步仓位()`` 将虚拟仓位变化映射为 Backtrader 实际订单
+        """
+        if not self._已初始化:
+            if self._初始化失败:
+                return
+            self._初始化分析管道()
+            if self._初始化失败:
+                return
+
+        # 1. 投喂 K 线到立体分析器
+        k = K线.创建普K(
+            标识=self._符号,
+            序号=len(self.data),
+            时间戳=self.data.datetime.datetime(0),
+            开盘价=self.data.open[0],
+            最高价=self.data.high[0],
+            最低价=self.data.low[0],
+            收盘价=self.data.close[0],
+            成交量=self.data.volume[0],
+            周期=self._基础周期,
+        )
+        self.分析器.投喂K线(k)
+
+        # 2. 计算信号
+        self.计算器.更新()
+
+        # 2.1 推送产出的信号（非默认值）
+        for key, val in self.计算器.信号.items():
+            if val != "任意_任意_任意_0":
+                信号K3 = key.split("_", 2)[-1] if "_" in key else key
+                self._推送("信号", key=key, value=val, k3=信号K3, price=k.收盘价)
+
+        # 3. 驱动 Position 状态机（信号对自动构建的 Position 同样享有止损/超时/group）
+        sd = self.计算器.信号字典
+        if "dt" not in sd:
+            if not self._等待行情已记录:
+                self.log("等待 K 线合成器完成首根 K 线...")
+                self._等待行情已记录 = True
+            return
+
+        for pos in self._positions:
+            try:
+                pos.update(sd)
+            except ValueError as e:
+                logger.error(f"更新信号出错：{e}")
+            if pos.pos_changed:
+                op = pos.operates[-1] if pos.operates else {}
+                self.log(f"[{pos.name}] 仓位变化: pos={pos.pos}, operates[-1]={op}")
+                self._推送("仓位变化", name=pos.name, pos=pos.pos, operate=op.get("op_desc", ""), price=op.get("price", 0))
+        self._同步仓位()
 
 
 def 测试_读取数据(观察员: 观察者, 配置: 缠论配置) -> Callable[[], 观察者]:
@@ -7854,44 +8356,159 @@ def 测试_信号识别(配置: 缠论配置):
     name = Path(文件路径).name.split(".")[0]
     符号, 周期, 起始时间戳, 结束时间戳 = name.split("-")
     周期 = int(周期)
-    分析器 = 立体分析器(符号, [周期, 周期 * 5, 周期 * 5 * 6], 配置)
-    信号配置 = []
-    for p in [周期, 周期 * 5, 周期 * 5 * 6]:
-        信号配置.extend(
-            get_signals_config(
-                [
-                    f"{str(p)}_D1#MACD#13#33#11_MACD交叉V260601_金叉_任意_任意_0",
+
+    # ── 构建 Position，以参数形式传入 信号驱动策略（无需子类化）──
+    freq = str(周期)
+    仓位 = Position(
+        name=f"中枢第三买卖点_{周期}s",
+        symbol=符号,
+        opens=[
+            Event(
+                name="三买开多",
+                operate=Operate.LO,
+                factors=[
+                    Factor(
+                        name="中枢第三买点",
+                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)],
+                    )
                 ],
-                "signals",
-            )
-        )
-    计算器 = 信号计算器(分析器, 信号配置, "signals")
+            ),
+            Event(
+                name="三卖开空",
+                operate=Operate.SO,
+                factors=[
+                    Factor(
+                        name="中枢第三卖点",
+                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)],
+                    )
+                ],
+            ),
+        ],
+        exits=[
+            Event(
+                name="三卖平多",
+                operate=Operate.LE,
+                factors=[
+                    Factor(
+                        name="中枢第三卖点平多",
+                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)],
+                    )
+                ],
+            ),
+            Event(
+                name="三买平空",
+                operate=Operate.SE,
+                factors=[
+                    Factor(
+                        name="中枢第三买点平空",
+                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)],
+                    )
+                ],
+            ),
+        ],
+        timeout=100,
+        stop_loss=500,
+        T0=True,
+    )
+
+    # ── 第二买卖点 Position ──
+    仓位2 = Position(
+        name=f"第二买卖点_{周期}s",
+        symbol=符号,
+        opens=[
+            Event(
+                name="二买开多",
+                operate=Operate.LO,
+                factors=[
+                    Factor(
+                        name="第二买点",
+                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)],
+                    )
+                ],
+            ),
+            Event(
+                name="二卖开空",
+                operate=Operate.SO,
+                factors=[
+                    Factor(
+                        name="第二卖点",
+                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)],
+                    )
+                ],
+            ),
+        ],
+        exits=[
+            Event(
+                name="二卖平多",
+                operate=Operate.LE,
+                factors=[
+                    Factor(
+                        name="第二卖点平多",
+                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)],
+                    )
+                ],
+            ),
+            Event(
+                name="二买平空",
+                operate=Operate.SE,
+                factors=[
+                    Factor(
+                        name="第二买点平空",
+                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)],
+                    )
+                ],
+            ),
+        ],
+        timeout=200,
+        stop_loss=500,
+        T0=True,
+    )
 
     def 魔法():
         启动时间 = datetime.now()
-        with open(文件路径, "rb") as f:
-            buffer = f.read()
-            size = struct.calcsize(">6d")
-            for i in range(len(buffer) // size):
-                k线 = K线.读取大端字节数组(buffer[i * size : i * size + size], 周期, 符号)
-                分析器.投喂K线(k线)
 
-                计算器.更新()
+        # ── 外部分析器：可被多个策略共享，避免重复创建 ──
+        分析器 = 立体分析器(符号=符号, 周期组=[周期, 周期 * 5, 周期 * 5 * 6], 配置=配置)
 
-                # 输出信号内容
-                if 计算器.信号:
-                    dt = k线.时间戳
-                    if isinstance(dt, (int, float)):
-                        dt = datetime.fromtimestamp(dt)
-                    信号摘要 = "  ".join(f"{k}→{v}" for k, v in 计算器.信号.items())
-                    信号类型 = ",".join(sorted(set(v.split("_")[0] for v in 计算器.信号.values())))
-                    logger.info(f"[{dt}] [{信号类型}] 📡 {信号摘要}")
-                    print(f"[{dt}] [{信号类型}] 📡 {信号摘要}, {计算器.信号}")
-                    print()
+        cerebro = bt.Cerebro()
+        data = Nb数据源(文件路径=文件路径)
+        cerebro.adddata(data)
+        cerebro.addstrategy(
+            信号驱动策略,
+            分析器=分析器,  # 传入外部分析器，自动派生 周期组/符号/配置
+            仓位=[仓位, 仓位2],
+        )
+        cerebro.broker.setcash(100000)
+
+        # 收益与风险指标
+        cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="时间收益率")  # 需要指定timeframe? 默认用数据源的时间周期
+        cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="年度收益率")
+        cerebro.addanalyzer(bt.analyzers.Returns, _name="总体收益率")
+        cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="夏普比率")
+        cerebro.addanalyzer(bt.analyzers.SharpeRatio_A, _name="年化夏普比率")
+        cerebro.addanalyzer(bt.analyzers.Calmar, _name="卡尔玛比率")
+        cerebro.addanalyzer(bt.analyzers.SQN, _name="系统质量指数")
+        cerebro.addanalyzer(bt.analyzers.VWR, _name="变异性加权回报")
+
+        # 风险与资金管理
+        cerebro.addanalyzer(bt.analyzers.DrawDown, _name="回撤分析")
+        cerebro.addanalyzer(bt.analyzers.TimeDrawDown, _name="时间周期回撤")  # 需要timeframe参数，下面会重设
+        cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="交易分析")
+        cerebro.addanalyzer(bt.analyzers.PeriodStats, _name="周期统计")  # 需要timeframe
+        cerebro.addanalyzer(bt.analyzers.Transactions, _name="交易记录")
+        cerebro.addanalyzer(bt.analyzers.PyFolio, _name="pyfolio导出")
+
+        # 其他
+        cerebro.addanalyzer(bt.analyzers.LogReturnsRolling, _name="滚动对数收益率")  # 需要timeframe和period
+
+        logger.info(f"测试_信号识别 启动 Backtrader 回测 — 符号={符号} 周期={周期}s")
+        results = cerebro.run(live=True)
+        策略实例 = results[0]
+        print(results[0].analyzers.交易分析.get_analysis())
 
         消耗用时 = datetime.now() - 启动时间
-        logger.info(f"测试_信号识别 {消耗用时} 普K数量 {len(分析器._单体分析器[周期].普通K线序列)}")
-        return 分析器
+        logger.info(f"测试_信号识别 {消耗用时} 数据文件={文件路径}")
+        return 策略实例
 
     return 魔法
 

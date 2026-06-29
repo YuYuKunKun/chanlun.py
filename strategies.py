@@ -957,6 +957,9 @@ class 回测(高级策略基类):
         return None
 
     def next(self):
+        if self.p.观察员.当前缠K is None:
+            return
+
         # 1. 更新移动止损（基类方法）
         if self.position:
             self.更新止损订单(self.position.size > 0, self.data.close[0])
@@ -1020,6 +1023,108 @@ class 回测(高级策略基类):
     def log(self, 文本, dt=None):
         dt = dt or bt.num2date(self.data.datetime[0])
         print(f"[{dt.strftime('%Y-%m-%d %H:%M')}] {self.p.符号} | {文本}")
+
+
+class Bitstamp数据源(bt.feeds.DataBase):
+    """Bitstamp 交易所 OHLC 数据源，包装为 Backtrader DataFeed。
+
+    在 ``start()`` 中通过 Bitstamp REST API 分页预加载全部历史数据到内存，
+    在 ``_load()`` 中逐条吐出 OHLC 柱。
+
+    用法::
+
+        data = Bitstamp数据源(符号="btcusd", 周期=300, 数量=500)
+        cerebro.adddata(data)
+    """
+
+    params = (
+        ("符号", "btcusd"),
+        ("周期", 300),  # 秒
+        ("数量", 500),  # 请求的 K 线条数
+        ("重试次数", 3),
+    )
+
+    @staticmethod
+    def ohlc(pair: str, step: int, start: int, end: int, length: int = 1000, retries: int = 3) -> Dict:
+        """执行HTTP请求，带重试机制"""
+        url = f"https://www.bitstamp.net/api/v2/ohlc/{pair}/"
+        session = requests.Session()
+        session.headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
+        }
+
+        params = {"step": step, "limit": length, "start": start, "end": end}
+
+        for attempt in range(retries):
+            try:
+                resp = session.get(url, params=params, timeout=10)
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                print(f"请求失败 (尝试 {attempt + 1}/{retries}): {e}")
+                if attempt == retries - 1:
+                    raise
+                time.sleep(2**attempt)
+
+    def start(self):
+        """分页拉取全部 OHLC 数据到内存。"""
+        self._数据: List[dict] = []
+        end_ts = int(datetime.now().timestamp())
+        left = end_ts - self.p.周期 * self.p.数量
+        if left < 0:
+            raise RuntimeError(f"起始时间戳 {left} < 0")
+        _next = left
+        while True:
+            page = self.ohlc(self.p.符号, self.p.周期, _next, _next := _next + self.p.周期 * 1000, retries=self.p.重试次数)
+            if not page.get("data"):
+                break
+            self._数据.extend(page["data"]["ohlc"])
+            _next = int(page["data"]["ohlc"][-1]["timestamp"])
+            if len(page["data"]["ohlc"]) < 100:
+                break
+        self._索引 = 0
+
+    def _load(self):
+        """逐条吐出 OHLC 柱到 Backtrader 数据线。"""
+        if self._索引 >= len(self._数据):
+            return False
+        bar = self._数据[self._索引]
+        self._索引 += 1
+        ts = int(bar["timestamp"])
+        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts))
+        self.lines.open[0] = float(bar["open"])
+        self.lines.high[0] = float(bar["high"])
+        self.lines.low[0] = float(bar["low"])
+        self.lines.close[0] = float(bar["close"])
+        self.lines.volume[0] = float(bar["volume"])
+        return True
+
+
+class Nb数据源(bt.feeds.DataBase):
+    """将 .nb 二进制 K 线文件包装为 Backtrader DataFeed。"""
+
+    params = (("文件路径", ""),)
+
+    def start(self):
+        self._f = open(self.p.文件路径, "rb")
+        self._size = struct.calcsize(">6d")
+
+    def stop(self):
+        if self._f:
+            self._f.close()
+
+    def _load(self):
+        buffer = self._f.read(self._size)
+        if not buffer or len(buffer) < self._size:
+            return False
+        ts, o, h, l, c, v = struct.unpack(">6d", buffer)
+        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts))
+        self.lines.open[0] = o
+        self.lines.high[0] = h
+        self.lines.low[0] = l
+        self.lines.close[0] = c
+        self.lines.volume[0] = v
+        return True
 
 
 # ==================== 回测运行入口 ====================
