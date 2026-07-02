@@ -70,7 +70,7 @@ import hashlib
 import traceback
 import datetime as datetime_module
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -136,10 +136,18 @@ __all__ = [
     "create_single_signal",
     "Position",
     "信号计算器",
+    "Bitstamp数据源",
     "Nb数据源",
     "Bitstamp数据源",
     "信号驱动策略",
+    "走势",
+    "走势类型",
 ]
+
+
+def Nil(*args, **kwargs):
+    return None
+
 
 # 日志级别映射: 名称 → loguru 级别名
 _级别映射 = {
@@ -512,6 +520,90 @@ def 转化为时间戳_数字(ts: Union[str, datetime, int, float]) -> int:
         raise TypeError(f"不支持的时间戳类型: {type(ts)}")
 
 
+@注册
+def 区间百分比(x: float, a: float, b: float) -> float:
+    """
+    计算 x 在从 a 到 b 的区间上的百分比位置。
+
+    :param x: 待计算位置的数值
+    :param a: 区间起点
+    :param b: 区间终点（可以与 a 大小任意，但不能相等）
+    :return: 百分比值（0~100 表示在区间内，小于0或大于100表示在区间外）
+    :raises ValueError: 当 a == b 时
+    """
+    if a == b:
+        raise ValueError("起点 a 和终点 b 不能相等")
+    return round((x - a) / (b - a) * 100.0, 4)
+
+
+def 调整时间戳到零点且周期整除(当前时间戳: int, 周期: int, 数量: int) -> tuple[int, int, int, bool]:
+    """
+    根据当前时间戳、周期和数量计算目标时间戳，并调整到当天 0 点（UTC），
+    同时确保时间戳能被周期整除。若最终结果为 0，则抛出异常。
+
+    对齐语义：结果时间戳 = 参考时间戳所在日的 UTC 零点，并回退到能被
+    「实际周期」（支持列表中能整除 周期 的最大值）整除的边界。
+    对所有支持周期（60~259200 秒，均整除 86400）而言，零点天然落在周期网格上。
+
+    参数:
+        当前时间戳: 参考时间戳（秒，UTC），必须 ≥ 0
+        周期: 用户输入的目标周期（秒），必须 > 0，且应在支持列表中有最大整除数
+        数量: 期望向前的周期数（按目标周期 周期 计，窗口 ≈ 周期 × 数量 秒，
+              而非基础周期）；传 0 表示不对参考时间戳做周期回退，仅将参考
+              时间戳本身对齐到零点且周期整除（等价于「对齐参考时间戳到整点边界」）。
+
+    返回:
+        tuple[int, int, int, bool]: (调整后的时间戳, 调整后的数量, 实际周期, 是否需要合并)
+
+    异常:
+        ValueError: 当最终目标时间戳为 0，或无法找到合适的最大整除数时抛出
+    """
+    支持的周期数组 = sorted([60, 180, 300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 259200])
+
+    if 周期 <= 0:
+        raise ValueError("周期必须为正整数")
+    if 当前时间戳 < 0:
+        raise ValueError("当前时间戳不能为负数")
+
+    # 1. 在支持周期数组中寻找能整除 周期 的最大数
+    实际周期 = None
+    for p in reversed(支持的周期数组):  # 从大到小遍历
+        if 周期 % p == 0:
+            实际周期 = p
+            break
+    if 实际周期 is None:
+        raise ValueError(f"周期 {周期} 不能被任何支持周期整除，支持周期列表: {支持的周期数组}")
+
+    # 2. 计算初始目标时间戳（数量按目标周期 周期 计：窗口 ≈ 周期 × 数量 秒，
+    #    而非基础周期——否则非原生周期（如 1200s/基础 300s）窗口会被缩小，
+    #    导致获取条数少于请求数量）
+    初始目标 = 当前时间戳 - 周期 * 数量
+
+    # 3. 获取初始目标所在日期的 00:00:00 (UTC)
+    #    注意：必须用带时区的 fromtimestamp —— naive datetime 的 .timestamp()
+    #    会按本地时区解释，导致零点偏移（如 UTC+8 时偏移 8 小时），
+    #    对 86400 等周期会直接使对齐失败。
+    dt = datetime_module.datetime.fromtimestamp(初始目标, tz=datetime_module.timezone.utc)
+    零点 = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    零点时间戳 = int(零点.timestamp())
+
+    # 4. 向前调整零点，使其能被实际周期整除（由于实际周期整除86400，此循环大概率不执行）
+    最终目标 = 零点时间戳
+    while 最终目标 % 实际周期 != 0:
+        最终目标 -= 86400
+        if 最终目标 < 0:
+            raise ValueError("无法找到非负的目标时间戳满足条件（零点不能被周期整除且调整后为负）")
+
+    # 5. 检查最终目标是否为 0
+    if 最终目标 == 0:
+        raise ValueError("目标时间戳为 0，无法满足条件")
+
+    # 6. 计算新的数量（对齐后窗口内包含的基础周期数，仅作信息返回）
+    新数量 = (当前时间戳 - 最终目标) // 实际周期
+
+    return 最终目标, 新数量, 实际周期, 实际周期 != 周期
+
+
 # 模拟 Pydantic 的 ValidationError，保持原有异常逻辑兼容
 class ValidationError(Exception):
     pass
@@ -554,7 +646,7 @@ class 缠论配置:
         笔内原始K线包含整笔: bool = False,  # 在非 [笔内起始分型包含整笔] 时判断原始K线包含整笔的情况
         笔次级成笔: bool = False,
         笔弱化: bool = False,
-        笔弱化_原始数量: int = 3,
+        笔弱化_原始数量: int = 4,
         # 笔_必须对齐:bool = False # 强迫症设为True, 将获得无与伦比满足。。。
         线段_非缺口下穿刺: bool = False,  # True: 非缺口状态下[小阳, 少阴]时，存在贯穿伤与之后紧邻的三个元素有方向相同的线段时回退， 此举在当下是否有任何意义呢？
         线段_特征序列忽视老阴老阳: bool = False,  # True 不用严格的特征序列包含，也就是忽视缺口全以无缺口对待
@@ -568,6 +660,7 @@ class 缠论配置:
         分析笔中枢: bool = True,
         分析线段中枢: bool = True,
         手动终止: str = "",  # 2099-12-31 00:00:00
+        手动起始: str = "",  # 2099-12-31 00:00:00
         计算指标: bool = True,
         指标计算方式: str = "收",  # 均线计算方式
         均线参数列表: List[tuple] = None,  # [(key, 计算方式, 类型, 周期), ...]
@@ -615,10 +708,11 @@ class 缠论配置:
         self.分析笔中枢 = 分析笔中枢
         self.分析线段中枢 = 分析线段中枢
         self.手动终止 = 手动终止
+        self.手动起始 = 手动起始
         self.计算指标 = 计算指标
         self.指标计算方式 = 指标计算方式
         self.均线参数列表 = 均线参数列表 if 均线参数列表 is not None else []
-        self.MACD_参数列表 = MACD_参数列表 if MACD_参数列表 is not None else [("macd", "收", 13, 31, 11)]
+        self.MACD_参数列表 = MACD_参数列表 if MACD_参数列表 is not None else [("macd", "收", 13, 31, 11), ("macd5", "收", 65, 155, 55), ("macd20", "收", 260, 620, 220), ("macd25", "收", 325, 775, 275)]
         self.RSI_周期列表 = RSI_周期列表 if RSI_周期列表 is not None else [("rsi", "收", 14, 13, 75.0, 25.0)]
         self.KDJ_参数列表 = KDJ_参数列表 if KDJ_参数列表 is not None else [("kdj", "收", 13, 5, 5, 80.0, 20.0)]
         self.BOLL_参数列表 = BOLL_参数列表 if BOLL_参数列表 is not None else [("boll", "收", 20, 2.0)]
@@ -671,6 +765,7 @@ class 缠论配置:
             "分析笔中枢": {"annotation": bool, "default": True},
             "分析线段中枢": {"annotation": bool, "default": True},
             "手动终止": {"annotation": str, "default": ""},
+            "手动起始": {"annotation": str, "default": ""},
             "计算指标": {"annotation": bool, "default": True},
             "指标计算方式": {"annotation": str, "default": "收"},
             "均线参数列表": {"annotation": List[tuple], "default": []},
@@ -1957,9 +2052,16 @@ class 指标容器:
 
     def __getattr__(self, name: str):
         _数据 = object.__getattribute__(self, "_数据")
-        if name not in _数据:
-            raise AttributeError(f"指标 '{name}' 不存在于 指标容器 中")
-        return _数据[name]
+        # 直接键：macd / rsi / kdj / boll / macd5 / macd_12_26_9 等
+        if name in _数据:
+            return _数据[name]
+        # 均线 dict：SMA_5 / EMA_20 等
+        if "均线" in _数据 and name in _数据["均线"]:
+            return _数据["均线"][name]
+        # 单值 dict：CCI_14 / ATR_14 等
+        if "单值" in _数据 and name in _数据["单值"]:
+            return _数据["单值"][name]
+        raise AttributeError(f"指标 '{name}' 不存在于 指标容器 中")
 
     def __setattr__(self, name: str, value):
         if name == "_数据":
@@ -2238,6 +2340,68 @@ class 背驰分析:
     """
 
     @staticmethod
+    def MACD实时背驰(进入段: 虚线, 离开段: 虚线, K线序列: List[K线], 方式: str = "总") -> bool:
+        """实时背驰判断（第24课×2估算法）。
+
+        离开段可以未完成 — 取进入段终点到序列末尾作为离开段的已走部分。
+        当 MACD 柱子增速放缓时，用已出现面积 ×2 估算总面积，与进入段比较。
+
+        :param 进入段: 已完成的前一段走势（参考基准）
+        :param 离开段: 离开段走势（可未完成，文=进入段终点，武=None 表示尚未完成）
+        :param K线序列: 完整K线序列
+        """
+        # 定位离开段已走K线
+        if not 离开段.文 or not 离开段.文.中 or not 离开段.文.中.标的K线:
+            return False
+        起 = 离开段.文.中.标的K线
+        try:
+            startIdx = K线序列.index(起)
+        except ValueError:
+            return False
+        # 如果离开段已完成，取其武的K线为终点；否则取序列末尾
+        if 离开段.武 and 离开段.武.中 and 离开段.武.中.标的K线:
+            try:
+                endIdx = K线序列.index(离开段.武.中.标的K线)
+            except ValueError:
+                endIdx = len(K线序列) - 1
+        else:
+            endIdx = len(K线序列) - 1
+        已走 = K线序列[startIdx : endIdx + 1]
+        if len(已走) < 5:
+            return False
+
+        # 提取 MACD 柱子高度
+        bars = []
+        for k in 已走:
+            try:
+                m = k.指标.macd
+                bars.append(abs(m.DIF - m.DEA) if (m.DIF is not None and m.DEA is not None) else 0)
+            except Exception:
+                bars.append(0)
+        if max(bars) <= 0:
+            return False
+
+        # 方向同向检查
+        if 进入段.方向 is not None and 离开段.方向 is not None:
+            if 进入段.方向 is not 离开段.方向:
+                return False
+
+        # 柱子增速放缓检测
+        recent = bars[-4:]
+        deltas = [recent[i] - recent[i - 1] for i in range(1, len(recent))]
+        if all(d <= 0 for d in deltas):
+            return False  # 全在衰减，已过峰 → 不是"放缓"，是"已经过了"
+        if not any(d > 0 for d in deltas):
+            return False  # 全不变
+
+        # 面积对比
+        进入方向 = 进入段.方向
+        key = "总" if 方式 == "总" else ("阳" if 进入方向 is 相对方向.向上 else "阴")
+        当前面积 = abs(K线.获取MACD(K线序列, 已走[0], 已走[-1]).get(key, 0))
+        进入面积 = abs(K线.获取MACD(K线序列, 进入段.文.中.标的K线, 进入段.武.中.标的K线).get(key, 0))
+        return 当前面积 * 2 < 进入面积 and 进入面积 > 0
+
+    @staticmethod
     def MACD背驰(进入段: 虚线, 离开段: 虚线, K线序列: List[K线], 方式: str = "总") -> bool:
         """MACD柱状线面积背驰
 
@@ -2394,6 +2558,354 @@ class 背驰分析:
                 return 背驰分析.任选背驰(进入段, 离开段, 普K序列)
         return False
 
+    @staticmethod
+    def 标准背驰(进入段: "虚线", 离开段: "虚线", K线序列: List["K线"]) -> dict:
+        """第27课标准背驰：柱子面积 + 黄白线回抽 0 轴双重确认。
+
+        硬前提：离开段的黄白线必须回抽过 0 轴附近，否则最多是盘整背驰。
+
+        :return: {背驰: bool, 柱面积背驰: bool, 黄白线背驰: bool, 原因: str}
+        """
+        # 进入段 MACD
+        进入MACD = K线.获取MACD(K线序列, 进入段.文.中.标的K线, 进入段.武.中.标的K线)
+        离开MACD = K线.获取MACD(K线序列, 离开段.文.中.标的K线, 离开段.武.中.标的K线)
+
+        key = "阳" if 进入段.方向 is 相对方向.向上 else "阴"
+        进入面积 = abs(进入MACD.get(key, 0))
+        离开面积 = abs(离开MACD.get(key, 0))
+        柱面积背驰 = 离开面积 < 进入面积 and 进入面积 > 0
+
+        # 黄白线回抽 0 轴检查：离开段的 DIF/DEA 极值是否接近 0
+        dif_vals = []
+        dea_vals = []
+        for k in K线序列:
+            try:
+                m = k.指标.macd
+                if m.DIF is not None and m.DEA is not None:
+                    dif_vals.append(m.DIF)
+                    dea_vals.append(m.DEA)
+            except Exception:
+                continue
+        if not dif_vals:
+            return {"背驰": False, "柱面积背驰": 柱面积背驰, "黄白线背驰": False, "原因": "无MACD数据"}
+
+        dif_range = max(dif_vals) - min(dif_vals)
+        dea_range = max(dea_vals) - min(dea_vals) if dea_vals else 0
+        recent_dif = dif_vals[-1] if dif_vals else 0
+
+        # 黄白线是否回抽过 0 轴附近（穿越或触碰 0 轴上下 10% 区间）
+        dif_min = min(dif_vals)
+        dif_max = max(dif_vals)
+        threshold = max(abs(dif_min), abs(dif_max)) * 0.15
+        回抽0轴 = (dif_min <= threshold and dif_max >= -threshold) or abs(recent_dif) < threshold
+
+        if not 回抽0轴:
+            return {"背驰": False, "柱面积背驰": 柱面积背驰, "黄白线背驰": False, "原因": "黄白线未回抽0轴，不是趋势背驰"}
+
+        # 黄白线不创新低/新高
+        if 进入段.方向 is 相对方向.向下:
+            进入极值 = min(dif_vals[: len(dif_vals) // 2]) if len(dif_vals) > 2 else min(dif_vals)
+            离开极值 = min(dif_vals[-len(dif_vals) // 2 :]) if len(dif_vals) > 2 else min(dif_vals)
+            黄白线背驰 = 离开极值 > 进入极值  # 做多：离开段 DIF 不再创新低
+        else:
+            进入极值 = max(dif_vals[: len(dif_vals) // 2]) if len(dif_vals) > 2 else max(dif_vals)
+            离开极值 = max(dif_vals[-len(dif_vals) // 2 :]) if len(dif_vals) > 2 else max(dif_vals)
+            黄白线背驰 = 离开极值 < 进入极值  # 做空：离开段 DIF 不再创新高
+
+        背驰 = 柱面积背驰 or 黄白线背驰  # 任一满足即可
+        标准 = 柱面积背驰 and 黄白线背驰
+
+        return {"背驰": 背驰, "标准": 标准, "柱面积背驰": 柱面积背驰, "黄白线背驰": 黄白线背驰, "回抽0轴": True}
+
+    @staticmethod
+    def 平均力度(进入段: "虚线", 离开段: "虚线", K线序列: List["K线"], 方式: str = "总", macd: str = "macd") -> dict:
+        """第15课趋势平均力度对比：面积 ÷ 时间，即时判定背驰。
+
+        平均力度 = 段内MACD面积 ÷ 段耗时。离开段可不完整（取序列末尾为终点），
+        与进入段的平均力度即时对比，弱则背驰。
+
+        面积按第24课取：方向向上看阳（红柱），向下看阴（绿柱），
+        ``方式="总"`` 时按进入段方向自动选 阳/阴。
+
+        :return: {进入平均力度, 离开平均力度, 背驰, 力度比}
+        """
+        # 面积键：总 → 按进入段方向选 阳/阴
+        if 方式 == "总":
+            键 = "阳" if 进入段.方向 is 相对方向.向上 else "阴"
+        else:
+            键 = 方式
+
+        # 进入段
+        进入MACD = K线.获取MACD(K线序列, 进入段.文.中.标的K线, 进入段.武.中.标的K线, macd)
+        进入面积 = abs(进入MACD.get(键, 0))
+        进入时间 = max(1, (进入段.武.中.标的K线.序号 - 进入段.文.中.标的K线.序号))
+        进入平均 = 进入面积 / 进入时间
+
+        # 离开段（可未完成）
+        if 离开段.武 and 离开段.武.中:
+            离开终点 = 离开段.武.中.标的K线
+            离开时间 = max(1, (离开段.武.中.标的K线.序号 - 离开段.文.中.标的K线.序号))
+        else:
+            离开终点 = K线序列[-1]
+            try:
+                离开起点序号 = K线序列.index(离开段.文.中.标的K线)
+                离开时间 = max(1, len(K线序列) - 离开起点序号)
+            except ValueError:
+                离开时间 = 1
+        离开MACD = K线.获取MACD(K线序列, 离开段.文.中.标的K线, 离开终点, macd)
+        离开面积 = abs(离开MACD.get(键, 0))
+        离开平均 = 离开面积 / 离开时间
+
+        力度比 = 离开平均 / 进入平均 if 进入平均 > 0 else 1.0
+        return {
+            "进入平均力度": round(进入平均, 4),
+            "离开平均力度": round(离开平均, 4),
+            "力度比": round(力度比, 4),  # <1 = 离开更弱
+            "背驰": 离开平均 < 进入平均 and 进入平均 > 0,
+        }
+
+    @staticmethod
+    def 力度比(进入段: "虚线", 离开段: "虚线", K线序列: List["K线"], 方式: str = "总") -> dict:
+        """力度比：离开段/进入段的面积、斜率、测度三个维度的比值。
+
+        比值 < 1 表示离开段弱于进入段，维度越多小于1越可能背驰。
+
+        :return: {面积比, 斜率比, 测度比, 综合比, 背驰}
+        """
+        # 面积
+        进入MACD = K线.获取MACD(K线序列, 进入段.文.中.标的K线, 进入段.武.中.标的K线)
+        离开MACD = K线.获取MACD(K线序列, 离开段.文.中.标的K线, 离开段.武.中.标的K线)
+        key = "总" if 方式 == "总" else ("阳" if 进入段.方向 is 相对方向.向上 else "阴")
+        进入面积 = abs(进入MACD.get(key, 0))
+        离开面积 = abs(离开MACD.get(key, 0))
+        面积比 = 离开面积 / 进入面积 if 进入面积 > 0 else 1.0
+
+        # 斜率
+        def _斜率(段):
+            dx = 段.武.中.标的K线.序号 - 段.文.中.标的K线.序号
+            dy = 段.武.分型特征值 - 段.文.分型特征值
+            return abs(dy / dx) if dx else 0
+
+        进入斜率 = _斜率(进入段)
+        离开斜率 = _斜率(离开段)
+        斜率比 = 离开斜率 / 进入斜率 if 进入斜率 > 0 else 1.0
+
+        # 测度（欧氏距离）
+        def _测度(段):
+            dx = 段.武.中.标的K线.序号 - 段.文.中.标的K线.序号
+            dy = 段.武.分型特征值 - 段.文.分型特征值
+            return math.sqrt(dx * dx + dy * dy)
+
+        进入测度 = _测度(进入段)
+        离开测度 = _测度(离开段)
+        测度比 = 离开测度 / 进入测度 if 进入测度 > 0 else 1.0
+
+        综合比 = (面积比 + 斜率比 + 测度比) / 3
+        背驰 = 综合比 < 1
+        return {
+            "面积比": round(面积比, 4),
+            "斜率比": round(斜率比, 4),
+            "测度比": round(测度比, 4),
+            "综合比": round(综合比, 4),
+            "背驰": 背驰,
+        }
+
+    @staticmethod
+    def MACD背离(前段: "虚线", 后段: "虚线", K线序列: List["K线"]) -> dict:
+        """一般技术分析中的 MACD 背离：价格创新高/低，但 MACD 指标不配合。
+
+        **核心思想**：价格与 MACD 指标走势不一致。价格创出新极值，
+        但 MACD 的 DIF 没有同步创出新极值，预示动能衰竭。
+
+        与缠论背驰不同：背离对比的是「价格极值 vs MACD 极值」，
+        不要求中枢结构，只需两段走势方向相同。
+
+        **判定逻辑（按前段方向分支）：**
+
+        1. 取两段各自的 K 线区间（前段.文→前段.武，后段.文→后段.武）
+        2. 段内价格极值：
+           - 前段最高价 = max(前段K们.高)，前段最低价 = min(前段K们.低)
+           - 后段最高价 / 后段最低价 同理
+        3. 段内 DIF 极值：遍历段内每根K线的 指标.macd.DIF
+           - 前段 DIF 高点 / 低点，后段 DIF 高点 / 低点
+        4. 方向分支：
+
+           **前段向上 → 顶背离判断：**
+           ::
+
+               价格突破 = 后段最高价 > 前段最高价   (后段价格创新高)
+               指标不配 = 后段DIF高点 < 前段DIF高点  (DIF未创新高)
+               顶背离   = 价格突破 and 指标不配
+
+           **前段向下 → 底背离判断：**
+           ::
+
+               价格突破 = 后段最低价 < 前段最低价   (后段价格创新低)
+               指标不配 = 后段DIF低点 > 前段DIF低点  (DIF未创新低)
+               底背离   = 价格突破 and 指标不配
+
+        **调用注意**：``前段`` 与 ``后段`` 必须方向相同。
+        相邻走势严格交替（上下上），对比时应隔一个反向段，
+        如 线段序列[i] 与 线段序列[i+2]。
+
+        :param 前段: 参考段（决定背离方向）
+        :param 后段: 待判断段，须与前段同向
+        :param K线序列: 完整K线序列
+        :return: 包含价格/DIF极值及各判定项的 dict，``背离`` 字段为最终布尔结果
+        """
+        前起 = 前段.文.中.标的K线
+        前止 = 前段.武.中.标的K线
+        后起 = 后段.文.中.标的K线
+        后止 = 后段.武.中.标的K线
+
+        # 段内价格极值
+        前K们 = K线序列[K线序列.index(前起) : K线序列.index(前止) + 1]
+        后K们 = K线序列[K线序列.index(后起) : K线序列.index(后止) + 1]
+        价格前高 = max(k.高 for k in 前K们)
+        价格前低 = min(k.低 for k in 前K们)
+        价格后高 = max(k.高 for k in 后K们)
+        价格后低 = min(k.低 for k in 后K们)
+
+        # 段内 DIF 极值
+        def _DIF极值(K们):
+            difs = []
+            for k in K们:
+                try:
+                    m = k.指标.macd
+                    if m.DIF is not None:
+                        difs.append(m.DIF)
+                except Exception:
+                    continue
+            return (max(difs), min(difs)) if difs else (0, 0)
+
+        前DIF高, 前DIF低 = _DIF极值(前K们)
+        后DIF高, 后DIF低 = _DIF极值(后K们)
+
+        # 方向判断
+        if 前段.方向 is 相对方向.向上:
+            # 顶背离：价格创新高 + DIF 高点降低
+            价格突破 = 价格后高 > 价格前高
+            指标不配 = 后DIF高 < 前DIF高
+            类型 = "顶背离" if 价格突破 and 指标不配 else "无"
+        elif 前段.方向 is 相对方向.向下:
+            # 底背离：价格创新低 + DIF 低点抬高
+            价格突破 = 价格后低 < 价格前低
+            指标不配 = 后DIF低 > 前DIF低
+            类型 = "底背离" if 价格突破 and 指标不配 else "无"
+        else:
+            return {"类型": "无", "背离": False}
+
+        return {
+            "类型": 类型,
+            "价格前高": round(价格前高, 2),
+            "价格前低": round(价格前低, 2),
+            "价格后高": round(价格后高, 2),
+            "价格后低": round(价格后低, 2),
+            "DIF前高": round(前DIF高, 4),
+            "DIF前低": round(前DIF低, 4),
+            "DIF后高": round(后DIF高, 4),
+            "DIF后低": round(后DIF低, 4),
+            "背离": 类型 != "无",
+        }
+
+
+class 止损:
+    """三种经典止损策略。供信号函数或策略直接调用。
+
+    用法::
+
+        stop = 止损.吊灯(方向="多", K线序列=obs.普通K线序列, 周期=22, 乘数=3)
+        stop = 止损.海龟2N(方向="多", 入场价=62772, K线序列=obs.普通K线序列, N周期=20)
+        stop = 止损.支撑阻力(方向="多", 观察员=obs)
+    """
+
+    @staticmethod
+    def ATR(K线序列: List["K线"], 周期: int = 20) -> float:
+        """计算平均真实波幅。"""
+        if len(K线序列) < 周期 + 1:
+            return 0.0
+        真实波幅 = []
+        for i in range(len(K线序列) - 周期, len(K线序列)):
+            k = K线序列[i]
+            prev = K线序列[i - 1]
+            tr = max(k.高 - k.低, abs(k.高 - prev.收盘价), abs(k.低 - prev.收盘价))
+            真实波幅.append(tr)
+        return sum(真实波幅) / len(真实波幅) if 真实波幅 else 0.0
+
+    # ═══════════════════════════════════════════════
+    # 1. 吊灯止损 (Chandelier Exit)
+    # ═══════════════════════════════════════════════
+    @staticmethod
+    def 吊灯(方向: str, K线序列: List["K线"], 开仓序号: int = 0, 周期: int = 22, 乘数: float = 3.0) -> float:
+        """吊灯止损：开仓以来的全局极值 - ATR×乘数。
+
+        :param 方向: "多" 或 "空"
+        :param K线序列: 完整K线序列
+        :param 开仓序号: 开仓K线在序列中的索引，默认 0
+        :param 周期: ATR 计算窗口
+        :param 乘数: ATR 倍数
+        :return: 止损价
+        """
+        持仓K线 = K线序列[开仓序号:]
+        if len(持仓K线) < 2:
+            return 持仓K线[-1].收盘价 * (0.99 if 方向 == "多" else 1.01)
+        atr = 止损.ATR(持仓K线, min(周期, len(持仓K线) - 1)) or (持仓K线[-1].收盘价 * 0.01)
+
+        if 方向 == "多":
+            return max(k.高 for k in 持仓K线) - atr * 乘数
+        else:
+            return min(k.低 for k in 持仓K线) + atr * 乘数
+
+    # ═══════════════════════════════════════════════
+    # 2. 海龟 2N 止损 (Turtle 2N Stop)
+    # ═══════════════════════════════════════════════
+    @staticmethod
+    def 海龟2N(方向: str, 入场价: float, K线序列: List["K线"], N周期: int = 20) -> float:
+        """海龟 2N 止损：入场价 ± 2×N。
+
+        :param 方向: "多" 或 "空"
+        :param 入场价: 开仓价格
+        :param K线序列: K线序列（用于计算 N=ATR）
+        :param N周期: ATR计算周期
+        :return: 止损价
+        """
+        n = 止损.ATR(K线序列, N周期) or (入场价 * 0.01)
+        if 方向 == "多":
+            return 入场价 - 2 * n
+        else:
+            return 入场价 + 2 * n
+
+    # ═══════════════════════════════════════════════
+    # 3. 阻力支撑位止损 — 基于缠论结构的自然止损
+    # ═══════════════════════════════════════════════
+    @staticmethod
+    def 支撑阻力(方向: str, 观察员: "观察者", 回溯笔数: int = 3) -> float:
+        """缠论结构止损：用最近的反向分型作为支撑/阻力。
+
+        做多 → 最近底分型低点（支撑位）
+        做空 → 最近顶分型高点（阻力位）
+
+        :param 方向: "多" 或 "空"
+        :param 观察员: 观察者对象
+        :param 回溯笔数: 回溯笔数范围
+        :return: 止损价
+        """
+        笔序列 = 观察员.笔序列
+        if not 笔序列 or len(笔序列) < 2:
+            return 0.0
+
+        if 方向 == "多":
+            for bi in reversed(笔序列[-回溯笔数:]):
+                if bi.武.结构 == 分型结构.底:
+                    return bi.武.分型特征值  # 底分型低点 = 支撑
+            return min(bi.武.分型特征值 for bi in 笔序列[-回溯笔数:] if bi.武)
+
+        else:  # 空
+            for bi in reversed(笔序列[-回溯笔数:]):
+                if bi.文.结构 == 分型结构.顶:
+                    return bi.文.分型特征值  # 顶分型高点 = 阻力
+            return max(bi.文.分型特征值 for bi in 笔序列[-回溯笔数:] if bi.文)
+
 
 class K线:
     """原始 K 线 — OHLCV 数据，通过 :class:`指标容器` 挂载所有技术指标。
@@ -2469,6 +2981,10 @@ class K线:
     def 最低价(self):
         return self.低
 
+    @property
+    def 分型特征值(self):
+        return self.低 if self.方向 is 相对方向.向下 else self.高
+
     # ---- property 兼容层：k线.macd → k线.指标.macd ----
     @property
     def macd(self) -> Optional[平滑异同移动平均线]:
@@ -2493,6 +3009,17 @@ class K线:
         :return: KDJ 实例，未计算时返回 None
         """
         return self.指标.kdj
+
+    def __getattr__(self, name: str):
+        """指标自动注入：K线.macd5 / K线.SMA_5 / K线.ATR_14 等 → 转发到 指标容器。
+
+        已有 property（macd/rsi/kdj/boll）优先命中，本方法只在正常查找失败时兜底。
+        未知属性继续抛 AttributeError。
+        """
+        try:
+            return getattr(self.指标, name)
+        except AttributeError:
+            raise AttributeError(f"K线 和 指标容器 都没有属性 '{name}'") from None
 
     def __str__(self):
         return f"{self.标识}<{self.序号}, {self.周期}, {self.方向}, {self.时间戳}, {self.开盘价:g}, {self.高:g}, {self.低:g}, {self.收盘价:g}>"
@@ -2582,12 +3109,13 @@ class K线:
         )
 
     @classmethod
-    def 获取MACD(cls, K线序列: List[K线], 始: K线, 终: K线) -> Dict[str, float]:
+    def 获取MACD(cls, K线序列: List[K线], 始: K线, 终: K线, macd: str = "macd") -> Dict[str, float]:
         """计算指定K线区间的MACD柱面积
 
         :param K线序列: 完整K线序列
         :param 始: 起始K线
         :param 终: 终点K线
+        :param macd: K线中指标容器的键值，存在多个MACD时。
         :return: {"阳": 正值面积和, "阴": 负值面积和, "合": 净面积, "总": 绝对面积和}
         """
         基序 = K线序列[K线序列.index(始) : K线序列.index(终) + 1]
@@ -2595,7 +3123,7 @@ class K线:
         阳 = 0.0
         阴 = 0.0
         for k in 基序:
-            histogram = k.macd.MACD柱
+            histogram = getattr(k, macd).MACD柱
             if histogram >= 0:
                 阳 += histogram
             else:
@@ -2700,7 +3228,7 @@ class 缠论K线:
       :meth:`截取` — 截取起始缠K到终止缠K之间的子序列
     """
 
-    __slots__ = ["序号", "时间戳", "高", "低", "方向", "分型", "周期", "标识", "分型特征值", "原始起始序号", "原始结束序号", "标的K线", "买卖点信息"]
+    __slots__ = ["序号", "时间戳", "高", "低", "方向", "分型", "周期", "标识", "分型特征值", "原始起始序号", "原始结束序号", "标的K线", "买卖点信息", "标注信息"]
 
     def __init__(
         self,
@@ -2739,6 +3267,7 @@ class 缠论K线:
         self.原始结束序号: int = 原始结束序号
         self.标的K线: K线 = 普K
         self.买卖点信息: Set[str] = set()
+        self.标注信息: Dict[str, Set[str]] = defaultdict(set)
 
     def __str__(self):
         return f"{self.标识}<{self.序号}, {self.分型}, {self.周期}, {self.方向}, {self.时间戳}, {self.高:g}, {self.低:g}>"
@@ -2923,7 +3452,7 @@ class 缠论K线:
                 普K序列[-1] = 当前K线
             else:
                 if 之前普K.时间戳 > 当前K线.时间戳:
-                    raise RuntimeError("时序错误")
+                    raise RuntimeError(f"时序错误, {之前普K.时间戳} > {当前K线.时间戳}")
                 当前K线.序号 = 之前普K.序号 + 1
                 普K序列.append(当前K线)
 
@@ -3143,6 +3672,53 @@ class 分型:
                 return self.左.标的K线.macd.MACD柱 < self.中.标的K线.macd.MACD柱 > self.右.标的K线.macd.MACD柱
         return False
 
+    def 命中率(self, 观察员: "观察者", 止损: float = 0.015, 止盈: float = 0.03) -> bool:
+        """分型完成后第一根K线收盘入场，是否触达止盈且未触发止损。
+
+        入场 = 分型完成后第一根K线的收盘价。止损优先。
+
+        :param 观察员: 观察者对象
+        :param 止损: 止损百分比（0.015 = 1.5%）
+        :param 止盈: 止盈百分比（0.03 = 3%）
+        :return: True = 触达止盈且未止损
+        """
+        if self.右 is None:
+            return False  # 分型未完成，无法入场
+
+        # 1. 定位入场点：右分型后面那根K线
+        try:
+            右索引 = 观察员.普通K线序列.index(self.右.中.标的K线)
+            入场索引 = 右索引 + 1
+            if 入场索引 >= len(观察员.普通K线序列):
+                return False
+        except ValueError:
+            return False
+
+        入场价 = 观察员.普通K线序列[入场索引].收盘价
+        K线序列 = 观察员.普通K线序列[入场索引 + 1 :]  # 入场后的K线
+
+        # 2. 方向
+        if self.结构 in (分型结构.顶, 分型结构.上):
+            方向 = "空"
+            止损价 = 入场价 * (1 + 止损)
+            止盈价 = 入场价 * (1 - 止盈)
+        else:
+            方向 = "多"
+            止损价 = 入场价 * (1 - 止损)
+            止盈价 = 入场价 * (1 + 止盈)
+
+        # 3. 遍历入场后的K线
+        for k in K线序列:
+            触发止损 = k.低 <= 止损价 if 方向 == "多" else k.高 >= 止损价
+            触发止盈 = k.高 >= 止盈价 if 方向 == "多" else k.低 <= 止盈价
+
+            if 触发止损:
+                return False  # 止损优先
+            if 触发止盈:
+                return True  # 止盈达成
+
+        return False  # 都没触发
+
     @classmethod
     def 判断分型(cls, 左: 分型, 右: 分型, 模式: str = "中") -> bool:
         """判断两个分型是否相同（identity比较）
@@ -3297,6 +3873,14 @@ class 虚线:
         :return: 图表显示标题
         """
         return f"{self.文.中.标识}:{self.文.中.周期}:{self.标识}:{self.序号}"
+
+    @property
+    def 方向明确(self) -> bool:
+        """
+        :return: 前三个元素是否有明确的方向，方向在{相对方向.向上, 相对方向.向下}之中
+        """
+        左, 中, 右 = self.基础序列[:3]
+        return 相对方向.分析(左.端点高, 左.端点低, 右.端点高, 右.端点低) is self.方向  # in (相对方向.向上, 相对方向.向下)
 
     @property
     def 方向(self) -> 相对方向:
@@ -3501,14 +4085,29 @@ class 虚线:
         return len([匹配 for 匹配 in 混沌槽 if 匹配]) >= 2
 
     @classmethod
-    def 计算MACD柱子均值(cls, 普K序列: List[K线], 实线: 虚线) -> float:
+    def 计算MACD柱子均值(cls, 普K序列: List[K线], 实线: 虚线, 模式: str = "总") -> float:
         """
         :param 普K序列: 完整K线序列
         :param 实线: 虚线（笔/线段）
+        :param 模式: {总, 阴, 阳, 合}
         :return: 区间内MACD柱绝对值的平均值
         """
         K线序列: List[K线] = K线.截取(普K序列, 实线.文.中.标的K线, 实线.武.中.标的K线)
-        return sum([abs(K.macd.MACD柱) for K in K线序列]) / len(K线序列)
+        数量 = len(K线序列)
+        if 模式 == "总":
+            return sum([abs(K.macd.MACD柱) for K in K线序列]) / len(K线序列)
+        elif 模式 == "阴":
+            总 = [K.macd.MACD柱 for K in K线序列 if K.macd.MACD柱 < 0]
+            if 总:
+                return sum(总) / len(总)
+        elif 模式 == "阳":
+            总 = [K.macd.MACD柱 for K in K线序列 if K.macd.MACD柱 > 0]
+            if 总:
+                return sum(总) / len(总)
+        elif 模式 == "合":
+            总 = [K.macd.MACD柱 for K in K线序列]
+            if 总:
+                return sum(总) / len(总)
 
     @classmethod
     def 计算MACD柱子均值_阴(cls, 普K序列: List[K线], 实线: 虚线) -> float:
@@ -3812,7 +4411,7 @@ class 虚线:
         return 结果, ""
 
     @classmethod
-    def 计算MACD柱子分段(cls, k线序列: List[K线]) -> Tuple[List[List[K线]], ...]:
+    def 计算MACD柱子分段(cls, k线序列: List[K线], macd: str = "macd") -> Tuple[List[List[K线]], ...]:
         """
         :param k线序列: K线序列
         :return: 按正负分段的MACD柱列表
@@ -3826,17 +4425,17 @@ class 虚线:
             else:
                 return "负"
 
-        当前符号 = 符号(k线序列[0].macd.MACD柱)
-        当前段柱子 = [k线序列[0].macd.MACD柱]
+        当前符号 = 符号(getattr(k线序列[0], macd).MACD柱)
+        当前段柱子 = [getattr(k线序列[0], macd).MACD柱]
         结果 = []
 
         for i in range(1, len(k线序列)):
-            新符号 = 符号(k线序列[i].macd.MACD柱)
+            新符号 = 符号(getattr(k线序列[i], macd).MACD柱)
             if 新符号 == 当前符号:
-                当前段柱子.append(k线序列[i].macd.MACD柱)
+                当前段柱子.append(getattr(k线序列[i], macd).MACD柱)
             else:
                 结果.append(当前段柱子)
-                当前段柱子 = [k线序列[i].macd.MACD柱]
+                当前段柱子 = [getattr(k线序列[i], macd).MACD柱]
                 当前符号 = 新符号
         if 当前段柱子:
             结果.append(当前段柱子)
@@ -3969,6 +4568,22 @@ class 笔:
     __slots__ = []
 
     @staticmethod
+    def 生成筆K线(始: float, 终: float) -> list[tuple[float, float]]:
+        跨度 = abs(始 - 终)
+        均值 = round(跨度 / 5, 2)
+        序列 = []
+        if 始 < 终:
+            # 上
+            文 = 始 + 均值
+            武 = 终 - 均值
+            中间均值 = round(abs(abs(始 - 文) / 2 - abs(终 - 武) / 2) / 3, 2)
+        else:
+            # 下
+            文 = 始 - 均值
+            武 = 终 + 均值
+            中间均值 = round(abs(abs(始 - 文) / 2 - abs(终 - 武) / 2) / 3, 2)
+
+    @staticmethod
     def _获取缠K数量(缠K序列: List[缠论K线], 笔序列: List[虚线], 配置: 缠论配置) -> int:
         """获取笔内有效缠K数量（考虑笔弱化等配置）
 
@@ -3981,7 +4596,7 @@ class 笔:
         if 实际数量 >= 配置.笔内元素数量:
             return 实际数量
 
-        if 配置.笔弱化 and 实际数量 >= 3:
+        if 配置.笔弱化 and 实际数量 >= 4:
             _实际高点 = 笔._实际高点(缠K序列, 配置.笔内相同终点取舍)
             _实际低点 = 笔._实际低点(缠K序列, 配置.笔内相同终点取舍)
             原始数量 = 1 + abs(_实际低点.标的K线.序号 - _实际高点.标的K线.序号)
@@ -4051,6 +4666,36 @@ class 笔:
         """
         序列 = sorted(缠K序列, key=lambda k: k.低)
         lows: List[缠论K线] = [k for k in 序列 if k.低 == 序列[0].低]
+        lows.sort(key=lambda k: k.时间戳)
+        return lows[-1] if 笔内相同终点取舍 else lows[0]
+
+    @staticmethod
+    def _真实高点(筆: 虚线, 普通K线序列: List[K线]) -> K线:
+        """_真实高点
+
+        :param 筆: 虚线.标识 == "笔"
+        :param 普通K线序列: 观察员完整K线序列
+        :return: 真实高点K线
+        """
+        笔内相同终点取舍 = True  # Ture: 取最新K线
+        K线序列 = K线.截取(普通K线序列, 筆.文.中.标的K线, 筆.武.中.标的K线)
+        序列 = sorted(K线序列, key=lambda k: k.高)
+        highs: List[K线] = [k for k in 序列 if k.高 == 序列[-1].高]
+        highs.sort(key=lambda k: k.时间戳)
+        return highs[-1] if 笔内相同终点取舍 else highs[0]
+
+    @staticmethod
+    def _真实低点(筆: 虚线, 普通K线序列: List[K线]) -> K线:
+        """_真实低点
+
+        :param 筆: 虚线.标识 == "笔"
+        :param 普通K线序列: 观察员完整K线序列
+        :return: 真实低点K线
+        """
+        笔内相同终点取舍 = True  # Ture: 取最新K线
+        K线序列 = K线.截取(普通K线序列, 筆.文.中.标的K线, 筆.武.中.标的K线)
+        序列 = sorted(K线序列, key=lambda k: k.低)
+        lows: List[K线] = [k for k in 序列 if k.低 == 序列[0].低]
         lows.sort(key=lambda k: k.时间戳)
         return lows[-1] if 笔内相同终点取舍 else lows[0]
 
@@ -4169,7 +4814,7 @@ class 笔:
 
         if 配置.笔弱化 and 笔序列:
             前一笔 = 笔序列[-1]
-            if 前一笔.武.中.序号 - 前一笔.文.中.序号 + 1 == 3:
+            if 前一笔.武.中.序号 - 前一笔.文.中.序号 + 1 == 4:
                 if (前一笔.方向.是否向上() and 前一笔.低 > 当前分型.分型特征值 and 当前分型.结构 is 分型结构.底) or (前一笔.方向.是否向下() and 前一笔.高 < 当前分型.分型特征值 and 当前分型.结构 is 分型结构.顶):
                     笔._弹出旧笔(分型序列, 笔序列, sys._getframe().f_lineno)
                     return 笔递归分析(当前分型, 分型序列, 笔序列, 缠K序列, 普K序列, 递归层次 + 1, 配置)
@@ -5014,7 +5659,9 @@ class 线段:
 
         if 线段.四象(之前线段) in ("老阴", "老阳"):
             待添加线段.前一缺口 = None
-
+        getattr(之前线段.实_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
+        getattr(之前线段.虚_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
+        getattr(之前线段.合_中枢序列, "尾部刷新", Nil)(sys._getframe().f_lineno)
         线段序列.append(待添加线段)
         # logger.warning(f"线段._向序列中添加[{行号}]", 待添加虚线)
 
@@ -5051,6 +5698,9 @@ class 线段:
     def _缺口突破(cls, 线段序列: List[虚线], 配置: 缠论配置, 层级: int) -> bool:
         """内部方法：处理缺口突破修正, 正常修正
         除此之外的修正皆为短路修正，此修正为正常处理
+        处理两种情况
+        1. 缺口被回补，直接形成新线段
+        2. 缺口未回补且一笔突破特征分型端点，原线段延续
         :param 线段序列: 线段列表
         :param 配置: 缠论配置
         :param 层级: 递归深度
@@ -5081,6 +5731,12 @@ class 线段:
         # 已被修正
         if 线段序列[-2].短路修正:
             return False
+
+        前一缺口 = 当前线段.前一缺口
+        if 相对方向.分析(前一缺口.高, 前一缺口.低, 当前线段.高, 当前线段.低) is 相对方向.逆:
+            当前线段.前一缺口 = None
+            线段._刷新(当前线段, 配置)
+            return True
 
         # 执行修正
         序列 = 当前线段.基础序列[:]
@@ -5143,7 +5799,7 @@ class 线段:
         当前线段.特征序列[2] = None
         # assert 当前线段.基础序列[-1] in 基础序列, "非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！"
         if 当前线段.基础序列[-1] not in 基础序列:
-            logger.error(f"非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！")
+            logger.error(f"非缺口下穿刺: 当前线段.基础序列[-1] 不在 基础序列中！当前线段: {当前线段}, {当前线段.基础序列[-1]}")
             序号 = 0
         else:
             序号 = cls._索引(基础序列, 当前线段.基础序列[-1]) + 1
@@ -5161,7 +5817,7 @@ class 线段:
         return True
 
     @classmethod
-    def _缺口后紧急修正(cls, 线段序列: List[虚线], 配置: 缠论配置, 层级: int) -> bool:
+    def _缺口后紧急修正2(cls, 线段序列: List[虚线], 配置: 缠论配置, 层级: int) -> bool:
         """内部方法：处理缺口后紧急修正
 
         执行逻辑: 在缺口
@@ -5194,6 +5850,59 @@ class 线段:
         else:  # 向下方向
             if 相对方向.分析(基础序列[0].高, 基础序列[0].低, 基础序列[2].高, 基础序列[2].低) is 相对方向.向上:
                 需要修正 = True
+
+        if not 需要修正:
+            return False
+
+        # 执行修正
+        当前线段.短路修正 = True
+        新段 = 虚线.创建线段(基础序列)
+        线段._添加线段(线段序列, 新段, 配置, sys._getframe().f_lineno, 层级)
+        return True
+
+    @classmethod
+    def _缺口后紧急修正(cls, 线段序列: List[虚线], 配置: 缠论配置, 层级: int) -> bool:
+        """内部方法：处理缺口后紧急修正
+
+        执行逻辑: 缺口线段终结后的线段突破起点，且线段特征序列形成反向分型【分型结构.下，分型结构.上】
+        问题来源: BTC日线 2014 11 11 至 2015 09 21 这一部分。
+        :param 线段序列: 线段列表
+        :param 配置: 缠论配置
+        :param 层级: 递归深度
+        :return: 是否执行了修正
+        """
+        assert 线段序列, "缺口后紧急修正: 线段序列为空！"
+        当前线段 = 线段序列[-1]
+        四象 = 线段.四象(当前线段)
+
+        # 外层条件检查
+        if not (配置.线段_缺口后紧急修正 and 四象 in ("小阳", "少阴") and 当前线段.特征序列[2] is None):
+            return False
+
+        # 内层条件：长度和前一线的四象
+        if not (len(线段序列) >= 2 and 线段.四象(线段序列[-2]) in ("老阴", "老阳")):
+            return False
+
+        # 基础序列 = 线段.分割序列(当前线段)[1]
+        前, 基础序列, 第三买卖线, 贯穿伤 = 线段.分割序列(当前线段)
+        if len(基础序列) < 3:
+            return False
+
+        特征序列 = 线段特征.静态分析(当前线段.基础序列, 当前线段.方向, 四象)
+        if len(特征序列) < 3:
+            return False
+
+        需要修正 = False
+
+        try:
+            if 当前线段.方向 is 相对方向.向上:
+                if 分型结构.分析(特征序列[-3], 特征序列[-2], 特征序列[-1]) is 分型结构.下 and 当前线段.文.分型特征值 > 特征序列[-1].低:
+                    需要修正 = True
+            else:  # 向下方向
+                if 分型结构.分析(特征序列[-3], 特征序列[-2], 特征序列[-1]) is 分型结构.上 and 当前线段.文.分型特征值 < 特征序列[-1].高:
+                    需要修正 = True
+        except ValueError as ve:
+            logger.error(f"{ve}")
 
         if not 需要修正:
             return False
@@ -5257,7 +5966,7 @@ class 线段:
         return True
 
     @classmethod
-    def 分析(cls, 笔序列: List[虚线], 线段序列: List[虚线], 配置: 缠论配置, 层级: int = 0, 关系序列=[相对方向.向上, 相对方向.向下]) -> None:
+    def 分析(cls, 笔序列: List[虚线], 线段序列: List[虚线], 配置: 缠论配置, 层级: int = 0, 关系序列: list[相对方向] = [相对方向.向上, 相对方向.向下]) -> None:
         """线段划分核心递归算法 — 从笔序列递归生成线段。
 
         :param 笔序列: 笔列表
@@ -5408,8 +6117,17 @@ class 线段:
                     break
             基础序列.append(元素)
         段.基础序列[:] = 基础序列
-        if len(段.基础序列) % 2 == 0:
+
+        数量 = len(段.基础序列)
+        if 数量 % 2 == 0:
             段.基础序列 and 段.基础序列.pop()
+
+        if 数量 >= 3:
+            左, 中, 右 = 段.基础序列[:3]
+            if 相对方向.分析(左.端点高, 左.端点低, 右.端点高, 右.端点低).是否缺口():
+                段.基础序列.clear()  # [:] = [左, 中]
+            else:
+                段.基础序列[:] = [左, 中, 右]
 
     @classmethod
     def _添加扩展线段(cls, 线段序列: List[虚线], 待添加线段: 虚线, 行号: int):
@@ -5470,7 +6188,7 @@ class 线段:
             for i in range(1, len(虚线序列) - 1):
                 左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
                 关系 = 相对方向.分析(左.端点高, 左.端点低, 右.端点高, 右.端点低)
-                if 关系 not in (相对方向.向下, 相对方向.向上, 相对方向.顺, 相对方向.逆, 相对方向.同):  # FIXME 此处为首个线段
+                if 关系 not in (相对方向.向下, 相对方向.向上):  # FIXME 此处为首个线段
                     continue
 
                 段 = 虚线.创建线段([左, 中, 右])
@@ -5519,6 +6237,149 @@ class 线段:
             段 = 虚线.创建线段([左, 中, 右])
             线段._添加扩展线段(线段序列, 段, sys._getframe().f_lineno)
             return 线段递归扩展分析(虚线序列, 线段序列, 配置)
+
+    @classmethod
+    def _添加混合线段(cls, 线段序列: List[虚线], 待添加线段: 虚线, 行号: int):
+        """内部方法：向扩展线段序列添加新线段
+
+        :param 线段序列: 扩展线段列表
+        :param 待添加线段: 新线段
+        :param 行号: 调用行号
+        """
+        待添加线段.模式 = "高低"
+        待添加线段.标识 = f"扩展{待添加线段.标识}" if 待添加线段.基础序列[0].标识 != "笔" else "扩展线段"
+        if 线段序列 and not 线段序列[-1].之后是(待添加线段):
+            raise ValueError(f"{线段序列[-1].标识}.向序列中添加 不连续[{行号}]", 线段序列[-1].武, 待添加线段.文)
+        if 线段序列:
+            之前线段 = 线段序列[-1]
+            待添加线段.序号 = 之前线段.序号 + 1
+
+        线段序列.append(待添加线段)
+        # logger.warning(f"线段._向序列中添加[{行号}]", 待添加线段)
+
+    @classmethod
+    def _弹出混合线段(cls, 线段序列: List[虚线], 待弹出线段: 虚线, 行号: int):
+        """内部方法：从扩展线段序列弹出最后一个线段
+
+        :param 线段序列: 扩展线段列表
+        :param 待弹出线段: 待弹出的线段
+        :param 行号: 调用行号
+        :return: 弹出的线段或None
+        """
+        if not 线段序列:
+            return None
+
+        if 线段序列[-1] is 待弹出线段:
+            drop = 线段序列.pop()
+            待弹出线段.有效性 = False
+            # logger.warning(f"线段._从序列中删除[{行号}]", 待弹出线段)
+            return drop
+        raise ValueError("线段._从序列中删除 弹出数据不在列表中", 待弹出线段)
+
+    @classmethod
+    def _清理序列(cls, 段: 虚线, 序列: Sequence):
+        """清理序列
+
+        :param 段: 线段
+        :param 序列: 参考序列
+        """
+        基础序列 = []
+        序列集 = set(序列) if not isinstance(序列, set) else 序列
+        for 元素 in 段.基础序列:
+            if 元素 not in 序列集:
+                break
+            if 基础序列:
+                if not 基础序列[-1].之后是(元素):
+                    logger.warning("    线段._清理序列 数据不连续")
+                    break
+            基础序列.append(元素)
+        段.基础序列[:] = 基础序列
+        if len(段.基础序列) % 2 == 0:
+            段.基础序列 and 段.基础序列.pop()
+
+    @classmethod
+    def 混合分析(cls, 虚线序列: List[虚线], 线段序列: List[虚线], 配置: 缠论配置) -> None:
+        """同级别分析 — 将虚线视为线段进行递归段划分。
+
+        :param 虚线序列: 基础虚线列表
+        :param 线段序列: 扩展线段列表（原地修改）
+        :param 配置: 缠论配置
+        :return: None（结果写入线段序列）
+        """
+        if not 虚线序列:
+            return None
+        try:
+            虚线序列[2]
+        except IndexError:
+            return None
+        线段递归混合分析 = 线段.混合分析
+
+        if not 线段序列:
+            for i in range(1, len(虚线序列) - 1):
+                左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
+                关系 = 相对方向.分析(左.端点高, 左.端点低, 右.端点高, 右.端点低)
+                if 关系 not in (相对方向.向下, 相对方向.向上):  # FIXME 此处为首个线段
+                    continue
+
+                段 = 虚线.创建线段([左, 中, 右])
+                线段._添加混合线段(线段序列, 段, sys._getframe().f_lineno)
+                break
+
+        # 检查线段元素
+        if not 线段序列:
+            return None
+
+        当前线段 = 线段序列[-1]
+        线段._清理序列(当前线段, 虚线序列)
+        if len(当前线段.基础序列) < 3:
+            线段._弹出混合线段(线段序列, 当前线段, sys._getframe().f_lineno)
+            return 线段递归混合分析(虚线序列, 线段序列, 配置)
+
+        线段._武终(当前线段, sys._getframe().f_lineno)  # TODO 添加错误处理机制
+        if 当前线段.基础序列[-1].序号 + 3 > 虚线序列[-1].序号:
+            return None
+
+        序号 = cls._索引(虚线序列, 当前线段.基础序列[-1]) + 1
+        if 序号 >= len(虚线序列):
+            return None
+        for i in range(序号 + 1, len(虚线序列) - 1):
+            当前线段 = 线段序列[-1]
+            L = 当前线段.基础序列[-2]
+            R = 当前线段.基础序列[-1]
+
+            左, 中, 右 = 虚线序列[i - 1], 虚线序列[i], 虚线序列[i + 1]
+            if 左 in 当前线段.基础序列:
+                continue
+            L左关系 = 相对方向.分析(L.端点高, L.端点低, 左.端点高, 左.端点低)
+            R中关系 = 相对方向.分析(R.端点高, R.端点低, 中.端点高, 中.端点低)
+            if R中关系 == 当前线段.方向:
+                线段._添加虚线(当前线段, 左)
+                线段._添加虚线(当前线段, 中)
+                线段._武终(当前线段, sys._getframe().f_lineno)
+                continue
+
+            相对关系 = 相对方向.分析(左.端点高, 左.端点低, 右.端点高, 右.端点低)
+            if 相对关系.是否缺口():
+                线段._添加虚线(当前线段, 左)
+                线段._添加虚线(当前线段, 中)
+                线段._武终(当前线段, sys._getframe().f_lineno)
+                continue
+
+            # 优先处理带有明确方向的线段
+            if 相对关系 in (相对方向.向下, 相对方向.向上):
+                段 = 虚线.创建线段([左, 中, 右])
+                线段._添加混合线段(线段序列, 段, sys._getframe().f_lineno)
+                continue
+
+            if 当前线段.方向 is 相对方向.向下:
+                ...
+            else:
+                ...
+
+            print("未处理的模式", 相对关系, L左关系, R中关系)
+            段 = 虚线.创建线段([左, 中, 右])
+            线段._添加混合线段(线段序列, 段, sys._getframe().f_lineno)
+            return 线段递归混合分析(虚线序列, 线段序列, 配置)
 
     @classmethod
     def 判断线段内部是否背驰(cls, 当前段: 虚线, 观察员: 观察者) -> bool:
@@ -5726,6 +6587,10 @@ class 中枢:
         :return: 中枢方向（首条虚线的方向翻转）
         """
         return self.基础序列[0].方向.翻转()
+
+    @property
+    def 中轴(self) -> float:
+        return (self.高 + self.低) / 2
 
     @property
     def 高(self) -> float:
@@ -6109,6 +6974,72 @@ class 走势:
     def _非同分解(cls):
         pass
 
+    @staticmethod
+    def 日内分类(K线序列: list, 当前价: float = None) -> dict:
+        """第46课日内走势分类。按首三根K线与日内极值关系分为三类。
+
+        :param K线序列: 8根同周期K线（通常30分钟）
+        :param 当前价: 收盘价，默认取最后一根收盘价
+        :return: {类型, 强度, 中枢数, 描述}
+        """
+        if len(K线序列) < 3:
+            return {"类型": "数据不足", "强度": "", "中枢数": 0, "描述": ""}
+
+        日高 = max(k.高 for k in K线序列)
+        日低 = min(k.低 for k in K线序列)
+        收盘 = 当前价 or K线序列[-1].收盘价
+        首三 = K线序列[:3]
+
+        # 找中枢（连续三根重叠）
+        中枢数 = 0
+        中枢列表 = []
+        for i in range(len(K线序列) - 2):
+            a, b, c = K线序列[i], K线序列[i + 1], K线序列[i + 2]
+            gao = min(a.高, b.高, c.高)
+            di = max(a.低, b.低, c.低)
+            if di < gao:
+                中枢列表.append({"高": gao, "低": di})
+                中枢数 += 1
+
+        # 第三类：无中枢
+        if 中枢数 == 0:
+            return {"类型": "无中枢单边", "强度": "极强", "中枢数": 0, "描述": "8根K线无任何三根重叠，最强单边"}
+
+        # 第二类：两个中枢
+        if 中枢数 >= 2:
+            zs1, zs2 = 中枢列表[0], 中枢列表[-1]
+            方向 = "上涨" if zs2["低"] > zs1["高"] else "下跌"
+            if 方向 == "上涨":
+                强度 = "最强" if 收盘 > zs2["高"] else ("最弱" if 收盘 < zs1["低"] else "一般")
+            else:
+                强度 = "最强" if 收盘 < zs2["低"] else ("最弱" if 收盘 > zs1["高"] else "一般")
+            return {"类型": "双中枢单边", "强度": 强度, "中枢数": 中枢数, "描述": f"{方向}单边市，{中枢数}个中枢"}
+
+        # 第一类：一个中枢 → 平衡市
+        zs = 中枢列表[0]
+        zh, zl = zs["高"], zs["低"]
+        首三高 = max(k.高 for k in 首三)
+        首三低 = min(k.低 for k in 首三)
+        出高点 = abs(首三高 - 日高) < 日高 * 1e-4
+        出低点 = abs(首三低 - 日低) < 日低 * 1e-4
+        收上 = 收盘 > zh
+        收下 = 收盘 < zl
+        区间 = 日高 - 日低
+        近高 = abs(收盘 - 日高) < 区间 * 0.1 if 区间 > 0 else False
+        近低 = abs(收盘 - 日低) < 区间 * 0.1 if 区间 > 0 else False
+
+        if 出高点 and not 出低点:
+            强度 = "最弱" if 近低 else ("次弱" if 收下 else ("较强" if 收上 else "一般"))
+            类型_ = "弱平衡市"
+        elif 出低点 and not 出高点:
+            强度 = "最强" if 近高 else ("次强" if 收上 else ("较弱" if 收下 else "一般"))
+            类型_ = "强平衡市"
+        else:
+            强度 = "偏强" if 收上 else ("偏弱" if 收下 else "中性")
+            类型_ = "转折平衡市"
+
+        return {"类型": 类型_, "强度": 强度, "中枢数": 1, "描述": f"首三{'出高点' if 出高点 else '出低点' if 出低点 else '不出极值'}，收{'中枢上' if 收上 else '中枢下' if 收下 else '中枢内'}"}
+
 
 @注册
 class 观察者:
@@ -6153,8 +7084,9 @@ class 观察者:
         self.周期: int = int(周期)
         self.配置: 缠论配置 = 配置
         self.__终止时间戳: Optional[datetime] = 转化为时间戳(self.配置.手动终止) if self.配置.手动终止 else None
+        self.__起始时间戳: Optional[datetime] = 转化为时间戳(self.配置.手动起始) if self.配置.手动起始 else None
 
-        self.线段分析层次 = 3
+        self.线段分析层次 = 4
         self.扩展线段分析层次 = 3
         self.混合扩展线段分析层次 = 3
         self.重置基础序列()
@@ -6274,7 +7206,7 @@ class 观察者:
 
         处理流程: 原始K线→缠论K线（包含处理+合并）→分型→笔→线段→中枢→买卖点
         """
-        if self.__终止时间戳 and 普K.时间戳 > self.__终止时间戳:
+        if self.__终止时间戳 and int(普K.时间戳) > int(self.__终止时间戳):
             return
         self.__处理数据(普K)
 
@@ -6282,7 +7214,8 @@ class 观察者:
         状态, 当前分型 = 缠论K线.分析(普K, self.缠论K线序列, self.普通K线序列, self.配置)
         if 当前分型 is None:
             return
-
+        if self.__起始时间戳 and int(self.__起始时间戳) > int(self.普通K线序列[-1].时间戳):
+            return
         self.配置.分析笔 and 笔.分析(当前分型, self.分型序列, self.笔序列, self.缠论K线序列, self.普通K线序列, 0, self.配置)
         if not self.分型序列:
             return
@@ -6476,18 +7409,20 @@ class K线合成器:
       :meth:`获取当前K线` — 获取指定周期的当前K线
     """
 
-    def __init__(self, 标识: str, 周期组: List[int], 事件回调: Optional[Callable] = None):
+    def __init__(self, 标识: str, 周期组: List[int], 事件回调: Optional[Callable] = None, 时区=None):
         """初始化K线合成器
 
         :param 标识: 合成器标识
         :param 周期组: 从小到大排列的周期列表
-        :param 事件回调: 可选，K线合成完成时的回调函数(信号类型, 标识, 周期, 完成K线)
+        :param 事件回调: 可选，K线合成完成时的回调函数
+        :param 时区: datetime.timezone 对象，对齐时使用。默认 UTC
         """
         self.标识 = 标识
-        self.周期组 = sorted(周期组)  # 按周期从小到大排序
+        self.周期组 = sorted(周期组)
         self.当前K线: Dict[int, Optional[K线]] = {周期: None for 周期 in 周期组}
         self.合成K线列表: Dict[int, List[K线]] = {周期: [] for 周期 in 周期组}
-        self.事件回调 = 事件回调  # 新增：事件回调函数
+        self.事件回调 = 事件回调
+        self.时区 = 时区 or datetime_module.timezone.utc
 
     def 设置事件回调(self, 回调函数: Callable):
         """设置事件回调函数
@@ -6547,15 +7482,9 @@ class K线合成器:
             self.当前K线[周期] = self._创建新K线(周期, 目标时间戳, 普K)
 
     def _对齐时间戳(self, 时间戳: datetime, 周期: int) -> datetime:
-        """将时间戳对齐到周期边界
-
-        :param 时间戳: 原始时间戳
-        :param 周期: 周期（秒）
-        :return: 对齐后的时间戳
-        """
-        total_seconds = int(时间戳.timestamp())
-        aligned_seconds = (total_seconds // 周期) * 周期
-        return datetime.fromtimestamp(aligned_seconds)
+        """将时间戳对齐到周期边界，保留 UTC 时区。"""
+        ts = int(时间戳.timestamp())
+        return datetime.fromtimestamp((ts // 周期) * 周期, tz=datetime_module.timezone.utc)
 
     def _创建新K线(self, 周期: int, 时间戳: datetime, 普K: K线) -> K线:
         """创建新的合成K线
@@ -6683,6 +7612,9 @@ class 立体分析器:
         if 普K.周期 != self.__输入周期:
             raise RuntimeError("立体分析器.投喂K线", 普K.周期, self.__输入周期)
         self._K线合成器.投喂K线(普K)
+        for 周期 in self.周期组:
+            if 当前K线 := self._K线合成器.获取当前K线(周期):
+                self._单体分析器[周期].增加原始K线(当前K线)
 
     def __K线回调(self, 信号类型: str, 标识: str, 周期: int, 完成K线: K线):
         """内部回调：K线完成时触发
@@ -6692,6 +7624,7 @@ class 立体分析器:
         :param 周期: 周期
         :param 完成K线: 完成的K线对象
         """
+        return
         self._单体分析器[周期].增加原始K线(完成K线)
         if 当前K线 := self._K线合成器.获取当前K线(周期):
             self._单体分析器[周期].增加原始K线(当前K线)
@@ -6777,6 +7710,8 @@ class Signal:
 
     # score 取值在 0~100 之间，得分越高，信号越强
     score: int = 0
+
+    obj: Any = None
 
     # k1, k2, k3 是信号名称
     k1: str = "任意"  # k1 一般是指明信号计算的K线周期，如 60分钟，日线，周线等
@@ -7277,12 +8212,18 @@ def get_signals_config(signals_seq: List[str], signals_module: str = "") -> List
 
 @注册
 def create_single_signal(**kwargs) -> OrderedDict:
-    """创建单个信号"""
+    """创建单个信号，附带 obj 元数据。
+
+    :return: OrderedDict，信号字符串之外额外存储 ``_obj`` 键（被 信号计算器 消费）。
+    """
     s = OrderedDict()
     k1, k2, k3 = kwargs.get("k1", "任意"), kwargs.get("k2", "任意"), kwargs.get("k3", "任意")
     v1, v2, v3 = kwargs.get("v1", "任意"), kwargs.get("v2", "任意"), kwargs.get("v3", "任意")
     v = Signal(k1=k1, k2=k2, k3=k3, v1=v1, v2=v2, v3=v3, score=kwargs.get("score", 0))
+    v.obj = kwargs.get("obj", None)
     s[v.key] = v.value
+    if v.obj is not None:
+        s[f"_{v.key}_obj"] = v.obj  # 元数据键，不会被 is_match 匹配
     return s
 
 
@@ -7443,14 +8384,33 @@ class Position:
                 "平仓时间": op2["dt"],
                 "开仓价格": op1["price"],
                 "平仓价格": op2["price"],
+                "开仓序号": op1["bid"],
+                "平仓序号": op2["bid"],
                 "持仓K线数": op2["bid"] - op1["bid"],
                 "事件序列": f"{op1['op_desc']} -> {op2['op_desc']}",
                 "持仓天数": (op2["dt"] - op1["dt"]).total_seconds() / (24 * 3600),
                 "盈亏比例": round(ykr * 10000, 2),  # 盈亏比例 转换成以 BP 为单位的收益，1BP = 0.0001
+                "最大浮盈BP": op2.get("最大浮盈BP", 0),
+                "最大浮盈价": op2.get("最大浮盈价", 0),
             }
             pairs.append(pair)
 
         return pairs
+
+    def 获取持仓K线序列(self, 观察员: "观察者", 对索引: int = -1) -> List["K线"]:
+        """获取指定交易对的持仓区间 K 线序列。
+
+        :param 观察员: 核心观察者（提供 ``普通K线序列``）
+        :param 对索引: 交易对索引，-1 表示最后一对
+        :return: 开仓到平仓之间的 K 线列表（含开仓K线，不含平仓K线）
+        """
+        pairs = self.pairs
+        if not pairs:
+            return []
+        pair = pairs[对索引]
+        start = pair["开仓序号"]
+        end = pair["平仓序号"]
+        return 观察员.普通K线序列[start:end]
 
     def update(self, s: dict):
         """更新持仓状态
@@ -7744,17 +8704,24 @@ class 信号计算器:
         """从信号序列自动生成信号配置"""
         self.信号配置 = get_signals_config(list(set(信号序列)), self._信号模块)
 
-    def 更新(self):
-        """遍历信号配置，调用信号函数。结果写入 self.信号 和 self.行情。"""
+    def 更新(self, 额外参数: dict = None):
+        """遍历信号配置，调用信号函数。结果写入 self.信号 和 self.行情。
+
+        :param 额外参数: 注入到每次信号函数调用的动态参数（如订单上下文）
+        """
         self.信号.clear()
         self.行情.clear()
+        self.信号_obj = {}  # {key: obj} 信号附带的元数据（如 分型 对象）
 
         for config in self._信号配置:
             try:
-                result = self._执行信号函数(config)
+                result = self._执行信号函数(config, 额外参数)
                 if result:
                     for k, v in result.items():
-                        self.信号[k] = v
+                        if k.endswith("_obj"):
+                            self.信号_obj[k[:-4]] = v  # "_xxx_obj" → "xxx"
+                        else:
+                            self.信号[k] = v
             except (TypeError, ValueError, KeyError, AttributeError, IndexError) as e:
                 logger.error(f"信号计算器: {config.get('name', '?')} 出错 — {e}")
                 traceback.print_exc()
@@ -7777,8 +8744,10 @@ class 信号计算器:
                 vol=最后K线.成交量,
             )
 
-    def _执行信号函数(self, config: Dict) -> Optional[OrderedDict]:
+    def _执行信号函数(self, config: Dict, 额外参数: dict = None) -> Optional[OrderedDict]:
         param = dict(config)
+        if 额外参数:
+            param.update(额外参数)
         sig_name = param.pop("name")
         sig_func = self._信号函数缓存.get(sig_name) or self._解析信号函数(sig_name)
 
@@ -7817,53 +8786,195 @@ class Bitstamp数据源(bt.feeds.DataBase):
     )
 
     @staticmethod
-    def ohlc(pair: str, step: int, start: int, end: int, length: int = 1000, retries: int = 3) -> Dict:
-        """执行HTTP请求，带重试机制"""
-        url = f"https://www.bitstamp.net/api/v2/ohlc/{pair}/"
+    def ohlc(pair: str, step: int, 数量: int, length: int = 1000, retries: int = 3) -> Dict:
+        """
+        一次性获取 Bitstamp OHLC 数据并返回升序排列的结果（内部自动分页 + 去重）。
+
+        - 窗口：从当前时刻往回「周期 × 数量」秒，起点由 调整时间戳到零点且周期整除
+          统一计算（对齐到 UTC 零点且周期整除；数量按目标周期 周期 计）；
+        - 非原生周期按时间戳对齐聚合（而非按数量合并），周期不可整除时直接抛错；
+        - 不需要调用方传入 start/end，一次调用即返回全部数据。
+
+        返回格式与 Bitstamp 原始响应一致：{"data": {"pair": "...", "ohlc": [...]}}
+        """
+        if 数量 <= 0:
+            raise ValueError(f"数量必须为正整数: {数量}")
+        end = int(datetime_module.datetime.now(tz=datetime_module.timezone.utc).timestamp())
+
+        # --- 1. 起始时间戳 / 基础周期 / 是否聚合：由 调整时间戳到零点且周期整除 统一计算 ---
+        # 返回值: (调整后的起始时间戳, 调整后的数量, 基础周期, 是否需要聚合)
+        # 数据起始时间戳自动对齐到 UTC 零点且周期整除，聚合桶因此对齐；
+        # 周期不可整除时该函数直接抛错，不做静默回退。
+        start, 统计数量, base_step, need_aggregate = 调整时间戳到零点且周期整除(end, step, 数量)
+        if start < 0:
+            raise ValueError(f"起始时间戳 {start} < 0，数量 {数量} 过大")
+
+        # --- 2. 分页获取基础周期数据 ---
+        # Bitstamp OHLC 接口以 end 为锚点：每次只返回 end 之前最近的 limit 根
+        # （实测 start 参数会被忽略；若按 start 向前翻页，下一页会整页重叠，
+        #   产生大量重复时间戳）。因此从 end 向前翻页：
+        # 每页取完后把 current_end 回退到本页最早一根的时间戳，下一页取它之前的数据。
+        all_ohlc = []
+        current_end = end
+
         session = requests.Session()
-        session.headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
-        }
+        session.headers = {"User-Agent": "Mozilla/5.0"}
 
-        params = {"step": step, "limit": length, "start": start, "end": end}
+        while True:
+            params = {"step": base_step, "limit": length, "start": start, "end": current_end}
 
-        for attempt in range(retries):
-            try:
-                resp = session.get(url, params=params, timeout=10)
-                resp.raise_for_status()
-                return resp.json()
-            except Exception as e:
-                print(f"请求失败 (尝试 {attempt + 1}/{retries}): {e}")
-                if attempt == retries - 1:
-                    raise
-                time.sleep(2**attempt)
+            for attempt in range(retries):
+                try:
+                    resp = session.get(f"https://www.bitstamp.net/api/v2/ohlc/{pair}/", params=params, timeout=10)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception as e:
+                    print(f"请求失败 ({attempt + 1}/{retries}): {e}")
+                    if attempt == retries - 1:
+                        raise
+                    time.sleep(2**attempt)
+
+            # 提取 ohlc 列表（Bitstamp 返回结构：{"data": {"ohlc": [...]}}）
+            ohlc_segment = data.get("data", {}).get("ohlc", [])
+            if not ohlc_segment:
+                break
+
+            if not isinstance(ohlc_segment, list):
+                ohlc_segment = list(ohlc_segment)
+
+            # 升序排序，并裁剪到窗口 [start, current_end) 内：
+            # - ts < current_end 剔除与上一页边界重叠的重复根；
+            # - ts >= start 剔除 Bitstamp 忽略 start 时多返回的早期数据。
+            裁剪后 = []
+            for item in ohlc_segment:
+                ts_ = int(item.get("timestamp") if isinstance(item, dict) else item[0])
+                if start <= ts_ < current_end:
+                    if not 裁剪后 or int(裁剪后[-1].get("timestamp") if isinstance(裁剪后[-1], dict) else 裁剪后[-1][0]) != ts_:
+                        裁剪后.append(item)
+            if not 裁剪后:
+                break
+
+            # 本页（较旧）拼到已收集（较新）之前，整体保持升序
+            all_ohlc = 裁剪后 + all_ohlc
+
+            # 回退游标：下一页取本页最早一根之前的数据。
+            # 终止条件用「原始页长度 < limit」判断是否到历史尽头；
+            # 不能用裁剪后长度——续页裁剪掉边界1根后总是 999，会误判提前退出。
+            current_end = int(裁剪后[0].get("timestamp") if isinstance(裁剪后[0], dict) else 裁剪后[0][0])
+            if current_end <= start or len(ohlc_segment) < length:
+                break
+
+        # 数据完整性校验：
+        # - 统计数量 = 窗口内「基础周期网格数」(end-start)//base_step，假设数据连续；
+        # - 实际获取 ≤ 统计数量 + 1：少于网格数是正常的（无成交/停盘缺口 +
+        #   末尾未收盘周期），具体缺口由 _检查缺口 逐段告警，这里不重复报错；
+        # - 只有「超出网格数 + 1」才可能是异常（重复数据/分页错误）。
+        if len(all_ohlc) > 统计数量 + 1:
+            logger.error(f"数据量超出预期: 统计 {统计数量} < 实际 {len(all_ohlc)}（可能重复/分页异常）")
+
+        def _检查缺口(结果: List) -> None:
+            """检测输出K线序列中缺失的目标周期桶，记录告警日志。
+
+            时间戳跳跃（整桶无成交、停盘、数据源异常等）会导致相邻输出桶
+            之间缺少整倍个目标周期；这里统计并告警，不填充——
+            伪造K线会污染缠论分型/笔/线段的识别。
+            """
+            if len(结果) < 2:
+                return
+            时间戳列表 = [int(x.get("timestamp") if isinstance(x, dict) else x[0]) for x in 结果]
+            for i in range(len(时间戳列表) - 1):
+                前 = 时间戳列表[i]
+                后 = 时间戳列表[i + 1]
+                if 后 <= 前:
+                    continue
+                缺失数 = (后 - 前) // step - 1
+                if 缺失数 > 0:
+                    logger.error(f"{pair} {step}s K线时间戳跳跃: {前} → {后} 之间缺失 {缺失数} 根")
+
+        # 如果不需要聚合，统一升序后直接返回原始格式
+        if not need_aggregate:
+            all_ohlc.sort(key=lambda x: int(x.get("timestamp", 0) if isinstance(x, dict) else x[0]))
+            _检查缺口(all_ohlc)
+            return {"data": {"pair": pair.upper(), "ohlc": all_ohlc}}
+
+        # --- 3. 聚合：按时间戳对齐到目标周期网格边界（而非按数量合并） ---
+        # 数量合并假设第一根基础K线恰好落在目标周期边界上；当拉取起点不
+        # 对齐时（如 start 不是 step 的整数倍），按数量切组会产生相位偏移、
+        # 跨目标周期的K线。正确做法：以 (ts // step) * step 划分桶。
+        if not all_ohlc:
+            return {"data": {"pair": pair.upper(), "ohlc": []}}
+
+        # 确保排序
+        all_ohlc.sort(key=lambda x: int(x.get("timestamp", 0) if isinstance(x, dict) else x[0]))
+
+        def _聚合一组(组: List, 桶开始: int):
+            """将属于同一目标桶的一组基础K线聚合成一条目标周期K线。
+
+            :param 组: 基础K线（dict 或 [ts,open,high,low,close,volume] 形式）
+            :param 桶开始: 目标周期边界时间戳（已按 step 对齐）
+            """
+            if isinstance(组[0], dict):
+                return {
+                    "timestamp": str(桶开始),
+                    "open": str(float(组[0]["open"])),
+                    "high": str(max(float(x["high"]) for x in 组)),
+                    "low": str(min(float(x["low"]) for x in 组)),
+                    "close": str(float(组[-1]["close"])),
+                    "volume": str(sum(float(x["volume"]) for x in 组)),
+                }
+            # 列表形式 [timestamp, open, high, low, close, volume]
+            return [
+                str(桶开始),
+                str(float(组[0][1])),
+                str(max(float(x[2]) for x in 组)),
+                str(min(float(x[3]) for x in 组)),
+                str(float(组[-1][4])),
+                str(sum(float(x[5]) for x in 组)),
+            ]
+
+        aggregated = []
+        当前桶开始: Optional[int] = None
+        当前组: List = []
+        for item in all_ohlc:
+            时间戳 = int(item.get("timestamp") if isinstance(item, dict) else item[0])
+            桶开始 = (时间戳 // step) * step  # 目标周期网格边界（step % base_step == 0 时划分无歧义）
+            if 当前桶开始 is None or 桶开始 == 当前桶开始:
+                当前组.append(item)
+                if 当前桶开始 is None:
+                    当前桶开始 = 桶开始
+            else:
+                aggregated.append(_聚合一组(当前组, 当前桶开始))
+                当前组 = [item]
+                当前桶开始 = 桶开始
+        if 当前组:
+            aggregated.append(_聚合一组(当前组, 当前桶开始))
+
+        _检查缺口(aggregated)
+        if start != int(aggregated[0].get("timestamp")):
+            logger.error(f"时间戳起始不匹配 {start}, {int(aggregated[0].get('timestamp'))}")
+
+        if len(aggregated) > 数量 + 1:
+            logger.error(f"数据量超出预期: 输入统计 {数量} < 实际 {len(aggregated)}（可能重复/分页异常）")
+
+        return {"data": {"pair": pair.upper(), "ohlc": aggregated}}
 
     def start(self):
-        """分页拉取全部 OHLC 数据到内存。"""
-        self._数据: List[dict] = []
-        end_ts = int(datetime.now().timestamp())
-        left = end_ts - self.p.周期 * self.p.数量
-        if left < 0:
-            raise RuntimeError(f"起始时间戳 {left} < 0")
-        _next = left
-        while True:
-            page = self.ohlc(self.p.符号, self.p.周期, _next, _next := _next + self.p.周期 * 1000, retries=self.p.重试次数)
-            if not page.get("data"):
-                break
-            self._数据.extend(page["data"]["ohlc"])
-            _next = int(page["data"]["ohlc"][-1]["timestamp"])
-            if len(page["data"]["ohlc"]) < 100:
-                break
+        """一次性拉取全部 OHLC 数据到内存（ohlc 内部自动分页 + 对齐 + 聚合）。"""
+        self._数据: List[dict] = self.ohlc(self.p.符号, self.p.周期, self.p.数量, retries=self.p.重试次数)["data"]["ohlc"]
         self._索引 = 0
+        self._拉取完成 = True
 
     def _load(self):
-        """逐条吐出 OHLC 柱到 Backtrader 数据线。"""
+        """逐条吐出 OHLC 柱，后台仍在拉取时暂停而非结束。"""
         if self._索引 >= len(self._数据):
+            if not getattr(self, "_拉取完成", True):
+                return None  # live 模式：等待后台线程
             return False
         bar = self._数据[self._索引]
         self._索引 += 1
         ts = int(bar["timestamp"])
-        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts))
+        self.lines.datetime[0] = bt.date2num(datetime.fromtimestamp(ts, tz=datetime_module.timezone.utc))
         self.lines.open[0] = float(bar["open"])
         self.lines.high[0] = float(bar["high"])
         self.lines.low[0] = float(bar["low"])
@@ -7897,6 +9008,52 @@ class Nb数据源(bt.feeds.DataBase):
         self.lines.close[0] = c
         self.lines.volume[0] = v
         return True
+
+
+class 挂单:
+    """单个限价挂单，追踪状态并与 Position 对齐。
+
+    :ivar 方向: ``"多"`` / ``"空"``
+    :ivar 限价: 委托限价
+    :ivar 数量: 委托数量
+    :ivar 仓位名: 所属 Position 名称
+    :ivar 仓位: 所属 Position 引用（超时撤销时重置 pos）
+    :ivar 创建序号: 创建时的 K 线条数
+    :ivar 订单: Backtrader 订单对象
+    :ivar 描述: 信号描述文本
+    :ivar 状态: ``"等待中"`` / ``"已成交"`` / ``"已撤销"``
+    :ivar 组ID: 梯度组标识，同组挂单联动撤销
+    :ivar 极值价: 跟踪止损用 — 做多记录最高价，做空记录最低价
+    """
+
+    def __init__(self, 方向, 限价, 数量, 仓位, 订单, 创建序号, 描述="", 组ID=0):
+        self.方向 = 方向
+        self.限价 = 限价
+        self.数量 = 数量
+        self.仓位名 = 仓位.name
+        self.仓位 = 仓位
+        self.创建序号 = 创建序号
+        self.订单 = 订单
+        self.描述 = 描述
+        self.状态 = "等待中"
+        self.组ID = 组ID
+        self.极值价 = 限价  # 初始 = 成交价，随行情推进
+
+    def 撤销(self):
+        """撤销订单，重置关联 Position 的仓位状态。"""
+        self.状态 = "已撤销"
+        if self.仓位.pos != 0:
+            self.仓位.pos = 0
+            self.仓位.pos_changed = False
+
+    def 成交(self):
+        """标记已成交，记录成交价作为跟踪止损基准。"""
+        self.状态 = "已成交"
+        self.极值价 = self.订单.executed.price if self.订单.executed.price else self.限价
+        self._已触发OCO = False  # 成交后需挂止盈止损
+
+    def OCO已挂(self):
+        self._已触发OCO = True
 
 
 class 信号驱动策略(bt.Strategy):
@@ -8005,6 +9162,13 @@ class 信号驱动策略(bt.Strategy):
         ("仓位比例", 0.95),
         ("最小交易单位", 0.001),
         ("推送回调", None),  # Callable[[str, dict], None] — WebSocket / UI 推送回调
+        ("挂单模式", True),  # True=限价挂单等待成交, False=下根K线市价成交
+        ("挂单超时", 20),  # 挂单最大等待 K 线条数，超时自动撤销
+        ("梯度层数", 1),  # 梯度挂单层数: 1=单层, N=分N层挂单
+        ("梯度模式", "固定"),  # "固定"=等距步长, "斐波那契"=黄金分割比例
+        ("梯度步长", 0.0),  # 固定模式步长: 0=自动(价格×0.1%)
+        ("梯度范围", 0.0),  # 斐波那契模式范围: 0=自动(当前K线振幅), >0=固定
+        ("止盈比例", 0.02),  # 成交后自动挂 OCO 止盈比例 (0.02=2%)
     )
 
     def __init__(self):
@@ -8015,6 +9179,7 @@ class 信号驱动策略(bt.Strategy):
         self._基础周期 = 0  # 从分析器派生
         self._已初始化 = False
         self._初始化失败 = False
+        self._挂单列表: List[挂单] = []
         self._等待行情已记录 = False
 
     def _初始化分析管道(self):
@@ -8089,15 +9254,20 @@ class 信号驱动策略(bt.Strategy):
             sigs.extend(pos.unique_signals)
         return list(set(sigs))
 
-    def log(self, msg):
+    def _当前时间(self):
         dt = self.data.datetime.datetime(0)
-        print(f"[{dt}] {msg}")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime_module.timezone.utc)
+        return dt.astimezone()
+
+    def log(self, msg):
+        print(f"[{self._当前时间()}] {msg}")
 
     def _推送(self, 事件: str, **数据):
         """调用 ``推送回调``，将结构化事件推送到外部（WebSocket / UI 等）。"""
         if self.p.推送回调:
             try:
-                dt = self.data.datetime.datetime(0)
+                dt = self._当前时间()
                 数据["time"] = dt.isoformat()
                 self.p.推送回调(事件, 数据)
             except Exception:
@@ -8113,6 +9283,56 @@ class 信号驱动策略(bt.Strategy):
         数量 = int(可用资金 / 价格)
         return max(数量, self.p.最小交易单位)
 
+    # ── 斐波那契黄金分割比例 ──
+    _斐波那契比例 = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.382, 1.618]
+
+    def _创建挂单组(self, 方向, 基准价, 总数量, pos, 创建序号, 价格上限=None, 价格下限=None):
+        """按梯度层数创建一组限价挂单，价格约束在分型高低区间内。
+
+        :param 方向: ``"多"`` / ``"空"``
+        :param 基准价: 基础限价（分型特征值）
+        :param 总数量: 总委托数量
+        :param pos: 关联的 Position
+        :param 创建序号: 当前 K 线条数
+        :param 价格上限: 分型区间最高价（做空梯度不超过此值）
+        :param 价格下限: 分型区间最低价（做多梯度不低于此值）
+        """
+        层数 = min(self.p.梯度层数, len(self._斐波那契比例))
+        组ID = id(pos) ^ 创建序号
+        desc = pos.operates[-1]["op_desc"] if pos.operates else f"挂{方向}"
+        每层数量 = max(self.p.最小交易单位, int(总数量 / 层数))
+        挂单组 = []
+
+        # ── 计算每层偏移 ──
+        偏移列表 = []
+        if self.p.梯度模式 == "斐波那契":
+            基准范围 = self.p.梯度范围 or max(self.data.high[0] - self.data.low[0], 基准价 * 0.005)
+            for i in range(层数):
+                偏移列表.append(基准范围 * self._斐波那契比例[i])
+        else:  # 固定步长
+            步长 = self.p.梯度步长 or (基准价 * 0.001)
+            for i in range(层数):
+                偏移列表.append(i * 步长)
+
+        for i in range(层数):
+            if 方向 == "多":
+                限价 = round(基准价 - 偏移列表[i], 2)
+                if 价格下限 and 限价 < 价格下限:
+                    限价 = 价格下限  # 做多不低过分型最低点
+            else:
+                限价 = round(基准价 + 偏移列表[i], 2)
+                if 价格上限 and 限价 > 价格上限:
+                    限价 = 价格上限  # 做空不高过分型最高点
+            order = self.buy(data=self.data, size=每层数量, exectype=bt.Order.Limit, price=限价) if 方向 == "多" else self.sell(data=self.data, size=每层数量, exectype=bt.Order.Limit, price=限价)
+            gd = 挂单(方向, 限价, 每层数量, pos, order, 创建序号, f"{desc}#{i + 1}/{层数}", 组ID)
+            挂单组.append(gd)
+            self.log(f"[{pos.name}] 挂{方向}单 L{i + 1} 数量={每层数量} 限价={限价:.2f}")
+
+        self._挂单列表.extend(挂单组)
+        g0 = 挂单组[0]
+        self._推送("订单", name=pos.name, action=f"梯度挂{方向}({层数}层)", price=基准价, size=总数量, reason=desc)
+        return 挂单组
+
     def _同步仓位(self):
         """将第一个 Position 的虚拟仓位映射为 Backtrader 实际订单。
 
@@ -8122,7 +9342,8 @@ class 信号驱动策略(bt.Strategy):
             Position.pos: -1  持空 → Backtrader sell  （空仓→开空；持多→先平再开）
             Position.pos:  0  空仓 → Backtrader close （平掉当前持仓）
 
-        订单数量由 ``_计算数量()`` 根据 ``仓位比例`` 和当前价格决定。
+        **挂单模式**：当 ``挂单模式=True`` 时，不市价成交，而是下限价单等待成交。
+        限价 = 当前缠论K线的分型特征值；平仓始终市价。
         """
         pos = self._positions[0]
         if not pos.pos_changed:
@@ -8132,52 +9353,198 @@ class 信号驱动策略(bt.Strategy):
         当前仓位 = self.position.size  # >0 多头, <0 空头, 0 空仓
         当前价 = self.data.close[0]
 
+        # ── 挂单价格 + 分型区间：优先读 信号_obj（分型对象）──
+        挂单价 = None
+        价格上限 = 价格下限 = None
+        if self.p.挂单模式 and 目标 != 0:
+            for key, val in self.计算器.信号.items():
+                if val == "任意_任意_任意_0":
+                    continue
+                obj = self.计算器.信号_obj.get(key)
+                if obj is not None:
+                    try:
+                        候选 = obj.分型特征值
+                        if 候选 and 候选 > 0:
+                            挂单价 = 候选
+                            if obj.左 and obj.右:
+                                价格上限 = max(obj.左.高, obj.中.高, obj.右.高)
+                                价格下限 = min(obj.左.低, obj.中.低, obj.右.低)
+                            break
+                    except (AttributeError, TypeError):
+                        pass
+            if 挂单价 is None:
+                挂单价 = 当前价
+
         if 目标 == 1 and 当前仓位 <= 0:
-            # 需要持多：空仓则开多，持有空仓则先平再开
             if 当前仓位 < 0:
                 self.close(data=self.data)
                 self.log(f"[{pos.name}] 平空仓（反手）")
                 self._推送("订单", name=pos.name, action="平空", price=当前价, reason="反手")
-            数量 = self._计算数量(当前价)
+            数量 = self._计算数量(挂单价 or 当前价)
             if 数量 > 0:
-                self.buy(data=self.data, size=数量)
-                self.log(f"[{pos.name}] 开多仓 数量={数量}")
-                self._推送("订单", name=pos.name, action="开多", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+                if self.p.挂单模式:
+                    self._创建挂单组("多", 挂单价, 数量, pos, len(self.data), 价格上限, 价格下限)
+                else:
+                    self.buy(data=self.data, size=数量)
+                    self.log(f"[{pos.name}] 开多仓 数量={数量}")
+                    self._推送("订单", name=pos.name, action="开多", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
 
         elif 目标 == -1 and 当前仓位 >= 0:
-            # 需要持空
             if 当前仓位 > 0:
                 self.close(data=self.data)
                 self.log(f"[{pos.name}] 平多仓（反手）")
                 self._推送("订单", name=pos.name, action="平多", price=当前价, reason="反手")
-            数量 = self._计算数量(当前价)
+            数量 = self._计算数量(挂单价 or 当前价)
             if 数量 > 0:
-                self.sell(data=self.data, size=数量)
-                self.log(f"[{pos.name}] 开空仓 数量={数量}")
-                self._推送("订单", name=pos.name, action="开空", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+                if self.p.挂单模式:
+                    self._创建挂单组("空", 挂单价, 数量, pos, len(self.data), 价格上限, 价格下限)
+                else:
+                    self.sell(data=self.data, size=数量)
+                    self.log(f"[{pos.name}] 开空仓 数量={数量}")
+                    self._推送("订单", name=pos.name, action="开空", price=当前价, size=数量, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
 
         elif 目标 == 0 and 当前仓位 != 0:
-            # 平仓
+            # 平仓始终市价
             self.close(data=self.data)
             self.log(f"[{pos.name}] 平仓")
             self._推送("订单", name=pos.name, action="平仓", price=当前价, reason=pos.operates[-1]["op_desc"] if pos.operates else "")
+
+    def _挂单管理(self):
+        """挂单生命周期管理：超时撤销 + 已成交订单跟踪止损。每根 K 线调用一次。"""
+        if not self.p.挂单模式:
+            return
+        当前序号 = len(self.data)
+        当前高 = self.data.high[0]
+        当前低 = self.data.low[0]
+        当前收 = self.data.close[0]
+        止损BP = self._positions[0].stop_loss if self._positions else 1000
+
+        # ── 1. 已成交订单：更新极值价 + 检查跟踪止损 ──
+        for gd in self._挂单列表:
+            if gd.状态 != "已成交":
+                continue
+            if gd.方向 == "多":
+                gd.极值价 = max(gd.极值价, 当前高)
+                stop = gd.极值价 * (1 - 止损BP / 10000)
+                if 当前收 <= stop and self.position.size > 0:
+                    self.close(data=self.data)
+                    gd.撤销()
+                    self.log(f"[{gd.仓位名}] 跟踪止损平多: 极值={gd.极值价:.2f} 止损={stop:.2f} 当前={当前收:.2f}")
+                    self._推送("仓位变化", name=gd.仓位名, pos=0, operate="跟踪止损", price=当前收)
+                    self._推送("订单", name=gd.仓位名, action="止损平多", price=当前收, reason=f"极值{gd.极值价:.2f} 止损{stop:.2f}")
+            else:  # 空
+                gd.极值价 = min(gd.极值价, 当前低)
+                stop = gd.极值价 * (1 + 止损BP / 10000)
+                if 当前收 >= stop and self.position.size < 0:
+                    self.close(data=self.data)
+                    gd.撤销()
+                    self.log(f"[{gd.仓位名}] 跟踪止损平空: 极值={gd.极值价:.2f} 止损={stop:.2f} 当前={当前收:.2f}")
+                    self._推送("仓位变化", name=gd.仓位名, pos=0, operate="跟踪止损", price=当前收)
+                    self._推送("订单", name=gd.仓位名, action="止损平空", price=当前收, reason=f"极值{gd.极值价:.2f} 止损{stop:.2f}")
+
+        # ── 1.5 已成交订单：为刚成交的挂单创建 OCO 止盈止损 ──
+        for gd in self._挂单列表:
+            if gd.状态 != "已成交" or getattr(gd, "_已触发OCO", True):
+                continue
+            tp_ratio = self.p.止盈比例
+            sl_ratio = self._positions[0].stop_loss / 10000  # 止损 BP→比例
+            if gd.方向 == "多":
+                tp = self.sell(data=self.data, size=gd.数量, price=round(gd.极值价 * (1 + tp_ratio), 2), exectype=bt.Order.Limit, transmit=False)
+                sl = self.sell(data=self.data, size=gd.数量, price=round(gd.极值价 * (1 - sl_ratio), 2), exectype=bt.Order.Stop, oco=tp, transmit=True)
+            else:
+                tp = self.buy(data=self.data, size=gd.数量, price=round(gd.极值价 * (1 - tp_ratio), 2), exectype=bt.Order.Limit, transmit=False)
+                sl = self.buy(data=self.data, size=gd.数量, price=round(gd.极值价 * (1 + sl_ratio), 2), exectype=bt.Order.Stop, oco=tp, transmit=True)
+            gd.OCO已挂()
+            self.log(f"[{gd.仓位名}] OCO止盈止损: 止盈={tp.created.price:.2f} 止损={sl.created.price:.2f}")
+            self._推送("订单", name=gd.仓位名, action="OCO止盈止损", price=gd.极值价, reason=f"TP{tp.created.price:.2f} SL{sl.created.price:.2f}")
+
+        # ── 2. 等待中订单：超时联动撤销 ──
+        超时组 = set()
+        for gd in self._挂单列表:
+            if gd.状态 == "等待中" and 当前序号 - gd.创建序号 > self.p.挂单超时:
+                超时组.add(gd.组ID)
+
+        存活列表 = []
+        已撤销组 = set()
+        for gd in self._挂单列表:
+            if gd.状态 == "等待中" and gd.组ID in 超时组:
+                if gd.订单.alive():
+                    self.cancel(gd.订单)
+                gd.撤销()
+                if gd.组ID not in 已撤销组:
+                    已撤销组.add(gd.组ID)
+                    self.log(f"[{gd.仓位名}] 梯度挂单超时撤销: {gd.描述} 限价={gd.限价:.2f}")
+                    self._推送("仓位变化", name=gd.仓位名, pos=0, operate="挂单超时撤销", price=gd.限价)
+                    self._推送("订单", name=gd.仓位名, action="梯度挂单撤销", price=gd.限价, reason=f"超时{self.p.挂单超时}K")
+            存活列表.append(gd)
+        self._挂单列表 = 存活列表
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
             return
         if order.status == order.Completed:
-            self.log(f"成交: {'买' if order.isbuy() else '卖'} 价格={order.executed.price:.2f} 数量={order.executed.size}")
-            self._推送("成交", action="买" if order.isbuy() else "卖", price=order.executed.price, size=order.executed.size, position=self.position.size)
+            # 标记对应的挂单为已成交，同步成交价到 Position 止损基准
+            for gd in self._挂单列表:
+                if gd.订单 is order and gd.状态 == "等待中":
+                    gd.成交()
+                    pos = gd.仓位
+                    pos.last_event["price"] = gd.极值价  # 修正止损基准 = 实际成交价
+                    self._推送("仓位变化", name=gd.仓位名, pos=self.position.size and (1 if order.isbuy() else -1), operate="挂单成交", price=order.executed.price)
+                    break
+            desc = next((gd.描述 for gd in self._挂单列表 if gd.订单 is order), "")
+            pos_name = next((gd.仓位名 for gd in self._挂单列表 if gd.订单 is order), "")
+            limit_price = next((gd.限价 for gd in self._挂单列表 if gd.订单 is order), 0)
+            if not pos_name and self._positions:
+                pos_name = self._positions[0].name
+            fill_price = order.executed.price
+            slip = f"滑{fill_price - limit_price:+.2f}" if limit_price else ""
+            action = f"{'买' if order.isbuy() else '卖'}成交"
+            reason = f"{desc} {slip}" if desc else slip
+            self.log(f"[{pos_name}] {action} 价格={fill_price:.2f} 限价={limit_price:.2f} 数量={order.executed.size}")
+            self._推送("成交", name=pos_name, action=action, price=fill_price, size=order.executed.size, position=self.position.size, reason=reason)
             if self.position.size == 0:
-                self.log("仓位已平")
+                self.log(f"[{pos_name}] 仓位已平")
+                self._推送("仓位变化", name=pos_name, pos=0, operate="平仓", price=order.executed.price)
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.log(f"订单失败: {order.getstatusname()}")
-            self._推送("订单失败", status=order.getstatusname())
+            # 标记对应的挂单为已撤销（非超时撤销，如保证金不足）
+            for gd in self._挂单列表:
+                if gd.订单 is order and gd.状态 == "等待中":
+                    gd.撤销()
+                    break
+            pos_name = next((gd.仓位名 for gd in self._挂单列表 if gd.订单 is order), "")
+            if not pos_name and self._positions:
+                pos_name = self._positions[0].name
+            self.log(f"[{pos_name}] 订单失败: {order.getstatusname()}")
+            self._推送("订单失败", name=pos_name, status=order.getstatusname())
 
     def notify_trade(self, trade):
         if trade.isclosed:
-            self.log(f"交易结束 净利={trade.pnlcomm:.2f}")
-            self._推送("交易结束", pnl=trade.pnlcomm, pnl_pct=trade.pnlcomm / trade.price * 100 if trade.price else 0)
+            pos_name = self._positions[0].name if self._positions else ""
+            pnl_pct = trade.pnlcomm / trade.price * 100 if trade.price else 0
+            self.log(f"[{pos_name}] 交易结束 净利={trade.pnlcomm:.2f} 收益率={pnl_pct:.2f}%")
+
+            # ── 开平仓区间最大盈利评估（写入 operates 持久保留）──
+            最大浮盈 = 0
+            最大浮盈价 = 0
+            try:
+                pos = self._positions[0]
+                k线序列 = pos.获取持仓K线序列(self.分析器._单体分析器[self._基础周期], -1)
+                if k线序列 and len(pos.operates) >= 2:
+                    # operates[-2] = 开仓, operates[-1] = 平仓
+                    入场价 = pos.operates[-2]["price"]
+                    方向 = "多头" if pos.operates[-2]["op"] == Operate.LO else "空头"
+                    if 方向 == "多头":
+                        最大浮盈价 = max(k.高 for k in k线序列)
+                        最大浮盈 = (最大浮盈价 / 入场价 - 1) * 10000
+                    else:
+                        最大浮盈价 = min(k.低 for k in k线序列)
+                        最大浮盈 = (1 - 最大浮盈价 / 入场价) * 10000
+                    pos.operates[-1]["最大浮盈BP"] = round(最大浮盈, 1)
+                    pos.operates[-1]["最大浮盈价"] = 最大浮盈价
+            except Exception:
+                pass
+
+            self._推送("交易结束", name=pos_name, pnl=trade.pnlcomm, pnl_pct=pnl_pct, 最大浮盈BP=round(最大浮盈, 1), 最大浮盈价=最大浮盈价)
 
     def stop(self):
         """回测结束时输出每个 Position 的绩效报告。
@@ -8199,12 +9566,38 @@ class 信号驱动策略(bt.Strategy):
             止损次数 = sum(1 for p in pairs if "止损" in (p.get("事件序列", "")))
             超时次数 = sum(1 for p in pairs if "超时" in (p.get("事件序列", "")))
 
+            # ── 最大浮盈统计：从 operates 计算每笔持仓区间的极值 ──
+            浮盈总和 = 0
+            浮盈笔数 = 0
+            obs = self.分析器._单体分析器[self._基础周期] if self.分析器 else None
+            for op1, op2 in zip(pos.operates, pos.operates[1:]):
+                if op1["op"] not in [Operate.LO, Operate.SO]:
+                    continue
+                try:
+                    方向 = "多头" if op1["op"] == Operate.LO else "空头"
+                    k线序列 = obs.普通K线序列[op1["bid"] : op2["bid"]] if obs else []
+                    if k线序列:
+                        if 方向 == "多头":
+                            最大浮盈价 = max(k.高 for k in k线序列)
+                            最大浮盈 = (最大浮盈价 / op1["price"] - 1) * 10000
+                        else:
+                            最大浮盈价 = min(k.低 for k in k线序列)
+                            最大浮盈 = (1 - 最大浮盈价 / op1["price"]) * 10000
+                        op2["最大浮盈BP"] = round(最大浮盈, 1)
+                        op2["最大浮盈价"] = 最大浮盈价
+                        浮盈总和 += 最大浮盈
+                        浮盈笔数 += 1
+                except Exception:
+                    pass
+            平均浮盈 = 浮盈总和 / 浮盈笔数 if 浮盈笔数 else 0
+
             print(f"\n{'=' * 60}")
             print(f"Position[{pos.name}] 绩效:")
             print(f"  总笔数: {总笔数}")
             print(f"  盈利笔: {盈利笔}  胜率: {胜率:.2%}")
             print(f"  总盈亏: {总盈亏:.2f} BP")
             print(f"  平均盈亏: {平均盈亏:.2f} BP")
+            print(f"  最大浮盈均值: {平均浮盈:.2f} BP")
             print(f"  止损次数: {止损次数}")
             print(f"  超时次数: {超时次数}")
             print(f"{'=' * 60}\n")
@@ -8232,7 +9625,7 @@ class 信号驱动策略(bt.Strategy):
         k = K线.创建普K(
             标识=self._符号,
             序号=len(self.data),
-            时间戳=self.data.datetime.datetime(0),
+            时间戳=self._当前时间(),
             开盘价=self.data.open[0],
             最高价=self.data.high[0],
             最低价=self.data.low[0],
@@ -8242,8 +9635,20 @@ class 信号驱动策略(bt.Strategy):
         )
         self.分析器.投喂K线(k)
 
-        # 2. 计算信号
-        self.计算器.更新()
+        # 2. 计算信号 — 注入已成交订单上下文，供信号函数做跟踪止损等决策
+        订单上下文 = {}
+        for gd in self._挂单列表:
+            if gd.状态 == "已成交":
+                订单上下文.setdefault("entry_prices", []).append(gd.限价)
+                订单上下文.setdefault("directions", []).append(gd.方向)
+                订单上下文.setdefault("extreme_prices", []).append(gd.极值价)
+        if 订单上下文:
+            订单上下文["has_position"] = True
+            if "entry_prices" in 订单上下文:
+                订单上下文["entry_price"] = 订单上下文["entry_prices"][0]  # 首笔
+                订单上下文["direction"] = 订单上下文["directions"][0]
+                订单上下文["extreme_price"] = 订单上下文["extreme_prices"][0]
+        self.计算器.更新(订单上下文 or None)
 
         # 2.1 推送产出的信号（非默认值）
         for key, val in self.计算器.信号.items():
@@ -8268,6 +9673,7 @@ class 信号驱动策略(bt.Strategy):
                 op = pos.operates[-1] if pos.operates else {}
                 self.log(f"[{pos.name}] 仓位变化: pos={pos.pos}, operates[-1]={op}")
                 self._推送("仓位变化", name=pos.name, pos=pos.pos, operate=op.get("op_desc", ""), price=op.get("price", 0))
+        self._挂单管理()
         self._同步仓位()
 
 
@@ -8513,6 +9919,60 @@ def 测试_信号识别(配置: 缠论配置):
     return 魔法
 
 
+def 测试_K线合成器():
+    """测试 K线合成器：单根K线、边界对齐、多周期输出。"""
+    from datetime import timedelta
+
+    print("=== 测试_K线合成器 ===")
+
+    # 1. 单根K线
+    print("1. 单根K线:")
+    hq = K线合成器("test", [60, 300])
+    now = datetime.now().replace(second=0, microsecond=0)
+    hq.投喂K线(K线.创建普K("test", now, 100, 105, 95, 102, 10, 0, 60))
+    for 周期 in [60, 300]:
+        lst = hq.合成K线列表.get(周期, [])
+        cur = hq.当前K线.get(周期)
+        print(f"  周期{周期}s: 已完成={len(lst)} 当前={'有' if cur else '无'}")
+        if lst:
+            print(f"    [{0}] {lst[0].时间戳} O={lst[0].开盘价} H={lst[0].高} L={lst[0].低} C={lst[0].收盘价}")
+        if cur:
+            print(f"    当前: {cur.时间戳} O={cur.开盘价} H={cur.高} L={cur.低} C={cur.收盘价}")
+
+    # 2. 两根跨边界
+    print("\n2. 两根跨边界:")
+    hq2 = K线合成器("test", [60, 300])
+    t1 = now.replace(minute=0)
+    t2 = t1 + timedelta(minutes=5)  # 跨越 300s 边界? 不，还在同一 300s 周期
+    hq2.投喂K线(K线.创建普K("test", t1, 100, 105, 98, 102, 10, 0, 60))
+    hq2.投喂K线(K线.创建普K("test", t2, 102, 107, 100, 105, 12, 1, 60))
+    print(f"  300s: 已完成={len(hq2.合成K线列表[300])} 当前={'有' if hq2.当前K线[300] else '无'}")
+    if hq2.当前K线[300]:
+        print(f"  当前: {hq2.当前K线[300].时间戳} H={hq2.当前K线[300].高} L={hq2.当前K线[300].低}")
+
+    # 3. 跨边界
+    print("\n3. 跨边界:")
+    hq3 = K线合成器("test", [60, 300])
+    t_base = now.replace(minute=0, second=0)
+    for i in range(8):  # 8×60=480s, 跨越一个300s边界
+        t = t_base + timedelta(seconds=i * 60)
+        hq3.投喂K线(K线.创建普K("test", t, 100 + i, 105 + i, 95 + i, 102 + i, 10, i, 60))
+    lst = hq3.合成K线列表[300]
+    cur = hq3.当前K线[300]
+    print(f"  300s: 已完成={len(lst)} 当前={'有' if cur else '无'}")
+    for k in lst:
+        print(f"    {k.时间戳} H={k.高} L={k.低} C={k.收盘价}")
+    if cur:
+        print(f"    当前: {cur.时间戳} H={cur.高} L={cur.低} C={cur.收盘价}")
+
+    # 4. 尾端 flush
+    print("\n4. 尾端 flush:")
+    if cur:
+        lst.append(cur)
+        print(f"  追加后总数={len(lst)} 尾端={lst[-1].时间戳}")
+    print("=== 测试完成 ===")
+
+
 if __name__ == "__main__":
     当前配置 = 缠论配置.不推送()
     当前配置.加载文件路径 = str(Path(__file__).parent / "templates/btcusd-300-1761327300-1776327900.nb")
@@ -8520,4 +9980,5 @@ if __name__ == "__main__":
         # 测试_读取数据(观察者("", 0, 当前配置), 当前配置)().测试_保存数据(tmpdir)
         # 测试_周期合成(当前配置)().测试_保存数据(tmpdir)
         # 测试_指标挂载(当前配置)().测试_保存数据(tmpdir)
-        测试_信号识别(当前配置)()
+        # 测试_信号识别(当前配置)()
+        测试_K线合成器()

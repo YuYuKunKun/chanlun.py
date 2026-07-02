@@ -15,6 +15,7 @@ import queue
 import traceback
 import threading
 from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
 from enum import Enum
 from pathlib import Path
 from random import seed, randint, uniform, choice, choices
@@ -418,7 +419,7 @@ class 观察者(观察者):
 
     @final
     def 增加原始K线(self, 普K: K线):
-        if self.__终止时间戳 and 普K.时间戳 > self.__终止时间戳:
+        if self.__终止时间戳 and int(普K.时间戳) > int(self.__终止时间戳):
             return
 
         if self.配置.展示标签("RawBar"):
@@ -535,8 +536,8 @@ class 观察者(观察者):
         if 当前买卖点.买卖点K线.时间戳 not in 活跃时间戳序列:
             买卖点序列.add(当前买卖点)
             当前买卖点.买卖点K线.买卖点信息.add(当前买卖点.备注)
-            print(当前买卖点, type(当前买卖点), 当前买卖点.备注)
-            # self.报信(当前买卖点, 指令.添加(当前买卖点.备注), sys._getframe().f_lineno)
+            # print(当前买卖点, type(当前买卖点), 当前买卖点.备注)
+            self.报信(当前买卖点, 指令.添加(当前买卖点.备注), sys._getframe().f_lineno)
 
     def 图表刷新(self):
         def 报信(序列):
@@ -810,9 +811,14 @@ class 观察者(观察者):
             pass
 
         if self.线段序列组[1]:
-            第二买卖点(self, self.线段序列组[1][-1])
+            pass
+            # 第二买卖点(self, self.线段序列组[1][-1])
+            #第一买卖点_V260703(self, self.线段序列组[1][-1])
+            #第一买卖点平均力度_V260808(self, self.线段序列组[1][-1], macd="macd20")
+            # 第一买卖点力度比_V260808(self, self.线段序列组[1][-1])
         if self.中枢序列:
-            中枢第三买卖点(self, self.中枢序列[-1])
+            pass
+            # 中枢第三买卖点(self, self.中枢序列[-1])
 
 
 __代码执行器_全局声明__ = dir()
@@ -837,7 +843,7 @@ def _创建WS回调(ws: Optional[WebSocket]):
             price = 数据.get("price", 0)
             time_str = 数据.get("time", "")
 
-            # ── 信号 → 图表小圆点 / 小箭头标记 ──
+            # ── 信号 → 图表小 Callout 标记 ──
             if 事件 == "信号" and price and time_str:
                 dt = datetime.fromisoformat(time_str)
                 point = {"time": int(dt.timestamp()), "price": price}
@@ -846,55 +852,81 @@ def _创建WS回调(ws: Optional[WebSocket]):
                 v1, v2 = parts[0] if len(parts) > 0 else "", parts[1] if len(parts) > 1 else ""
                 is_buy = "买" in v2
                 is_sell = "卖" in v2
-                color = "#00FF22" if is_buy else ("#FF2800" if is_sell else "#F0E68C")
+                bg = "#1a3d1a" if is_buy else ("#3d1a1a" if is_sell else "#2a2a1a")
+                tc = "#88FF88" if is_buy else ("#FF8888" if is_sell else "#CCCC88")
                 _箭头计数[0] += 1
                 asyncio.run_coroutine_threadsafe(
                     ws.send_json(
                         {
-                            "type": "shape",
+                            "type": "callout",
                             "cmd": "APPEND",
                             "id": f"signal_{_箭头计数[0]}",
-                            "name": "arrow_up" if is_buy else ("arrow_down" if is_sell else "circle"),
+                            "name": "callout",
                             "points": [point],
                             "overrides": {
-                                "text": f"{v1}\n{v2}",
-                                "arrowColor": color,
-                                "color": color,
+                                "text": f"{v1} {v2}" if v2 not in ("任意", "") else v1,
+                                "backgroundColor": bg,
+                                "textColor": tc,
+                                "fontsize": 9,
                                 "showLabel": v2 not in ("任意", ""),
-                                "fontsize": 8,
                             },
                         }
                     ),
                     观察者.当前事件循环,
                 )
 
-            # ── 仓位/订单 → 图表大箭头标记 ──
+            # ── 仓位/订单 → 图表 Callout 气泡标记（入口 + 出口）──
             if 事件 in ("仓位变化", "订单", "成交") and price and time_str:
                 _箭头计数[0] += 1
                 action = 数据.get("action", "") or 数据.get("operate", "")
-                is_buy = "开多" in action or "买" in action
-                is_sell = "开空" in action or "卖" in action
-                if is_buy or is_sell:
+                is_entry_buy = "开多" in action or "买" in action or "挂多" in action
+                is_entry_sell = "开空" in action or "卖" in action or "挂空" in action
+                is_exit = "平" in action or "止损" in action or "撤销" in action or "超时" in action
+
+                if is_entry_buy or is_entry_sell or is_exit:
                     dt = datetime.fromisoformat(time_str)
                     point = {"time": int(dt.timestamp()), "price": price}
-                    name = "arrow_up" if is_buy else "arrow_down"
-                    arrowColor = "#00FF22" if is_buy else "#FF2800"
+
+                    if is_entry_buy:
+                        bg, textColor = "#1a4d1a", "#FFFFFF"
+                    elif is_entry_sell:
+                        bg, textColor = "#4d1a1a", "#FFFFFF"
+                    elif "止损" in action:
+                        bg, textColor = "#4d0000", "#FF8888"
+                    elif "超时" in action:
+                        bg, textColor = "#333333", "#AAAAAA"
+                    elif "撤销" in action:
+                        bg, textColor = "#2a2a2a", "#888888"
+                    else:  # 平仓
+                        bg, textColor = "#4d3a00", "#FFFFFF"
+
+                    reason = 数据.get("reason", "")
+                    label = f"{action}\n{reason}" if reason else action
                     asyncio.run_coroutine_threadsafe(
                         ws.send_json(
                             {
-                                "type": "shape",
+                                "type": "callout",
                                 "cmd": "APPEND",
                                 "id": f"strategy_{_箭头计数[0]}",
-                                "name": name,
+                                "name": "callout",
                                 "points": [point],
                                 "overrides": {
-                                    "text": action,
-                                    "arrowColor": arrowColor,
-                                    "color": "#CC62FF",
+                                    "text": label[:80],
+                                    "backgroundColor": bg,
+                                    "textColor": textColor,
+                                    "fontsize": 10,
                                     "showLabel": True,
                                 },
                             }
                         ),
+                        观察者.当前事件循环,
+                    )
+
+            # ── 走势分解 → 图表标记 ──
+            if 事件 == "走势":
+                if 数据.get("type") == "shape":
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_json(数据),
                         观察者.当前事件循环,
                     )
 
@@ -962,51 +994,17 @@ def 创建信号(周期, 符号="btcusd"):
         name=f"中枢第三买卖点_{周期}s",
         symbol=符号,
         opens=[
-            Event(
-                name="三买开多",
-                operate=Operate.LO,
-                factors=[
-                    Factor(
-                        name="中枢第三买点",
-                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)],
-                    )
-                ],
-            ),
-            Event(
-                name="三卖开空",
-                operate=Operate.SO,
-                factors=[
-                    Factor(
-                        name="中枢第三卖点",
-                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)],
-                    )
-                ],
-            ),
+            Event(name="三买开多", operate=Operate.LO, factors=[Factor(name="中枢第三买点", signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)])]),
+            Event(name="三卖开空", operate=Operate.SO, factors=[Factor(name="中枢第三卖点", signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)])]),
         ],
         exits=[
-            Event(
-                name="三卖平多",
-                operate=Operate.LE,
-                factors=[
-                    Factor(
-                        name="中枢第三卖点平多",
-                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)],
-                    )
-                ],
-            ),
-            Event(
-                name="三买平空",
-                operate=Operate.SE,
-                factors=[
-                    Factor(
-                        name="中枢第三买点平空",
-                        signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)],
-                    )
-                ],
-            ),
+            Event(name="一卖平多", operate=Operate.LE, factors=[Factor(signals_all=[Signal(k1=freq, k2="D1M", k3="第一买卖点V260703", v1="MACD背驰", v2="一卖", v3="任意", score=0)])]),
+            Event(name="一买平空", operate=Operate.SE, factors=[Factor(signals_all=[Signal(k1=freq, k2="D1M", k3="第一买卖点V260703", v1="MACD背驰", v2="一买", v3="任意", score=0)])]),
+            Event(name="三卖平多", operate=Operate.LE, factors=[Factor(name="中枢第三卖点平多", signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三卖", v3="任意", score=0)])]),
+            Event(name="三买平空", operate=Operate.SE, factors=[Factor(name="中枢第三买点平空", signals_all=[Signal(k1=freq, k2="D1MO3", k3="中枢第三买卖点V230602", v1="中枢段DEA穿越2", v2="三买", v3="任意", score=0)])]),
         ],
-        timeout=100,
-        stop_loss=500,
+        timeout=1000,
+        stop_loss=200,
         T0=True,
     )
 
@@ -1015,53 +1013,20 @@ def 创建信号(周期, 符号="btcusd"):
         name=f"第二买卖点_{周期}s",
         symbol=符号,
         opens=[
-            Event(
-                name="二买开多",
-                operate=Operate.LO,
-                factors=[
-                    Factor(
-                        name="第二买点",
-                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)],
-                    )
-                ],
-            ),
-            Event(
-                name="二卖开空",
-                operate=Operate.SO,
-                factors=[
-                    Factor(
-                        name="第二卖点",
-                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)],
-                    )
-                ],
-            ),
+            Event(name="二买开多", operate=Operate.LO, factors=[Factor(name="第二买点", signals_all=[Signal(k1=freq, k2="D1MO2", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)])]),
+            Event(name="二卖开空", operate=Operate.SO, factors=[Factor(name="第二卖点", signals_all=[Signal(k1=freq, k2="D1MO2", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)])]),
         ],
         exits=[
-            Event(
-                name="二卖平多",
-                operate=Operate.LE,
-                factors=[
-                    Factor(
-                        name="第二卖点平多",
-                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)],
-                    )
-                ],
-            ),
-            Event(
-                name="二买平空",
-                operate=Operate.SE,
-                factors=[
-                    Factor(
-                        name="第二买点平空",
-                        signals_all=[Signal(k1=freq, k2="D1MO5", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)],
-                    )
-                ],
-            ),
+            Event(name="一卖平多", operate=Operate.LE, factors=[Factor(signals_all=[Signal(k1=freq, k2="D1M", k3="第一买卖点V260703", v1="MACD背驰", v2="一卖", v3="任意", score=0)])]),
+            Event(name="一买平空", operate=Operate.SE, factors=[Factor(signals_all=[Signal(k1=freq, k2="D1M", k3="第一买卖点V260703", v1="MACD背驰", v2="一买", v3="任意", score=0)])]),
+            Event(name="二卖平多", operate=Operate.LE, factors=[Factor(name="第二卖点平多", signals_all=[Signal(k1=freq, k2="D1MO2", k3="第二买卖点V260701", v1="DEA穿越0", v2="二卖", v3="任意", score=0)])]),
+            Event(name="二买平空", operate=Operate.SE, factors=[Factor(name="第二买点平空", signals_all=[Signal(k1=freq, k2="D1MO2", k3="第二买卖点V260701", v1="DEA穿越0", v2="二买", v3="任意", score=0)])]),
         ],
-        timeout=200,
-        stop_loss=500,
+        timeout=2000,
+        stop_loss=200,
         T0=True,
     )
+    return [Position(name="空仓", symbol="btcusd", opens=[])]
     return [仓位, 仓位2]
 
 
@@ -1076,7 +1041,11 @@ def 测试_读取数据(观察员, ws: Optional[WebSocket] = None, 配置: 缠�
         cerebro.adddata(data)
         cerebro.addstrategy(信号驱动策略, 分析器=分析器, 仓位=创建信号(观察员.周期), 推送回调=_创建WS回调(ws))
         cerebro.broker.setcash(100000)
-        cerebro.run(live=True)
+        初始资金 = cerebro.broker.getvalue()
+        print("初始资金:", 初始资金)
+        results = cerebro.run(live=True)
+        最终资金 = cerebro.broker.getvalue()
+        print("最终资金:", 最终资金, f"收益率: {(最终资金 / 初始资金 - 1) * 100:.2f}%")
 
         消耗用时 = datetime.now() - 启动时间
         print(消耗用时)
@@ -1098,7 +1067,11 @@ def 测试_邮局数据(symbol: str = "btcusd", limit: int = 500, freq: Supports
         cerebro.adddata(data)
         cerebro.addstrategy(信号驱动策略, 分析器=分析器, 仓位=创建信号(周期秒), 推送回调=_创建WS回调(ws))
         cerebro.broker.setcash(100000)
-        cerebro.run(live=True)
+        初始资金 = cerebro.broker.getvalue()
+        print("初始资金:", 初始资金)
+        results = cerebro.run(live=True)
+        最终资金 = cerebro.broker.getvalue()
+        print("最终资金:", 最终资金, f"收益率: {(最终资金 / 初始资金 - 1) * 100:.2f}%")
 
         # 保存 .nb 文件
         K线.保存到DAT文件(
@@ -1124,7 +1097,11 @@ def 测试_读取上一次数据(名称: str = "btcusd", 数量: int = 500, 周�
         cerebro.adddata(data)
         cerebro.addstrategy(信号驱动策略, 分析器=分析器, 仓位=创建信号(周期秒), 推送回调=_创建WS回调(ws))
         cerebro.broker.setcash(100000)
-        cerebro.run(live=True)
+        初始资金 = cerebro.broker.getvalue()
+        print("初始资金:", 初始资金)
+        results = cerebro.run(live=True)
+        最终资金 = cerebro.broker.getvalue()
+        print("最终资金:", 最终资金, f"收益率: {(最终资金 / 初始资金 - 1) * 100:.2f}%")
 
         观察员.图表刷新()
         return 观察员
@@ -1144,7 +1121,12 @@ def 测试_读取上一次数据_回测(名称: str = "btcusd", 数量: int = 50
         cerebro.adddata(data)
         cerebro.addstrategy(信号驱动策略, 分析器=分析器, 仓位=创建信号(周期秒), 推送回调=_创建WS回调(ws))
         # cerebro.addstrategy(回测, 观察员=观察员)
-        cerebro.run(live=True)
+        cerebro.broker.setcash(100000)
+        初始资金 = cerebro.broker.getvalue()
+        print("初始资金:", 初始资金)
+        results = cerebro.run(live=True)
+        最终资金 = cerebro.broker.getvalue()
+        print("最终资金:", 最终资金, f"收益率: {(最终资金 / 初始资金 - 1) * 100:.2f}%")
 
         观察员.图表刷新()
         return 观察员
@@ -1164,7 +1146,12 @@ def 测试_邮局数据_同步回测(symbol: str = "btcusd", limit: int = 500, f
         cerebro.adddata(data)
         cerebro.addstrategy(信号驱动策略, 分析器=分析器, 仓位=创建信号(周期秒), 推送回调=_创建WS回调(ws))
         # cerebro.addstrategy(回测, 观察员=观察员)
-        cerebro.run(live=True)
+        cerebro.broker.setcash(100000)
+        初始资金 = cerebro.broker.getvalue()
+        print("初始资金:", 初始资金)
+        results = cerebro.run(live=True)
+        最终资金 = cerebro.broker.getvalue()
+        print("最终资金:", 最终资金, f"收益率: {(最终资金 / 初始资金 - 1) * 100:.2f}%")
 
         观察员.图表刷新()
         return 观察员
@@ -1232,7 +1219,31 @@ def 测试_信号回测(symbol: str = "btcusd", limit: int = 500, freq: Supports
     return 魔法
 
 
-app = FastAPI()
+# ── MCP 服务器：/mcp 端点，复用 全局连接管理器 的状态 Tool ──
+try:
+    from chanlun_mcp import mcp as 缠论MCP
+
+    _缠论MCP_app = 缠论MCP.streamable_http_app()  # 先生成 app，触发 session_manager 创建
+except Exception as e:
+    缠论MCP = None
+    print(f"[MCP] 挂载失败: {e}")
+
+
+@asynccontextmanager
+async def 应用生命周期(_app: FastAPI):
+    """启动 MCP session manager（FastAPI mount 不运行 subapp lifespan）。"""
+    if 缠论MCP is not None:
+        try:
+            async with 缠论MCP.session_manager.run():
+                yield
+        except Exception as e:
+            print(f"[MCP] lifespan 启动失败: {e}")
+            yield
+    else:
+        yield
+
+
+app = FastAPI(lifespan=应用生命周期)
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
@@ -1246,6 +1257,9 @@ app.mount(
     StaticFiles(directory="charting_library"),
     name="charting_library",
 )
+if 缠论MCP is not None:
+    app.mount("/mcp", _缠论MCP_app)
+
 templates = Jinja2Templates(directory="templates")
 
 
@@ -1847,19 +1861,30 @@ async def 主页(
         900: "15",
         1800: "30",
         2400: "40",
-        3600: "1H",
-        7200: "2H",
-        14400: "4H",
-        21600: "6H",
-        43200: "12H",
+        3600: "60",
+        7200: "120",
+        10800: "180",
+        14400: "240",
+        21600: "360",
+        43200: "720",
         86400: "1D",
         259200: "3D",
         604800: "1W",
     }
 
-    if step not in resolutions:
-        return {"error": "不支持的时间周期", "支持的周期": list(resolutions.keys())}
-
+    # 非原生周期 → 找可整除的源周期，前端用源周期的分辨率
+    if step % 60 != 0:
+        return {"error": f"周期 {step}s 无法被60整除，不支持该分辨率"}
+    display_step = step
+    """if step not in resolutions:
+        display_step = None
+        for p in sorted(resolutions.keys(), reverse=True):
+            if p <= step and step % p == 0:
+                display_step = p
+                break
+        if display_step is None:
+            return {"error": f"目标周期 {step}s 无法被支持周期整除", "支持的周期": list(resolutions.keys())}"""
+    print(时间周期.找到最大可整除周期(display_step), display_step)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -1867,9 +1892,10 @@ async def 主页(
             "request": request,
             "exchange": exchange,
             "symbol": symbol,
-            "interval": resolutions.get(step),
+            "interval": resolutions.get(display_step, 时间周期.找到最大可整除周期(display_step)),
             "limit": str(limit),
             "step": str(step),
+            "source_step": str(display_step) if display_step != step else None,
             "generator": generator,
         },
     )
